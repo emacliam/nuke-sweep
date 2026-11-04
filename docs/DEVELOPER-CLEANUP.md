@@ -1,6 +1,6 @@
 # Developer cleanup in 0.8.2
 
-This source build adds the following workflow. The public website remains on 0.8.1 until the new app is released.
+Version 0.8.2 adds the following workflow.
 
 ## Caches and Derived Data
 

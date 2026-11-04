@@ -8,11 +8,11 @@
 
 Nuke Sweep helps you understand what takes up space on your Mac and review what you can clear. It brings everyday caches, developer workspaces, folder inspection, cleanup receipts, and lightweight system monitoring into one native SwiftUI app.
 
-**Version 0.8.1 is an early release.** Cleanup requires review, and backups are recommended. An intermittent freeze remains under investigation; see [known limitations](#known-limitations).
+**Version 0.8.2 is an early release.** Cleanup requires review, and backups are recommended. An intermittent freeze remains under investigation; see [known limitations](#known-limitations).
 
 ## Download
 
-[**Download Nuke Sweep 0.8.1 for Mac**](https://sweep.zyncraft.com/downloads/Nuke-Sweep-0.8.1.dmg)
+[**Download Nuke Sweep 0.8.2 for Mac**](https://sweep.zyncraft.com/downloads/Nuke-Sweep-0.8.2.dmg)
 
 - **Requirements:** macOS Sonoma 14 or later, **Apple silicon** (M-series Mac).
 - **Distribution:** Developer ID signed, notarized by Apple, and stapled for offline ticket verification.
@@ -23,7 +23,7 @@ Apple notarization checks malware and signing requirements; it is not a review o
 
 ## Install
 
-1. Download and open `Nuke-Sweep-0.8.1.dmg`.
+1. Download and open `Nuke-Sweep-0.8.2.dmg`.
 2. Drag **Nuke Sweep** to the **Applications** shortcut.
 3. Eject the disk image, then open Nuke Sweep from Applications.
 4. Start in **Cleanup** to measure common build-up, or **Files** to select a folder.
@@ -53,7 +53,7 @@ For the Storage widget, launch the installed app once, then Control-click the de
 | Apps | Inspect installed applications and bundle-identifier related-file candidates. |
 | Duplicates | Compare size, SHA-256, and file contents; choose a keeper before reviewing extra copies. |
 | Docker | Inspect the selected CLI context and separately review supported pruning. Volumes are not pruned. |
-| Devices and local models | Inspect archives, backups, simulator metadata, and known or explicitly chosen local model locations. |
+| Devices and local models | Review archives, backups, Android snapshots, simulator devices, and known or explicitly chosen local model locations. |
 | Monitor | Optional storage, CPU, and VM-memory readings, plus permission-gated alerts. |
 | History | Local cleanup receipts with outcomes, export, and restoration guidance. |
 
@@ -65,7 +65,7 @@ For the Storage widget, launch the installed app once, then Control-click the de
 - Normal file cleanup moves reviewed items to **macOS Trash**. Restore with Finder’s Put Back when available, or move the item back to its original location.
 - Source-control metadata, credential stores, personal data stores, and source-looking project roots are protected by cleanup guards.
 - The review rechecks identities and measurements. Unknown ownership and permission gaps remain explicit.
-- **Emptying Trash and Docker pruning are permanent**, separately reviewed actions.
+- **Simulator deletion, emptying Trash, and Docker pruning are permanent**, separately reviewed actions.
 - Moving something to Trash normally does not free its occupied space. APFS snapshots, shared extents, and other system activity can also affect available space.
 
 These guards reduce risk; they cannot prove that every arbitrary folder is safe to remove. Close apps or builds using selected files and review unfamiliar locations in Finder.
@@ -89,7 +89,7 @@ shasum -a 256 -c SHA256SUMS.txt
 You can also check Apple’s signature and approval:
 
 ```sh
-spctl -a -t open --context context:primary-signature -vv Nuke-Sweep-0.8.1.dmg
+spctl -a -t open --context context:primary-signature -vv Nuke-Sweep-0.8.2.dmg
 ```
 
 Expected: `accepted`, `source=Notarized Developer ID`.
@@ -142,7 +142,7 @@ Open `http://localhost:4173`. The Vercel project uses `website` as its root. Dow
 
 ## Developer cleanup improvements
 
-The upcoming 0.8.2 source build adds partial batch reviews, cache-content review, deeper project discovery with large node_modules filters, Android snapshot cleanup, and confirmed simulator deletion. See the [developer cleanup guide](docs/DEVELOPER-CLEANUP.md) for bounds, recovery, and emulator details. The public download above remains 0.8.1 until the new release is published.
+Version 0.8.2 adds partial batch reviews, cache-content review, deeper project discovery with large node_modules filters, Android snapshot cleanup, and confirmed simulator deletion. See the [developer cleanup guide](docs/DEVELOPER-CLEANUP.md) for bounds, recovery, and emulator details.
 
 ## Known limitations
 
