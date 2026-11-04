@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://sweep.zyncraft.com/sitemap.xml

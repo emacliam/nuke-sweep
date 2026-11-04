@@ -1,0 +1,24 @@
+.build/
+dist/
+.DS_Store
+.vercel/
+.env
+.env.*
+*.p12
+*.pem
+*.key
+*.certSigningRequest
+.impeccable/
+.openai/
+# Local research, raw diagnostics, and earlier brand explorations
+cleanmymac-evidence.json
+omni-evidence.json
+additional-resource-evidence.json
+docs/performance/
+docs/evidence/
+docs/audits/
+assets/
+branding/cindroq-icon-concept.png
+branding/NAME-AND-ICON.md
+branding/nuke-sweep/nuke-sweep-logo.png
+branding/nuke-sweep/nuke-sweep-logo-v2.png
