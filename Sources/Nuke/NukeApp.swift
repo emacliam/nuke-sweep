@@ -22,6 +22,7 @@ import AppKit
                     Button("Simulate monitor wake") { model.wake() }.keyboardShortcut("u", modifiers: [.command, .option, .shift])
                 }
             }
+            CommandGroup(after: .appInfo) { Button("Check for Updates…") { model.page = .updates; model.showMainWindow() } }
             CommandGroup(replacing: .newItem) { Button("Scan Folder…") { model.chooseFolder() }.keyboardShortcut("o"); Button("Refresh") { model.refreshResources(); if model.page == .storage { model.scan() }; if model.page == .processes { model.refreshProcesses() } }.keyboardShortcut("r") }
             CommandGroup(after: .textEditing) {
                 Divider()

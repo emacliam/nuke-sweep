@@ -71,6 +71,8 @@ import UserNotifications
     @Published var pendingTrash: [DiskItem] = []
     @Published var pendingEvidence: [String: CleanupEvidence] = [:]
     @Published var pendingWarnings: [String] = []
+    @Published var restoredReceiptItems = Set<UUID>()
+    @Published var pendingBlocked: [ReviewBlockedItem] = []
     @Published var showTrashReview = false
     var quitWhenIdle = false
     @Published var actionBusy = false {
@@ -288,17 +290,38 @@ import UserNotifications
             actionBusy = false
         }
     }
-    func reviewTrash(_ items: [DiskItem], proofs: [DuplicateProof] = []) {
+    func deleteSimulator(_ device: SimulatorDevice) {
+        guard !actionBusy, !features.deviceLoading else { return }
+        actionBusy = true; features.simulatorActionBusy = true; features.simulatorActionResult = nil
+        Task {
+            let result = await DiskWork.run("Deleting simulator") { EmulatorCleanup.delete(device) }
+            features.receipt(CleanupReceipt(date: Date(), title: "Simulator deletion", items: [.init(originalPath: "Simulator: " + device.name + " (" + device.id + ")", trashPath: nil, size: 0, success: result.success, outcome: result.message)], freeBefore: nil, freeAfter: nil, undo: "Simulator deletion is permanent. Installed apps and test data cannot be recovered from Trash. The shared runtime is retained."))
+            features.simulatorActionResult = result.message; features.simulatorActionBusy = false; actionBusy = false
+            features.scanDevices()
+        }
+    }
+    func reviewTrash(_ items: [DiskItem], proofs: [DuplicateProof] = [], cacheContents: CacheRule? = nil) {
         guard !actionBusy else { return }; actionBusy = true
-        pendingEvidence = [:]; pendingWarnings = []
+        pendingTrash = []; duplicateProofs = []; pendingEvidence = [:]; pendingWarnings = []; pendingBlocked = []
         reviewPreparing = true; let token = ScanCancellation(); reviewToken = token
         let scopes = FolderAccess.shared.cleanupScopes
         Task {
-            let preparation = await DiskWork.run("Preparing cleanup review", cancellation: token) { ReviewPlanner.prepare(items, scopes: scopes, token: token) }
+            let preparation = await DiskWork.run("Preparing cleanup review", cancellation: token) { () -> ReviewPreparation in
+                if let cacheContents {
+                    return ReviewPlanner.prepareCacheContents(cacheContents, scopes: scopes, token: token)
+                }
+                return ReviewPlanner.prepare(items, scopes: scopes, token: token)
+            }
             guard reviewToken === token else { return }
             reviewPreparing = false; actionBusy = false
             guard !token.cancelled else { return }
-            guard preparation.failures.isEmpty else { recovery = RecoveryTask(kind: .storage(scanRoot)); pendingEvidence = [:]; pendingWarnings = []; message = "Review could not be prepared. No files were moved.\n" + preparation.failures.joined(separator: "\n"); return }
+            pendingBlocked = preparation.blocked
+            guard !preparation.items.isEmpty else {
+                pendingEvidence = [:]; pendingWarnings = []; pendingTrash = []
+                showTrashReview = !pendingBlocked.isEmpty
+                if pendingBlocked.isEmpty { message = preparation.failures.joined(separator: "\n") }
+                return
+            }
             duplicateProofs = proofs
             pendingEvidence = preparation.evidence
             pendingWarnings = preparation.warnings
@@ -306,9 +329,9 @@ import UserNotifications
         }
     }
 
-    func cancelReview() { reviewToken.cancel(); reviewPreparing = false; actionBusy = false; pendingEvidence = [:]; pendingWarnings = [] }
+    func cancelReview() { reviewToken.cancel(); reviewPreparing = false; actionBusy = false; pendingEvidence = [:]; pendingWarnings = []; pendingBlocked = [] }
     func trashReviewed() {
-        guard !actionBusy else { return }; let items = pendingTrash; showTrashReview = false; actionBusy = true
+        guard !actionBusy, !pendingTrash.isEmpty else { return }; let items = pendingTrash; showTrashReview = false; actionBusy = true
         let proofs = duplicateProofs
         let allowedRoots = FolderAccess.shared.cleanupScopes
         let running = NSWorkspace.shared.runningApplications.compactMap { $0.bundleURL?.path }
@@ -316,7 +339,7 @@ import UserNotifications
             let receipt = await DiskWork.run { ReceiptService.moveToTrash(items, proofs: proofs, runningAppPaths: running, allowedRoots: allowedRoots) }
             features.receipt(receipt)
             let detail = receipt.items.map { "\($0.success ? "Moved to Trash" : "Failed"): \($0.originalPath) · \($0.outcome)" }.joined(separator: "\n")
-            record("File cleanup", detail: detail); actionBusy = false; pendingTrash = []; pendingEvidence = [:]; pendingWarnings = []; duplicateProofs = []
+            record("File cleanup", detail: detail); actionBusy = false; pendingTrash = []; pendingEvidence = [:]; pendingWarnings = []; pendingBlocked = []; duplicateProofs = []
 
         }
     }
@@ -325,27 +348,19 @@ import UserNotifications
     /// original path and never invents a directory. The Trash copy is the only source.
     func restoreReceiptItem(_ item: ReceiptItem) {
         guard !actionBusy, item.success, let trashPath = item.trashPath else { return }
-        let trashURL = URL(fileURLWithPath: trashPath)
-        let originalURL = URL(fileURLWithPath: item.originalPath)
-        let fm = FileManager.default
-        guard fm.fileExists(atPath: trashURL.path) else {
-            message = "The Trash copy is no longer present. Use Finder Put Back or check Trash manually."
-            return
-        }
-        guard !fm.fileExists(atPath: originalURL.path) else {
-            message = "The original path already exists. Nuke Sweep will not overwrite it. Move or rename that item first."
-            return
-        }
-        guard fm.fileExists(atPath: originalURL.deletingLastPathComponent().path) else {
-            message = "The original parent folder no longer exists. Recreate it before restoring, or use Finder."
-            return
-        }
         actionBusy = true
         Task {
-            do {
-                try fm.moveItem(at: trashURL, to: originalURL)
-                record("Restored item", detail: "Restored \(item.originalPath) from Trash.")
-            } catch { message = "Could not restore \(item.originalPath): " + error.localizedDescription }
+            let failure = await DiskWork.run("Restoring from Trash") { () -> String? in
+                let trashURL = URL(fileURLWithPath: trashPath), originalURL = URL(fileURLWithPath: item.originalPath)
+                let fm = FileManager.default
+                guard fm.fileExists(atPath: trashURL.path) else { return "The Trash copy is no longer present. Check Trash in Finder." }
+                guard !fm.fileExists(atPath: originalURL.path) else { return "The original path already exists. Nuke Sweep will not overwrite it." }
+                guard fm.fileExists(atPath: originalURL.deletingLastPathComponent().path) else { return "The original parent folder no longer exists. Recreate it before restoring, or use Finder." }
+                do { try fm.moveItem(at: trashURL, to: originalURL); return nil }
+                catch { return "Could not restore \(item.originalPath): " + error.localizedDescription }
+            }
+            if let failure { message = failure }
+            else { restoredReceiptItems.insert(item.id); record("Restored item", detail: "Restored \(item.originalPath) from Trash.") }
             actionBusy = false
         }
     }

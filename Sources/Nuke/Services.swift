@@ -29,7 +29,7 @@ enum DirectoryEntries {
 
 // lstat prevents following symlinks. Traversal stays on the selected volume.
 enum DiskScanner {
-    static func scan(_ root: URL, cancellation: ScanCancellation, limit: Int = 250_000, deadline: Date = Date().addingTimeInterval(60), excluding: (URL) -> Bool = { _ in false }) -> ScanResult {
+    static func scan(_ root: URL, cancellation: ScanCancellation, limit: Int = 250_000, deadline: Date = Date().addingTimeInterval(60), excluding: (URL) -> Bool = { _ in false }, observing: (URL) -> Void = { _ in }) -> ScanResult {
         if excluding(root) { return ScanResult(items: [], skipped: 0, visited: 0, limited: false) }
         var visited = 0, skipped = 0, limited = false
         var categories: [String: Int64] = [:]
@@ -43,6 +43,7 @@ enum DiskScanner {
             if excluding(url) { return nil }
             if cancellation.cancelled || visited >= limit || Date() > deadline { limited = true; return nil }
             visited += 1
+            observing(url)
             if visited == 1 || visited % 256 == 0 { DiskWork.report(path: url.path, visited: visited) }
             var s = stat()
             guard lstat(url.path, &s) == 0 else { skipped += 1; recordIssue(url, String(cString: strerror(errno))); return nil }

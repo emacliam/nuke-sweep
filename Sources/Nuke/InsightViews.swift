@@ -78,29 +78,45 @@ struct GrowthView: View {
 struct ProjectsView: View {
     @EnvironmentObject var model: AppModel
     @EnvironmentObject var features: FeatureModel
+    @State private var onlyNodeModules = false
+    @State private var minimumBytes: Int64 = 0
+    private var entries: [InventoryEntry] {
+        features.projects.flatMap(\.entries).filter { (!onlyNodeModules || $0.item.name == "node_modules") && $0.item.size >= minimumBytes }.sorted { $0.item.size > $1.item.size }
+    }
     var body: some View {
-        VStack(alignment: .leading, spacing: 22) {
-            HStack { Text(features.projectRoot?.path ?? "Choose a project or workspace folder.").font(.system(size: 11)).foregroundStyle(Theme.secondary).lineLimit(2); Spacer(); Button("Inspect workspace…") { features.scanProjects() }.buttonStyle(PrimaryButton()).disabled(features.projectLoading) }
-            if features.projectLoading { BusyLine(text: "Finding project artifacts… an in-flight Docker command may take a moment to finish.") }
-            ForEach(features.projects) { project in
-                VStack(alignment: .leading, spacing: 10) {
-                    SectionTitle(title: project.root.lastPathComponent, detail: project.kind + " · " + bytes(project.size) + (project.entries.contains { $0.item.incomplete } ? "+" : ""))
-                    Text(project.root.path).font(.system(size: 10)).foregroundStyle(Theme.secondary).textSelection(.enabled)
-                    if project.entries.isEmpty { Text("No known artifact folders found.").font(.system(size: 12)).foregroundStyle(Theme.secondary) }
-                    InventoryList(entries: project.entries, measured: features.projectMeasured)
-                    let containers = features.projectDocker.filter { $0.directory.map { URL(fileURLWithPath: $0).standardizedFileURL.path == project.root.standardizedFileURL.path } == true }
-                    let names = Set(containers.map(\.project))
-                    let objects = features.projectDocker.filter { names.contains($0.project) }
-                    ForEach(objects) { object in HStack { Label(object.name, systemImage: "shippingbox"); Spacer(); Text(object.kind + " · " + object.state) }.font(.system(size: 11)).foregroundStyle(Theme.secondary) }
-                }.padding(.vertical, 8)
+        VStack(alignment: .leading, spacing: 18) {
+            HStack {
+                Text(features.projectRoot?.path ?? "Choose your projects folder. We look for installed dependencies and generated build folders.").font(.system(size: 12)).foregroundStyle(Theme.secondary).lineLimit(2)
+                Spacer()
+                Button("Find build folders…") { features.scanProjects() }.buttonStyle(PrimaryButton()).disabled(features.projectLoading)
             }
-            if !features.projectLoading && features.projectRoot != nil && features.projects.isEmpty { EmptyPanel(symbol: "folder.badge.gearshape", title: "No recognized projects found", detail: "Search covers three folder levels, up to 500 folders and 40 projects. It looks for package.json, Cargo.toml, Package.swift, Xcode projects, Python, Gradle, and Go markers.") }
-            if !features.projectNote.isEmpty { Notice(text: "Docker context: \(features.projectContext.isEmpty ? "unavailable" : features.projectContext). " + features.projectNote, symbol: "info.circle") }
-            if !features.projectDocker.isEmpty {
-                DisclosureGroup("All labelled Docker resources (including unassigned folders)") { ForEach(features.projectDocker) { object in VStack(alignment: .leading, spacing: 4) { Text(object.project + " · " + object.kind + " · " + object.name); Text(object.directory ?? "Working directory not recorded").foregroundStyle(Theme.secondary) }.font(.system(size: 11)).padding(.vertical, 6) } }
-                Button("Open Docker management") { model.page = .docker }.buttonStyle(QuietButton())
+            if features.projectLoading { BusyLine(text: "Finding and measuring build folders. You can keep using the app; Stop cancels the search.") }
+            if !features.projectDiscoveryNote.isEmpty { Text(features.projectDiscoveryNote).font(.system(size: 11)).foregroundStyle(Theme.secondary) }
+            HStack {
+                Toggle("node_modules only", isOn: $onlyNodeModules).toggleStyle(.checkbox)
+                Picker("Minimum size", selection: $minimumBytes) {
+                    Text("Any size").tag(Int64(0)); Text("100 MB+").tag(Int64(100_000_000)); Text("1 GB+").tag(Int64(1_000_000_000))
+                }.frame(width: 180)
+                Spacer()
+                Text("Largest first").foregroundStyle(Theme.secondary)
+            }.font(.system(size: 12))
+            InventoryList(entries: entries, measured: features.projectMeasured)
+            if !features.projectLoading && features.projectRoot != nil && entries.isEmpty {
+                EmptyPanel(symbol: "folder.badge.gearshape", title: "No build folders match", detail: "Try Any size or choose a broader projects folder. Search covers up to 12 levels, 10,000 directories, and 300 workspaces within 90 seconds. Partial coverage is shown above.")
             }
-            Notice(text: "Project cleanup covers known artifact locations, not arbitrary source deletion. Discovery is bounded to three levels/500 folders/40 projects; nested workspaces may require a separate scan. Inspect name-based candidates and stop builds first. Docker volumes are shown for context, never selected for automatic deletion.", symbol: "info.circle")
+            Notice(text: "These are disk-space candidates, not RAM. Nothing is selected automatically. node_modules can be reinstalled; build/dist folders can also contain hand-edited work. Every selected folder gets a fresh review before moving to Trash.", symbol: "info.circle")
+            if !features.projectNote.isEmpty {
+                DisclosureGroup("Docker context details") {
+                    Text("Context: " + features.projectContext + ". " + features.projectNote).font(.system(size: 11)).foregroundStyle(Theme.secondary)
+                    ForEach(features.projectDocker) { object in
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(object.project + " · " + object.kind + " · " + object.name)
+                            Text(object.directory ?? "Working directory not recorded").foregroundStyle(Theme.secondary)
+                        }.font(.system(size: 11)).padding(.vertical, 6)
+                    }
+                    Button("Open Docker management") { model.page = .docker }.buttonStyle(QuietButton())
+                }
+            }
         }
     }
 }
@@ -137,14 +153,55 @@ struct AIStorageView: View {
     }
 }
 struct DevicesView: View {
+    @EnvironmentObject var model: AppModel
     @EnvironmentObject var features: FeatureModel
+    @State private var deleting: SimulatorDevice?
+    @State private var confirmation = ""
+    @State private var unavailableOnly = false
+    private var simulatorRows: [SimulatorDevice] {
+        features.simulators.devices.filter { !unavailableOnly || !$0.available }.sorted { ($0.logicalBytes ?? -1) > ($1.logicalBytes ?? -1) }
+    }
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
             HStack { Text("Preserve recovery data you still need.").font(.system(size: 12)).foregroundStyle(Theme.secondary); Spacer(); Button("Open Xcode") { NSWorkspace.shared.open(URL(fileURLWithPath: "/Applications/Xcode.app")) }.buttonStyle(QuietButton()); Button("Inspect devices & archives") { features.scanDevices() }.buttonStyle(PrimaryButton()).disabled(features.deviceLoading) }
-            if features.deviceLoading { BusyLine(text: "Reading simulator inventory and measuring device data… cancellation happens between file operations; a CLI call may take up to 20 seconds.") }
+            if features.deviceLoading { BusyLine(text: "Reading emulator inventory and measuring device data… you can stop between file operations; an active tool call may take up to 20 seconds.") }
             InventoryList(entries: features.devices.entries, measured: features.deviceMeasured)
+            if let result = features.simulatorActionResult { Notice(text: result, symbol: "info.circle") }
+            if !features.simulators.devices.isEmpty {
+                HStack {
+                    SectionTitle(title: "Simulator devices", detail: "\(features.simulators.devices.count) devices · largest measured folders first")
+                    Spacer()
+                    Toggle("Unavailable only", isOn: $unavailableOnly).toggleStyle(.checkbox).font(.system(size: 12))
+                }
+                if simulatorRows.isEmpty { Text("No unavailable devices in this inventory.").font(.system(size: 12)).foregroundStyle(Theme.secondary) }
+            }
+            ForEach(simulatorRows) { device in
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(device.name).font(.system(size: 13, weight: .semibold))
+                        Text("\(device.runtime) · \(device.state)" + (device.available ? "" : " · unavailable")).font(.system(size: 11)).foregroundStyle(Theme.secondary)
+                    }
+                    Spacer()
+                    Text(device.logicalBytes.map { bytes($0) + (device.partialMeasurement ? "+ · partial" : " logical") } ?? "Size unavailable").font(.system(size: 11)).foregroundStyle(Theme.secondary)
+                    Button("Delete device…") { confirmation = ""; deleting = device }.buttonStyle(QuietButton()).disabled(!device.canDelete || features.deviceLoading || features.simulatorActionBusy || model.actionBusy)
+                }.padding(12).background(Theme.rail, in: RoundedRectangle(cornerRadius: 8))
+            }
+            if !features.simulators.note.isEmpty { Notice(text: features.simulators.note, symbol: "iphone") }
             ForEach(features.devices.notes, id: \.self) { Notice(text: $0, symbol: "info.circle") }
-            if features.devices.entries.isEmpty && !features.deviceLoading { EmptyPanel(symbol: "iphone", title: "Backups are not caches", detail: "Inspect Xcode archives, MobileSync backups, simulator devices, and installed runtime metadata. Simulator devices and runtimes are managed through Xcode rather than direct directory deletion.") }
+            if features.devices.entries.isEmpty && !features.deviceLoading { EmptyPanel(symbol: "iphone", title: "Backups are not caches", detail: "Inspect Xcode archives, MobileSync backups, simulator devices, and installed runtime metadata. Shut-down simulator devices can be deleted through Apple’s simulator manager. Android Quick Boot snapshots can go to Trash. Shared runtimes stay managed by Xcode.") }
+        }
+        .sheet(item: $deleting) { device in
+            VStack(alignment: .leading, spacing: 18) {
+                Text("Delete \(device.name)?").font(.title2)
+                Text("This permanently removes the simulator’s installed apps and test data. It cannot be restored from Trash. The shared runtime stays installed.")
+                Text(device.runtime + " · " + device.state).font(.system(size: 12)).foregroundStyle(Theme.secondary)
+                Text(device.id).font(.system(size: 11, design: .monospaced)).textSelection(.enabled)
+                TextField("Type DELETE to confirm", text: $confirmation).textFieldStyle(.roundedBorder)
+                HStack {
+                    Button("Cancel") { deleting = nil }; Spacer()
+                    Button("Permanently delete", role: .destructive) { deleting = nil; model.deleteSimulator(device) }.disabled(confirmation != "DELETE")
+                }
+            }.padding(24).frame(width: 470)
         }
     }
 }

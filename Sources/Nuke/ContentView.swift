@@ -58,6 +58,7 @@ struct ContentView: View {
                         case .alerts: AlertsView()
                         case .permissions: PermissionsView()
                         case .widgets: WidgetsView()
+                        case .updates: UpdatesView()
                         case .growth: GrowthView()
                         case .projects: ProjectsView()
                         case .apps: ApplicationsView()
@@ -133,8 +134,8 @@ struct ContentView: View {
             coreNav("Settings", icon: "gearshape", section: .settings, destination: .monitor).padding(.horizontal, 12).padding(.bottom, 12)
             VStack(alignment: .leading, spacing: 9) {
                 HStack(spacing: 7) { Circle().fill(Theme.green).frame(width: 6, height: 6); Text("On this Mac").font(.system(size: 11, weight: .medium)) }
-                HStack(spacing: 9) { Image(systemName: "laptopcomputer").font(.system(size: 15)); VStack(alignment: .leading, spacing: 2) { Text(Host.current().localizedName ?? "This Mac").font(.system(size: 11, weight: .semibold)).lineLimit(1); Text("\(bytes(model.resources.physicalMemory)) memory").font(.system(size: 10)).foregroundStyle(Theme.secondary) } }
-                Text("Nuke Sweep 0.8.1").font(.system(size: 9)).foregroundStyle(Theme.secondary)
+                HStack(spacing: 9) { Image(systemName: "laptopcomputer").font(.system(size: 15)); VStack(alignment: .leading, spacing: 2) { Text(Host.current().localizedName ?? "This Mac").font(.system(size: 11, weight: .semibold)).lineLimit(1) } }
+                Text("Nuke Sweep " + UpdateChecker.installed).font(.system(size: 9)).foregroundStyle(Theme.secondary)
             }.padding(.horizontal, 20).padding(.vertical, 16)
         }.frame(width: 202).background(Theme.rail)
     }
@@ -147,7 +148,7 @@ struct ContentView: View {
         }.buttonStyle(.plain).accessibilityAddTraits(model.page.section == section ? .isSelected : [])
     }
     @ViewBuilder var sectionBar: some View {
-        let pages: [Page] = model.page.section == .cleanup ? [.findSpace, .developer, .trash] : model.page.section == .files ? [.storage, .duplicates, .growth, .watchlist] : model.page.section == .settings ? [.monitor, .permissions, .alerts, .widgets, .startup, .processes] : []
+        let pages: [Page] = model.page.section == .cleanup ? [.findSpace, .developer, .trash] : model.page.section == .files ? [.storage, .duplicates, .growth, .watchlist] : model.page.section == .settings ? [.monitor, .permissions, .alerts, .widgets, .startup, .processes, .updates] : []
         if !pages.isEmpty {
             HStack(spacing: 18) {
                 ForEach(pages) { page in
@@ -444,7 +445,7 @@ struct DeveloperView: View {
                     if let item = measurement?.item {
                         if item.incomplete { Text(model.cacheOutcome.hasPrefix("Stopped") ? "Stopped while inspecting this location. Browse smaller folders or scan again before cleanup." : (measurement?.skipped ?? 0) > 0 ? "Access incomplete. Resolve folder permissions and scan again before cleanup." : "Scan limit reached. Browse smaller folders to review cleanup.").font(.system(size: 11)).foregroundStyle(Theme.warning) }
                         if (measurement?.skipped ?? 0) > 0 { Button("Review folder access") { model.page = .permissions }.buttonStyle(QuietButton()) }
-                        HStack { Button("Browse tree") { model.browseTree(item.url) }.buttonStyle(QuietButton()); Spacer(); Button("Review cleanup…") { model.reviewTrash([item]) }.buttonStyle(PrimaryButton()).disabled(model.actionBusy || model.cacheScanning || item.incomplete || item.size == 0) }
+                        HStack { Button("Browse tree") { model.browseTree(item.url) }.buttonStyle(QuietButton()); Spacer(); Button("Review contents…") { model.reviewTrash([], cacheContents: rule) }.buttonStyle(QuietButton()).disabled(model.actionBusy || model.cacheScanning); Button("Review whole folder…") { model.reviewTrash([item]) }.buttonStyle(PrimaryButton()).disabled(model.actionBusy || model.cacheScanning || item.incomplete || item.size == 0) }
                     }
                 }.padding(.leading, 34).padding(.bottom, 16)
             }

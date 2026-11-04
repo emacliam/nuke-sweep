@@ -28,14 +28,29 @@ enum TreeSelection {
     @Published private(set) var partial = Set<String>()
     private var isExcluded: (URL) -> Bool = { _ in false }
     private var tokens: [String: ScanCancellation] = [:]
-    private var evidenceCache: [String: CleanupEvidence] = [:]
+    @Published private var evidenceCache: [String: CleanupEvidence] = [:]
+
+    private var evidencePending = Set<String>()
+    private var evidenceGeneration = UUID()
 
     func evidence(for item: DiskItem, sourceCheck: Bool) -> CleanupEvidence {
         let key = item.id + (sourceCheck ? "|source" : "")
         if let cached = evidenceCache[key] { return cached }
-        let evidence = CleanupEvidenceService.classify(item.url, sourceCheck: sourceCheck)
-        evidenceCache[key] = evidence
-        return evidence
+        if evidencePending.insert(key).inserted {
+            let generation = evidenceGeneration
+            Task {
+                let evidence = await DiskWork.run("Inspecting folder context", priority: .background) {
+                    CleanupEvidenceService.classify(item.url, sourceCheck: sourceCheck)
+                }
+                guard evidenceGeneration == generation else { return }
+                evidencePending.remove(key)
+                evidenceCache[key] = evidence
+            }
+        }
+        return CleanupEvidence(kind: .unknown, detail: "Checking folder context…", rebuild: nil, gitIgnored: false)
+    }
+    func evidenceReady(for item: DiskItem, sourceCheck: Bool) -> Bool {
+        evidenceCache[item.id + (sourceCheck ? "|source" : "")] != nil
     }
 
     func configure(isExcluded: @escaping (URL) -> Bool) {
@@ -75,7 +90,7 @@ enum TreeSelection {
 
     func reset() {
         for token in tokens.values { token.cancel() }
-        tokens.removeAll(); children.removeAll(); expanded.removeAll(); loading.removeAll(); partial.removeAll(); evidenceCache.removeAll()
+        tokens.removeAll(); children.removeAll(); expanded.removeAll(); loading.removeAll(); partial.removeAll(); evidenceCache.removeAll(); evidencePending.removeAll(); evidenceGeneration = UUID()
     }
 
     func collapseAll() {
@@ -153,7 +168,7 @@ struct FolderTreeView: View {
                 loading: loading,
                 partial: store.partial.contains(item.id),
                 empty: expanded && !loading && kids?.isEmpty == true,
-                blocked: blocked(item) || evidence.kind.isBlocked
+                blocked: blocked(item) || evidence.kind.isBlocked || !store.evidenceReady(for: item, sourceCheck: depth == 0)
             ))
             if expanded, let kids { append(kids, depth: depth + 1, into: &out) }
         }

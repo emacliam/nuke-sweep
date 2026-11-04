@@ -15,6 +15,7 @@ enum ReceiptService {
         let outcomes = items.map { item -> ReceiptItem in
             do {
                 try CleanupSafety.validate(item, allowedRoots: allowedRoots)
+                try EmulatorCleanup.requireAndroidIdle(item.url)
                 if item.url.pathExtension == "app", runningAppPaths.contains(where: { $0 == item.url.path || $0.hasPrefix(item.url.path + "/") }) { throw DuplicateFailure(message: "The application is running. Quit it and review again.") }
                 if let proof = proofs.first(where: { $0.duplicate.id == item.id }), try !DuplicateFinder.sameContents(proof.keeper, proof.duplicate) { throw DuplicateFailure(message: "Duplicate contents changed. Run detection again.") }
                 var destination: NSURL?

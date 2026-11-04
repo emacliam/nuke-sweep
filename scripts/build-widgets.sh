@@ -34,8 +34,8 @@ cat > "$EXTENSION/Contents/Info.plist" <<'PLIST'
 <key>CFBundleName</key><string>Nuke Sweep Widgets</string>
 <key>CFBundleDisplayName</key><string>Nuke Sweep</string>
 <key>CFBundlePackageType</key><string>XPC!</string>
-<key>CFBundleShortVersionString</key><string>0.8.1</string>
-<key>CFBundleVersion</key><string>9</string>
+<key>CFBundleShortVersionString</key><string>0.8.2</string>
+<key>CFBundleVersion</key><string>10</string>
 <key>CFBundleSupportedPlatforms</key><array><string>MacOSX</string></array>
 <key>LSMinimumSystemVersion</key><string>14.0</string>
 <key>NSExtension</key><dict><key>NSExtensionPointIdentifier</key><string>com.apple.widgetkit-extension</string></dict>

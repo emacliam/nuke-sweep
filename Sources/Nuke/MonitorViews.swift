@@ -148,6 +148,7 @@ struct HistoryView: View {
 struct TrashReview: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.dismiss) var dismiss
+    @State private var blockedExpanded = true
     @State private var acknowledged = false
     @State private var openHandlesReviewed = false
     var body: some View {
@@ -174,19 +175,40 @@ struct TrashReview: View {
                     }
                 }
             }.frame(maxHeight: 220)
+            if !model.pendingBlocked.isEmpty {
+                DisclosureGroup("Not included · \(model.pendingBlocked.count) could not be verified", isExpanded: $blockedExpanded) {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 12) {
+                            ForEach(model.pendingBlocked) { blocked in
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(blocked.url.lastPathComponent).font(.system(size: 12, weight: .medium))
+                                    Text(blocked.reason).font(.system(size: 11)).foregroundStyle(Theme.secondary)
+                                    HStack {
+                                        Button("Show in Finder") { model.reveal(blocked.url) }
+                                        Button("Browse smaller folders") { dismiss(); model.browseTree(blocked.url) }
+                                    }.font(.system(size: 11))
+                                }
+                            }
+                        }
+                    }.frame(maxHeight: 150)
+                }.font(.system(size: 12)).foregroundStyle(Theme.warning)
+                Text("Only the verified items listed above are included. Nothing has been moved.").font(.system(size: 11)).foregroundStyle(Theme.secondary)
+            }
             if !model.pendingWarnings.isEmpty {
                 Notice(text: model.pendingWarnings.prefix(3).joined(separator: "\n") + (model.pendingWarnings.count > 3 ? "\nAnd \(model.pendingWarnings.count - 3) more open-file warnings." : ""), symbol: "exclamationmark.triangle")
             }
-            Notice(text: "These items will move to macOS Trash. Space is reclaimed only after Trash is emptied. Folders move with everything inside, including files added since the scan; Nuke Sweep blocks project roots, source-control metadata, credentials, and personal data stores. Stop apps or builds using these files and review folders in Finder first.", symbol: "exclamationmark.triangle")
-            Toggle("I reviewed these items and stopped tools using them.", isOn: $acknowledged).font(.system(size: 12))
-            if !model.pendingWarnings.isEmpty {
-                Toggle("I closed the apps or builds listed above.", isOn: $openHandlesReviewed).font(.system(size: 12))
+            if !model.pendingTrash.isEmpty {
+                Notice(text: "These items will move to macOS Trash. Space is reclaimed only after Trash is emptied. Folders move with everything inside, including files added since the scan; Nuke Sweep blocks project roots, source-control metadata, credentials, and personal data stores. Stop apps or builds using these files and review folders in Finder first.", symbol: "exclamationmark.triangle")
+                Toggle("I reviewed these items and stopped tools using them.", isOn: $acknowledged).font(.system(size: 12))
+                if !model.pendingWarnings.isEmpty {
+                    Toggle("I closed the apps or builds listed above.", isOn: $openHandlesReviewed).font(.system(size: 12))
+                }
             }
             HStack(spacing: 10) {
                 Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
-                Button("Export plan…") { model.exportPendingPlan() }.buttonStyle(QuietButton())
+                Button("Export plan…") { model.exportPendingPlan() }.buttonStyle(QuietButton()).disabled(model.pendingTrash.isEmpty)
                 Spacer()
-                Button("Move to Trash") { model.trashReviewed() }.buttonStyle(PrimaryButton()).disabled(!acknowledged || (!model.pendingWarnings.isEmpty && !openHandlesReviewed) || model.actionBusy)
+                Button("Move to Trash") { model.trashReviewed() }.buttonStyle(PrimaryButton()).disabled(model.pendingTrash.isEmpty || !acknowledged || (!model.pendingWarnings.isEmpty && !openHandlesReviewed) || model.actionBusy)
             }
         }.padding(30).frame(width: 580)
     }

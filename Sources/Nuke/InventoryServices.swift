@@ -20,42 +20,9 @@ enum InventoryService {
         return DiskItem(url: url, size: r?.logical ?? Int64(s.st_size), allocated: r?.allocated ?? Int64(s.st_blocks) * 512, directory: dir, symlink: link, modified: Date(timeIntervalSince1970: Double(s.st_mtimespec.tv_sec)), identity: FileIdentity(device: UInt64(s.st_dev), inode: UInt64(s.st_ino)), incomplete: r.map { $0.skipped > 0 || $0.limited } ?? false)
     }
     static func projects(_ root: URL, token: ScanCancellation = ScanCancellation()) -> [ProjectGroup] {
-        let fm = FileManager.default
-        var groups: [ProjectGroup] = [], seen = 0
-        func visit(_ url: URL, depth: Int) {
-            guard !token.cancelled, depth <= 3, seen < 500, groups.count < 40 else { return }; seen += 1
-            guard let children = try? fm.contentsOfDirectory(at: url, includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey], options: [.skipsHiddenFiles]) else { return }
-            let names = Set(children.map(\.lastPathComponent))
-            let kind: String?
-            if names.contains("package.json") { kind = "JavaScript / TypeScript" }
-            else if names.contains("Cargo.toml") { kind = "Rust" }
-            else if names.contains("Package.swift") || names.contains(where: { $0.hasSuffix(".xcodeproj") }) { kind = "Swift / Xcode" }
-            else if names.contains("pyproject.toml") || names.contains("requirements.txt") { kind = "Python" }
-            else if names.contains("build.gradle") || names.contains("build.gradle.kts") { kind = "Gradle" }
-            else if names.contains("go.mod") { kind = "Go" }
-            else { kind = nil }
-            if let kind {
-                var candidates = [String]()
-                if kind == "JavaScript / TypeScript" { candidates = ["node_modules", ".next", ".nuxt", ".turbo", "dist", "build"] }
-                if kind == "Rust" { candidates = ["target"] }
-                if kind == "Swift / Xcode" { candidates = [".build", "DerivedData"] }
-                if kind == "Python" { candidates = [".venv", "venv", ".pytest_cache", ".mypy_cache", "__pycache__"] }
-                if kind == "Gradle" { candidates = [".gradle", "build"] }
-                let entries = candidates.compactMap { name -> InventoryEntry? in
-                    guard let item = measure(url.appendingPathComponent(name), token: token), !item.symlink else { return nil }
-                    let uncertain = name == "dist" || name == "build" || name == "venv"
-                    return InventoryEntry(item: item, category: "Project artifacts", owner: url.lastPathComponent, explanation: uncertain ? "Name-based candidate. It may contain source or hand-edited files; inspect it before selection." : "Generated output or installed dependencies associated with the project marker. Stop its tools first; rebuilding or reinstalling may be required.")
-                }
-                groups.append(ProjectGroup(root: url, kind: kind, entries: entries))
-            }
-            for child in children where !["node_modules", "target", "build", "dist", "Pods", "venv"].contains(child.lastPathComponent) {
-                let values = try? child.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
-                if values?.isDirectory == true && values?.isSymbolicLink != true && child.pathExtension != "app" && child.pathExtension != "xcodeproj" { visit(child, depth: depth + 1) }
-            }
-        }
-        visit(root, depth: 0)
-        return groups.sorted { $0.size > $1.size }
+        ProjectDiscovery.scan(root, token: token).projects
     }
+
     static func ai(home: URL = FileManager.default.homeDirectoryForCurrentUser, custom: [URL] = [], token: ScanCancellation = ScanCancellation()) -> InventoryReport {
         let roots = [("Ollama", ".ollama/models"), ("Hugging Face", ".cache/huggingface/hub"), ("Hugging Face", "Library/Caches/huggingface/hub"), ("LM Studio", ".lmstudio/models"), ("LM Studio", ".cache/lm-studio/models")]
         var report = InventoryReport()
@@ -95,23 +62,8 @@ enum InventoryService {
             if candidates.count > 150 { report.notes.append("Showing only the first 150 \(category.lowercased()) locations.") }
         }
         if token.cancelled { report.notes.append("Device inspection cancelled; results are partial."); return report }
-        let devices = CommandRunner.run("/usr/bin/xcrun", ["simctl", "list", "devices", "--json"], timeout: 20)
-        if devices.status == 0, let json = try? JSONSerialization.jsonObject(with: Data(devices.output.utf8)) as? [String: Any], let sets = json["devices"] as? [String: [[String: Any]]] {
-            for d in sets.values.flatMap({ $0 }).prefix(100) {
-                if token.cancelled { report.notes.append("Device inspection cancelled; results are partial."); return report }
-                guard let udid = d["udid"] as? String else { continue }
-                let path = (d["dataPath"] as? String).map { URL(fileURLWithPath: $0).deletingLastPathComponent() } ?? home.appendingPathComponent("Library/Developer/CoreSimulator/Devices/" + udid)
-                if let item = measure(path, token: token) { report.entries.append(InventoryEntry(item: item, category: "Simulator device", owner: d["name"] as? String ?? udid, explanation: "State: \(d["state"] as? String ?? "unknown"). Manage devices through Xcode; deleting directories directly is not offered.", removable: false)) }
-            }
-        } else { report.notes.append("Simulator device listing unavailable. \(devices.output.prefix(200))") }
-        if token.cancelled { report.notes.append("Device inspection cancelled; results are partial."); return report }
-        let runtimes = CommandRunner.run("/usr/bin/xcrun", ["simctl", "list", "runtimes", "--json"], timeout: 20)
-        if runtimes.status == 0, let json = try? JSONSerialization.jsonObject(with: Data(runtimes.output.utf8)) as? [String: Any], let list = json["runtimes"] as? [[String: Any]] {
-            for d in list {
-                let name = d["name"] as? String ?? "Runtime", version = d["version"] as? String ?? ""
-                report.notes.append("Runtime: \(name) \(version) · \((d["isAvailable"] as? Bool) == true ? "available" : "unavailable") · manage through Xcode Settings → Components.")
-            }
-        } else { report.notes.append("Runtime inventory unavailable. Open Xcode Settings to review installed runtimes.") }
+        let android = EmulatorCleanup.androidSnapshots(home: home, token: token)
+        report.entries += android.entries; report.notes += android.notes
         return report
     }
 }

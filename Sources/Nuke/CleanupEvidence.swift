@@ -65,6 +65,9 @@ enum CleanupEvidenceService {
     private static let sourceExtensions: Set<String> = ["swift", "m", "mm", "h", "c", "cc", "cpp", "hpp", "java", "kt", "kts", "rs", "go", "py", "rb", "php", "cs", "ts", "tsx", "js", "jsx", "vue", "svelte", "sh", "bash", "zsh", "sql", "dart", "ex", "exs", "lua", "r", "scala", "clj", "gradle"]
     private static let buildExtensions: Set<String> = ["o", "obj", "a", "so", "dylib", "class", "pyc", "pyd", "wasm", "map", "d", "tbd", "pdb"]
 
+    static func isSourceFile(_ url: URL) -> Bool { sourceExtensions.contains(url.pathExtension.lowercased()) }
+    static func isBuildArtifact(_ url: URL) -> Bool { buildExtensions.contains(url.pathExtension.lowercased()) || ["app", "framework", "dsym", "xcarchive"].contains(url.pathExtension.lowercased()) }
+
     static func classify(_ url: URL, gitIgnored: Bool? = nil, sourceCheck: Bool = false) -> CleanupEvidence {
         let path = url.standardizedFileURL.path
         let name = url.lastPathComponent.lowercased()
@@ -124,7 +127,7 @@ enum CleanupEvidenceService {
         return source > 0 && build == 0
     }
 
-    private static func repoRoot(for url: URL) -> URL? {
+    static func repoRoot(for url: URL) -> URL? {
         let fm = FileManager.default
         var cursor = url.hasDirectoryPath ? url : url.deletingLastPathComponent()
         for _ in 0..<24 {

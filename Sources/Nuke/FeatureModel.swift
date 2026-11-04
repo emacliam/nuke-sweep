@@ -11,6 +11,7 @@ import UniformTypeIdentifiers
     @Published var projectDocker: [ProjectDockerObject] = []
     @Published var projectContext = ""
     @Published var projectNote = ""
+    @Published var projectDiscoveryNote = ""
     @Published var projectRoot: URL?
     @Published var projectLoading = false
     @Published var projectMeasured: Date?
@@ -26,6 +27,9 @@ import UniformTypeIdentifiers
     private var projectToken = ScanCancellation()
     private var appToken = ScanCancellation()
     @Published var devices = InventoryReport()
+    @Published var simulators = SimulatorInventory()
+    @Published var simulatorActionBusy = false
+    @Published var simulatorActionResult: String?
     @Published var deviceLoading = false
     @Published var apps: [InstalledApp] = []
     @Published var appLoading = false
@@ -98,7 +102,7 @@ import UniformTypeIdentifiers
         ai = .init(); aiModels = []; aiScanned = false; aiMeasured = nil; aiLoading = false
         projects = []; projectDocker = []; projectMeasured = nil; projectLoading = false
         apps = []; selectedApp = nil; appReport = .init(); leftovers = .init(); leftoversScanned = false; appMeasured = nil; appLoading = false
-        devices = .init(); deviceMeasured = nil; deviceLoading = false
+        devices = .init(); simulators = .init(); deviceMeasured = nil; deviceLoading = false
         startup = []; startupLoading = false; duplicates = nil; duplicateLoading = false
     }
     func refreshDirtyStorage(_ page: Page) {
@@ -120,14 +124,14 @@ import UniformTypeIdentifiers
     func scanProjects(rootOverride: URL? = nil) {
         guard !projectLoading, let root = rootOverride ?? folder("Inspect projects") else { return }
         projectToken = ScanCancellation(); let token = projectToken
-        projectRoot = root; projectLoading = true; projects = []; projectNote = ""
+        projectRoot = root; projectLoading = true; projects = []; projectNote = ""; projectDiscoveryNote = ""
         let generation = storageGeneration
         Task {
-            let measured = await DiskWork.run("Inspecting projects", cancellation: token) { InventoryService.projects(root, token: token) }
-            guard generation == storageGeneration else { return }; projects = measured
+            let measured = await DiskWork.run("Inspecting projects", cancellation: token) { ProjectDiscovery.scan(root, token: token) }
+            guard generation == storageGeneration else { return }; projects = measured.projects; projectDiscoveryNote = measured.note; projectMeasured = Date(); projectLoading = false
             if token.cancelled { projectNote = "Stopped — partial project inventory."; projectMeasured = Date(); projectLoading = false; return }
             let docker = await Task.detached(priority: .utility) { ProjectDockerService.inspect() }.value
-            guard generation == storageGeneration else { return }
+            guard generation == storageGeneration, projectToken === token else { return }
             projectDocker = docker.objects; projectContext = docker.context; projectNote = docker.note; projectMeasured = Date(); projectLoading = false
         }
     }
@@ -160,7 +164,11 @@ import UniformTypeIdentifiers
         guard !deviceLoading else { return }; deviceLoading = true
         deviceToken = ScanCancellation(); let token = deviceToken
         let generation = storageGeneration
-        Task { let measured = await DiskWork.run("Inspecting devices", cancellation: token) { InventoryService.devices(token: token) }; guard generation == storageGeneration else { return }; devices = measured; deviceMeasured = Date(); deviceLoading = false }
+        Task {
+            let measured = await DiskWork.run("Inspecting devices", cancellation: token) { (InventoryService.devices(token: token), token.cancelled ? SimulatorInventory(note: "Inspection stopped.") : EmulatorCleanup.measuredSimulators(token: token)) }
+            guard generation == storageGeneration else { return }
+            devices = measured.0; simulators = measured.1; deviceMeasured = Date(); deviceLoading = false
+        }
     }
     func cancelDevices() { deviceToken.cancel() }
     func scanApps() {

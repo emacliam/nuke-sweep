@@ -19,8 +19,8 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 <key>CFBundleName</key><string>Nuke Sweep</string>
 <key>CFBundleDisplayName</key><string>Nuke Sweep</string>
 <key>CFBundlePackageType</key><string>APPL</string>
-<key>CFBundleShortVersionString</key><string>0.8.1</string>
-<key>CFBundleVersion</key><string>9</string>
+<key>CFBundleShortVersionString</key><string>0.8.2</string>
+<key>CFBundleVersion</key><string>10</string>
 <key>LSMinimumSystemVersion</key><string>14.0</string>
 <key>NSDocumentsFolderUsageDescription</key><string>Nuke Sweep measures folders you choose and moves only reviewed items to Trash.</string>
 <key>NSDownloadsFolderUsageDescription</key><string>Nuke Sweep measures downloaded files so you can review what to keep or move to Trash.</string>

@@ -140,6 +140,10 @@ python3 -m http.server 4173 --directory website
 
 Open `http://localhost:4173`. The Vercel project uses `website` as its root. Download files are versioned, signed release artifacts; update the DMG, checksum, release copy, and links together. See [website deployment notes](website/README.md).
 
+## Developer cleanup improvements
+
+The upcoming 0.8.2 source build adds partial batch reviews, cache-content review, deeper project discovery with large node_modules filters, Android snapshot cleanup, and confirmed simulator deletion. See the [developer cleanup guide](docs/DEVELOPER-CLEANUP.md) for bounds, recovery, and emulator details. The public download above remains 0.8.1 until the new release is published.
+
 ## Known limitations
 
 - An intermittent UI freeze remains unresolved. If you reproduce one, use [the hang capture guide](docs/HANG-DIAGNOSTICS.md) and review diagnostics for private information before sharing.

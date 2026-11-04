@@ -1,11 +1,17 @@
 import Foundation
 import Darwin
 
+struct ReviewBlockedItem: Identifiable, Sendable {
+    var id: String { url.path }
+    let url: URL
+    let reason: String
+}
 struct ReviewPreparation: Sendable {
     let items: [DiskItem]
     let failures: [String]
     var evidence: [String: CleanupEvidence] = [:]
     var warnings: [String] = []
+    var blocked: [ReviewBlockedItem] = []
 }
 enum ReviewPlanner {
     static func topLevel(_ items: [DiskItem]) -> [DiskItem] {
@@ -16,105 +22,137 @@ enum ReviewPlanner {
         }
         return result
     }
-    /// A cheap last line of defence: a folder that looks like a project or source root
-    /// is never moved as a whole, even if it was selected in a cleanup scope.
     static let projectMarkers: Set<String> = [".git", ".hg", ".svn", "package.json", "Package.swift", "Cargo.toml", "go.mod", "pyproject.toml", "Podfile", "composer.json", "Gemfile", "build.gradle", "build.gradle.kts", "pom.xml", "requirements.txt"]
-    static let rebuildableNames: Set<String> = ["node_modules", "dist", "build", ".next", "target", ".venv", "venv", "pods", "deriveddata", "coverage", "out", ".build", "test-results"]
+    static let rebuildableNames = CleanupEvidenceService.rebuildableNames
+    static func isProjectMarker(_ name: String) -> Bool {
+        projectMarkers.contains(name) || name.hasSuffix(".xcodeproj") || name.hasSuffix(".xcworkspace") || name.hasSuffix(".sln")
+    }
     static func looksLikeProjectRoot(_ url: URL) -> Bool {
         let own = url.lastPathComponent.lowercased()
         if own.hasSuffix(".xcodeproj") || own.hasSuffix(".xcworkspace") || own.hasSuffix(".sln") { return true }
-        let names = (try? FileManager.default.contentsOfDirectory(atPath: url.path)) ?? []
-        return names.contains { projectMarkers.contains($0) || $0.hasSuffix(".xcodeproj") || $0.hasSuffix(".xcworkspace") || $0.hasSuffix(".sln") }
+        var found = false
+        _ = try? DirectoryEntries.visit(url, shouldContinue: { !found }) { if isProjectMarker($0.lastPathComponent) { found = true } }
+        return found
     }
-    /// Looks several levels below a selected folder for evidence that it contains a
-    /// project, without descending into dependency/build stores. Inconclusive results
-    /// are treated as unsafe by the caller.
-    static func containsProjectMetadata(_ root: URL, token: ScanCancellation, limit: Int = 5_000) -> (found: Bool, complete: Bool) {
-        let deadline = Date().addingTimeInterval(2)
-        var visited = 0, found = false, complete = true
-        let skip: Set<String> = ["node_modules", ".git", ".hg", ".svn", ".venv", "venv", "pods", "carthage", "vendor", "target", "deriveddata", "coverage", ".build", "dist", "build", ".next", "out", "test-results"]
-        func walk(_ dir: URL, depth: Int) -> Bool {
-            if token.cancelled || Date() > deadline || visited >= limit { complete = false; return false }
-            do {
-                let done = try DirectoryEntries.visit(dir, shouldContinue: { !found && !token.cancelled && visited < limit && Date() <= deadline }) { child in
-                    visited += 1
-                    let name = child.lastPathComponent
-                    if projectMarkers.contains(name) || name.hasSuffix(".xcodeproj") || name.hasSuffix(".xcworkspace") || name.hasSuffix(".sln") {
-                        found = true; return
-                    }
-                    guard !skip.contains(name.lowercased()) else { return }
-                    var s = stat()
-                    guard lstat(child.path, &s) == 0, s.st_mode & mode_t(S_IFMT) == mode_t(S_IFDIR) else { return }
-                    guard depth < 4 else { complete = false; return }
-                    _ = walk(child, depth: depth + 1)
-                }
-                if !done { complete = false }
-            } catch { complete = false }
-            return found
+    /// Only built-in cache policy supplies these roots. Folder grants do not turn a
+    /// custom source tree into a managed cache. Aliases outside the cache are refused.
+    static func isManagedCache(_ url: URL, roots: [URL]) -> Bool {
+        let lexical = url.standardizedFileURL.path
+        let effective = url.resolvingSymlinksInPath().standardizedFileURL.path
+        return roots.contains { root in
+            let base = root.standardizedFileURL.path
+            guard lexical == base || lexical.hasPrefix(base + "/") else { return false }
+            let resolvedRoot = root.resolvingSymlinksInPath()
+            guard resolvedRoot.path == root.deletingLastPathComponent().resolvingSymlinksInPath().appendingPathComponent(root.lastPathComponent).path else { return false }
+            let expected = resolvedRoot.path + String(lexical.dropFirst(base.count))
+            return effective == expected
         }
-        guard !rebuildableNames.contains(root.lastPathComponent.lowercased()) else { return (false, true) }
-        found = walk(root, depth: 0)
-        return (found, complete && !token.cancelled && Date() <= deadline)
     }
-    static func prepare(_ items: [DiskItem], scopes: [CleanupScope], token: ScanCancellation = ScanCancellation()) -> ReviewPreparation {
+    /// One complete traversal measures and verifies the selected tree. Nested cache
+    /// layouts no longer fail an unrelated four-level metadata probe. Time, entry,
+    /// access, cancellation, source-control, and identity guards still fail closed.
+    static func prepare(_ items: [DiskItem], scopes: [CleanupScope], token: ScanCancellation = ScanCancellation(), managedCacheRoots: [URL] = CacheRule.all.map(\.url), openFiles: () -> [OpenFileUse] = { FileUseService.snapshot() }) -> ReviewPreparation {
         let deadline = Date().addingTimeInterval(45)
-        var fresh: [DiskItem] = [], failures: [String] = []
-        var evidence: [String: CleanupEvidence] = [:]
-        var warnings: [String] = []
+        var fresh: [DiskItem] = [], failures: [String] = [], blocked: [ReviewBlockedItem] = []
+        var evidence: [String: CleanupEvidence] = [:], warnings: [String] = []
         for original in topLevel(items) {
             if token.cancelled { return .init(items: [], failures: ["Review cancelled. No files were moved."]) }
             do {
                 try CleanupSafety.validate(original, allowedRoots: scopes)
-                guard Date() < deadline, FileIdentity.read(original.url) == original.identity else { throw CleanupSafety.SafetyError.changed }
+                try EmulatorCleanup.requireAndroidIdle(original.url)
+                guard Date() < deadline else { throw SafetyError.budget }
+                let managed = isManagedCache(original.url, roots: managedCacheRoots) || EmulatorCleanup.isAndroidSnapshot(original.url)
+                let rebuildable = rebuildableNames.contains(original.name.lowercased())
+                let ignored = CleanupEvidenceService.gitIgnored(original.url)
+                let tracked = CleanupEvidenceService.gitTracked(original.url)
+                if tracked == true { throw SafetyError.tracked }
+                if tracked == nil, CleanupEvidenceService.repoRoot(for: original.url) != nil { throw SafetyError.gitUnavailable }
+                let inspectSource = !managed && !rebuildable && ignored != true
+                if inspectSource && isProjectMarker(original.name) { throw SafetyError.projectRoot }
+                var freshItem = original
                 if original.directory && !original.symlink {
-                    let name = original.url.lastPathComponent.lowercased()
-                    let rebuildable = CleanupEvidenceService.rebuildableNames.contains(name)
-                    let hasGit = FileManager.default.fileExists(atPath: original.url.appendingPathComponent(".git").path)
-                    let ignored = CleanupEvidenceService.gitIgnored(original.url)
-                    if let tracked = CleanupEvidenceService.gitTracked(original.url), tracked { throw SafetyError.tracked }
-                    if (!rebuildable && ignored != true) || hasGit {
-                        if looksLikeProjectRoot(original.url) { throw SafetyError.projectRoot }
-                        let metadata = containsProjectMetadata(original.url, token: token)
-                        if metadata.found { throw SafetyError.projectRoot }
-                        guard metadata.complete else { throw SafetyError.unverified }
-                    }
-                    if !rebuildable, CleanupEvidenceService.looksLikeSourceDirectory(original.url) { throw SafetyError.sourceLike }
-                }
-                if original.directory && !original.symlink {
-                    let scan = DiskScanner.scan(original.url, cancellation: token, deadline: deadline)
-                    guard scan.skipped == 0 && !scan.limited else { throw CleanupSafety.SafetyError.changed }
-                    fresh.append(DiskItem(url: original.url, size: scan.logical, allocated: scan.allocated, directory: true, symlink: false, modified: nil, identity: original.identity, incomplete: false))
-                } else if let current = InventoryService.measure(original.url) { fresh.append(current) }
+                    var metadata: URL?, protected: URL?, sourceCount = 0, buildCount = 0
+                    let rootComponents = original.url.standardizedFileURL.pathComponents.count
+                    let scan = DiskScanner.scan(original.url, cancellation: token, deadline: deadline, observing: { child in
+                        let name = child.lastPathComponent
+                        if [".git", ".hg", ".svn"].contains(name.lowercased()) { protected = child }
+                        if CleanupSafety.isSensitive(child.standardizedFileURL.path) { protected = child }
+                        guard inspectSource else { return }
+                        let relativeParents = child.deletingLastPathComponent().standardizedFileURL.pathComponents.dropFirst(rootComponents)
+                        guard !relativeParents.contains(where: { rebuildableNames.contains($0.lowercased()) }) else { return }
+                        if isProjectMarker(name) { metadata = child }
+                        if CleanupEvidenceService.isSourceFile(child) { sourceCount += 1 }
+                        if CleanupEvidenceService.isBuildArtifact(child) { buildCount += 1 }
+                    })
+                    if let protected { throw SafetyError.protectedContents(protected.lastPathComponent) }
+                    if metadata != nil { throw SafetyError.projectRoot }
+                    if token.cancelled { return .init(items: [], failures: ["Review cancelled. No files were moved."]) }
+                    if scan.skipped > 0 { throw SafetyError.access(scan.accessIssues.first?.path ?? original.url.path) }
+                    guard !scan.limited else { throw SafetyError.budget }
+                    if inspectSource, sourceCount > 0, buildCount == 0 { throw SafetyError.sourceLike }
+                    guard FileIdentity.read(original.url) == original.identity else { throw CleanupSafety.SafetyError.changed }
+                    freshItem = DiskItem(url: original.url, size: scan.logical, allocated: scan.allocated, directory: true, symlink: false, modified: original.modified, identity: original.identity, incomplete: false)
+                } else if let current = InventoryService.measure(original.url), current.identity == original.identity { freshItem = current }
                 else { throw CleanupSafety.SafetyError.changed }
-                let git = evidence.count < 40 ? CleanupEvidenceService.gitIgnored(original.url) : nil
-                evidence[original.id] = CleanupEvidenceService.classify(original.url, gitIgnored: git)
-            } catch { if failures.count < 20 { failures.append(original.name + ": " + error.localizedDescription) } }
-        }
-        if failures.isEmpty && !fresh.isEmpty {
-            let uses = FileUseService.snapshot()
-            for item in fresh.prefix(24) {
-                let matching = uses.filter { use in
-                    use.path == item.url.path || (item.directory && use.path.hasPrefix(item.url.standardizedFileURL.path + "/"))
-                }
-                guard !matching.isEmpty else { continue }
-                let apps = Set(matching.map(\.process)).sorted().prefix(4).joined(separator: ", ")
-                warnings.append("\(item.name) is open in \(apps). Close those apps or builds before continuing.")
+                fresh.append(freshItem)
+                evidence[original.id] = CleanupEvidenceService.classify(original.url, gitIgnored: ignored)
+            } catch {
+                let reason = error.localizedDescription
+                failures.append(original.name + ": " + reason)
+                blocked.append(.init(url: original.url, reason: reason))
             }
         }
-        return .init(items: failures.isEmpty ? fresh : [], failures: failures, evidence: failures.isEmpty ? evidence : [:], warnings: failures.isEmpty ? warnings : [])
+        if !fresh.isEmpty {
+            let uses = openFiles()
+            for item in fresh.prefix(24) {
+                let matching = uses.filter { $0.path == item.url.path || (item.directory && $0.path.hasPrefix(item.url.standardizedFileURL.path + "/")) }
+                if !matching.isEmpty {
+                    let apps = Set(matching.map(\.process)).sorted().prefix(4).joined(separator: ", ")
+                    warnings.append("\(item.name) is open in \(apps). Close those apps or builds before continuing.")
+                }
+            }
+        }
+        if token.cancelled { return .init(items: [], failures: ["Review cancelled. No files were moved."]) }
+        return .init(items: fresh, failures: failures, evidence: evidence, warnings: warnings, blocked: blocked)
+    }
+    /// Keep cache roots and Xcode project containers, reviewing independently measured children.
+    static func prepareCacheContents(_ rule: CacheRule, scopes: [CleanupScope], token: ScanCancellation, openFiles: () -> [OpenFileUse] = { FileUseService.snapshot() }) -> ReviewPreparation {
+        let contents = cacheCandidates(at: rule.url, xcodeContainers: rule.url.lastPathComponent == "DerivedData", token: token)
+        var result = prepare(contents.items, scopes: scopes, token: token, openFiles: openFiles)
+        result.blocked += contents.blocked
+        if contents.items.isEmpty && contents.blocked.isEmpty { return .init(items: [], failures: ["No cache contents were found. No files were moved."]) }
+        return result
+    }
+    static func cacheCandidates(at root: URL, xcodeContainers: Bool, token: ScanCancellation) -> (items: [DiskItem], blocked: [ReviewBlockedItem]) {
+        var candidates: [DiskItem] = [], blocked: [ReviewBlockedItem] = [], count = 0
+        let deadline = Date().addingTimeInterval(15)
+        func collect(_ root: URL, expandXcode: Bool) {
+            do {
+                let complete = try DirectoryEntries.visit(root, shouldContinue: { !token.cancelled && Date() < deadline && count < 500 }) { child in
+                    count += 1
+                    var info = stat()
+                    guard lstat(child.path, &info) == 0 else { blocked.append(.init(url: child, reason: "Could not read this item. Check folder access.")); return }
+                    let directory = info.st_mode & mode_t(S_IFMT) == mode_t(S_IFDIR)
+                    if expandXcode && directory { collect(child, expandXcode: false); return }
+                    candidates.append(DiskItem(url: child, size: Int64(info.st_size), allocated: Int64(info.st_blocks) * 512, directory: directory, symlink: info.st_mode & mode_t(S_IFMT) == mode_t(S_IFLNK), modified: nil, identity: .init(device: UInt64(info.st_dev), inode: UInt64(info.st_ino)), incomplete: false))
+                }
+                if !complete { blocked.append(.init(url: root, reason: "Listing stopped at its limit. Browse this folder for remaining items.")) }
+            } catch { blocked.append(.init(url: root, reason: "Could not list contents: " + error.localizedDescription)) }
+        }
+        collect(root, expandXcode: xcodeContainers)
+        return (candidates, blocked)
     }
     enum SafetyError: LocalizedError {
-        case projectRoot, sourceLike, tracked, unverified
+        case projectRoot, sourceLike, tracked, gitUnavailable, budget, access(String), protectedContents(String)
         var errorDescription: String? {
             switch self {
-            case .projectRoot:
-                return "Looks like a project or source folder (contains .git or a package manifest). Nuke Sweep will not move it as a whole; open it and select build folders inside."
-            case .sourceLike:
-                return "Contains source-like files and no clear build-output signature. Nuke Sweep will not move it whole; select a build folder inside."
-            case .tracked:
-                return "Contains files tracked by git. Nuke Sweep only cleans untracked or generated storage; select an ignored build folder inside."
-            case .unverified:
-                return "Nuke Sweep could not verify every item in this folder within its safety bounds. Select a narrower folder or resolve access before cleanup."
+            case .projectRoot: return "Looks like a project or source folder (contains a package manifest or project file). Open it and select generated folders inside."
+            case .sourceLike: return "Contains source-like files and no clear build-output signature. Select a build folder inside."
+            case .tracked: return "Contains files tracked by git. Select untracked or generated storage instead."
+            case .gitUnavailable: return "Could not verify Git tracking. Check repository access and review again."
+            case .budget: return "The complete review reached its time or file limit. Browse this folder and select smaller children; no unverified contents will be moved."
+            case .access(let path): return "Could not read \(path). Resolve its access or select readable children, then review again."
+            case .protectedContents(let name): return "Contains a project or source folder with protected source-control or personal data (\(name)). Open the folder and select generated children outside it."
             }
         }
     }

@@ -18,7 +18,12 @@ struct ReceiptFinishView: View {
                         VStack(alignment: .leading, spacing: 6) {
                             Text(item.originalPath).font(.system(size: 11, weight: .medium)).textSelection(.enabled)
                             Text(item.outcome).font(.system(size: 11)).foregroundStyle(item.success ? Theme.secondary : Theme.error)
-                            if let trash = item.trashPath { Button("Show in Trash") { model.reveal(URL(fileURLWithPath: trash)) }.buttonStyle(.plain).font(.system(size: 11)) }
+                            if let trash = item.trashPath {
+                                HStack {
+                                    Button("Show in Trash") { model.reveal(URL(fileURLWithPath: trash)) }
+                                    Button(model.restoredReceiptItems.contains(item.id) ? "Restored" : "Restore to original folder") { model.restoreReceiptItem(item) }.disabled(model.actionBusy || model.restoredReceiptItems.contains(item.id))
+                                }.buttonStyle(QuietButton())
+                            }
                         }; Divider()
                     }
                 }
