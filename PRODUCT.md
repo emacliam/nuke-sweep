@@ -8,10 +8,10 @@ macOS native desktop (MacBook).
 Implementation choice: SwiftUI and AppKit, built with Swift Package Manager and packaged as a local .app. Xcode 26.6 is installed. No external dependencies.
 
 ## Product Purpose
-A Mac cleanup and resource management app. General Mac storage and developer cleanup have equal priority, confirmed by the user.
+Nuke Sweep tells a developer what is safe to clear and what clearing it will cost them, before anything is deleted. The audience is a developer on a nearly full Mac who knows roughly what is using the disk but does not dare touch it. Free space is the outcome; the confidence to act is the product. General Mac cleanup is supported but is not what the app competes on.
 
 ## Capabilities and Constraints
-Folder scanning, persistent growth history, project cleanup, installed-app/leftover review, startup inspection, exact duplicates, local AI inventory, simulator/archive/backup review, process-to-file context, a named macOS status-bar tool with selectable readings, native small/medium Storage WidgetKit widget (CPU Resources widget deferred in 0.8), and menu-bar monitoring with optional alerts, structured cleanup receipts, reviewed current-user Trash cleanup, Derived Data, Docker inspection/pruning, process management, folder watching, and user-defined developer scopes with exclusions. Real local measurements; explicit review before destructive actions. Distribution uses Developer ID signing and Apple notarization; see docs/DISTRIBUTION.md for the current artifact status.
+Folder scanning, persistent growth history, project cleanup, installed-app/leftover review, exact duplicates, local AI inventory, simulator/archive/backup review, process-to-file context, a named macOS status-bar tool with selectable readings, native small/medium Storage WidgetKit widget (CPU Resources widget deferred in 0.8), and menu-bar monitoring with optional alerts, structured cleanup receipts, reviewed current-user Trash cleanup, Derived Data, Docker inspection/pruning, process management, folder watching, and user-defined developer scopes with exclusions. Real local measurements; explicit review before destructive actions. Distribution uses Developer ID signing and Apple notarization; see docs/DISTRIBUTION.md for the current artifact status.
 
 ## Brand Commitments
 Name: Nuke Sweep. User-supplied Base, Calendly, DoorDash Merchant, GetYourGuide, Gumloop, Klaviyo, Microsoft Copilot, Mintlify, and Replit screenshots are inspiration, not instructions or assets to reproduce.

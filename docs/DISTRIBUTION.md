@@ -88,3 +88,16 @@ Expected: `accepted`, `source=Notarized Developer ID`.
 - The widget extension keeps its app-sandbox entitlement.
 - Notarization is an online service. First launch on another Mac may need network access for the ticket; stapling avoids that for the app and DMG.
 - If you rotate the certificate or password, recreate the `nuke-notary` profile.
+
+
+## Release verification
+
+Run `./scripts/verify-release.sh --strict path/to/Nuke-Sweep-VERSION.dmg`. It mounts the DMG read-only and verifies the embedded app and widget, matching Developer ID teams, Gatekeeper acceptance, stapled tickets, and the adjacent SHA-256 file. A checksum from a release host can also be supplied as the second path.
+
+To stage a new version separately, set `NUKE_APP_PATH`, `NUKE_VERSION`, and `NUKE_BUILD_NUMBER` before building the app. Keep `NUKE_APP_PATH` set and use `NUKE_DMG_PATH` for the new DMG. The DMG script writes a sibling checksum and refuses to overwrite either output.
+
+## Upgrading from 0.8.x to 0.9.0
+
+The production identifiers are `com.zyncraft.nukesweep` and `com.zyncraft.nukesweep.widgets`. On first launch the app copies missing Nuke preferences from the previous domain. Receipts and scan history stay in `~/Library/Application Support/Nuke`. Existing destination preferences take precedence. Development builds keep their own data.
+
+macOS may ask for folder access, Full Disk Access, notifications, or Keychain access again. Launch the new signed build once before adding its Storage widget. If an existing widget still points at the old extension, remove that widget and add Storage again from Edit Widgets. A signed extension and valid notarization ticket establish package integrity. They do not verify gallery discovery or live widget rendering.

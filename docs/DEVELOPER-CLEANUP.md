@@ -37,3 +37,25 @@ Settings → Updates (also available in the app menu) checks the official public
 Regression fixtures cover deep caches, nested source manifests, mixed eligible/blocked batches, cache aliases, nested large node_modules, simulator state changes, Android process checks, and release URL/version validation. Device deletion tests inject command results; they never delete real devices. No real development folders are removed during verification.
 
 Folder-tree context inspection was moved off the main thread. This removes a concrete source of UI stalls; the previously reported intermittent freeze still needs a captured hang before it can be declared resolved.
+
+
+## Expanded cache coverage
+
+Nuke Sweep also measures Yarn, Bun, Deno, uv, Poetry, Cargo registry, Maven, NuGet, CocoaPods, Hugging Face, Xcode device-support and simulator caches. These are review candidates, not automatic deletions. Re-downloading large model caches can be expensive, so review them before moving.
+
+## Docker volumes
+
+Docker → Volumes is a read-only inventory of the selected context. Nuke Sweep never prunes or removes volumes, because they can contain databases and user data. Use Docker deliberately for volume management.
+
+
+## Project kinds
+
+Project discovery recognizes JavaScript/TypeScript (including Bun, pnpm and Yarn lockfiles), Deno, Rust, Swift, Go, Python (including uv and Poetry lockfiles), Flutter/Dart, Java/Kotlin Gradle or Maven, and .NET workspaces. New scope presets cover Deno, Flutter, JVM and .NET projects. Detection is name-based evidence, not proof that an artifact is disposable.
+
+
+Projects are grouped by workspace with rebuild guidance for each detected kind. The guidance is generic and may need adjustment for your package manager or custom build; it is not executed by Nuke Sweep.
+
+
+## Possible active processes
+
+Project groups can show a green “Possibly active” label. **Check activity** combines command-line matches, the current working directories of listening TCP processes, and the working directories of common development processes (all via read-only lsof). This is still a heuristic: it can miss processes with relative working directories, IDE helpers that do not expose the project path, non-listening processes and permission-hidden entries. It is not a reason to delete or keep anything by itself.

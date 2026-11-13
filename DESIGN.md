@@ -147,7 +147,7 @@ Search uses a white plain text field, a magnifying-glass symbol, an 11-point sys
 
 ### Navigation
 
-Sidebar rows use a 13-point label, a 19-point symbol slot, 12-point horizontal and vertical padding, and seven-point corners. Selection uses semibold ink on white with native accessibility selected traits. Cleanup, Files, Apps, and History are the core destinations; Settings sits at the bottom. Cleanup tabs are Quick scan, Developer, and Trash. Projects, Docker, Devices & Xcode, and Local models keep Developer highlighted and expose a back control in the top bar. Files tabs are Browse, Duplicates, Growth, and Watchlist. Settings holds Menu bar, Permissions, Alerts, Widgets, Startup, and Processes. Tabs use 12-point type, rust selection text and a two-point rust underline. Developer offers Projects, Docker, and Devices & Xcode shortcuts; Local models appears when inventory/custom roots exist and is always reachable through More → Inspect local models. Older standalone page implementations are not additional sidebar destinations.
+Sidebar rows use a 13-point label, a 19-point symbol slot, 12-point horizontal and vertical padding, and seven-point corners. Selection uses semibold ink on white with native accessibility selected traits. Cleanup, Files, Apps, and History are the core destinations; Settings sits at the bottom. Cleanup tabs are Quick scan, Developer, and Trash. Projects, Docker, Devices & Xcode, and Local models keep Developer highlighted and expose a back control in the top bar. Files tabs are Browse, Duplicates, Growth, and Watchlist. Settings holds Menu bar, Permissions, Alerts, Widgets, Startup, Processes, Updates, and AI assist. Tabs use 12-point type, rust selection text and a two-point rust underline. Developer offers Projects, Docker, and Devices & Xcode shortcuts; Local models appears when inventory/custom roots exist and is always reachable through More → Inspect local models. Older standalone page implementations are not additional sidebar destinations.
 
 ### Files Table
 
@@ -184,6 +184,48 @@ Safety is a layered, evidence-based refusal system, not a claim that a scanner c
 For directories, review also checks the selected folder and up to four levels below it for project evidence (`.git`, package manifests, Xcode projects, and similar). A folder that looks like a project or source root is refused as a whole, with a message to select build folders inside it. Dependency/build names (`node_modules`, `dist`, `build`, `target`, `.venv`, `DerivedData`, and similar) are exempt from the copied-manifest ban unless they contain a Git repository; this avoids treating `dist/package.json` as source. A bounded source-file probe refuses folders that contain code files without any compiled/build signature, catching source trees that have no manifest. A bounded `git ls-files` probe refuses folders containing tracked files. A marker scan that exceeds its entry/deadline bounds, cannot read a level, or exceeds the depth bound is treated as unverified and refused rather than assumed safe.
 
 The review sheet re-measures folders, rechecks identities, shows partial/unknown states, and requires an acknowledgement. It labels each prepared item with cheap evidence (known cache, dependency, build output, git-ignored, project root, protected, or unknown) plus rebuild guidance, adds a git check-ignore probe for selected items, and warns when lsof observes open handles under a selection. A reviewed item with an open handle still requires the acknowledgement. “Export plan…” writes the dry-run JSON, including paths, sizes, evidence and warnings, without touching files. Normal file cleanup moves to macOS Trash; permanent Trash deletion is separate and requires the exact EMPTY confirmation. Receipts record outcomes and restoration guidance. These are strong guardrails, not a guarantee: arbitrary folders, copied manifests, files added during deletion, and user intent remain outside what Nuke can prove.
+
+### Keyboard and accessibility
+
+The Files tree supports a visible keyboard focus: up/down move, Space toggles selection, left/right collapse or expand, Return toggles a folder. Blocked and incomplete rows refuse keyboard selection. The tree exposes a hint to assistive technology. Charts retain marked values and a picker alternative. See [ACCESSIBILITY.md](docs/ACCESSIBILITY.md) for the map and known gaps.
+
+### Docker Volumes
+
+Docker lists volume names, drivers, scopes and mountpoints as read-only inventory. Volumes are excluded from every cleanup action. The UI states that volumes may contain databases and user data and points the user to Docker for deliberate management.
+
+### Visual Regression
+
+AI settings (off and on), Files, Projects, History, Growth, Processes, Developer and Docker are captured in light and dark appearance. Data pages use fixed in-memory fixtures (`--demo-fixtures`) with no session persistence and no live refresh. `scripts/check-snapshots.sh` compares current captures to baselines with a 0.5% pixel tolerance and fails on size mismatch. Baselines are versioned; current captures are ignored. This is a local GUI check, not a headless CI job.
+
+### Diagnostics Export
+
+Settings → Menu bar can export a local JSON support bundle. It includes app/build versions, system capacity and counts, provider names/flavors/models, schedule names/frequencies, and a hang-report count. It deliberately omits API keys, provider base URLs, absolute schedule paths and file contents. Export is user-initiated with a save panel.
+
+### Listening Ports
+
+Processes includes a read-only TCP listening-port inventory from `lsof`: port, address, process and PID. It is refreshed when the page opens or on demand, and the Processes search field filters by port, process or address. Permissions can hide entries; UDP is not included; a port does not prove a project is active, and no process is stopped from this view. Parsing and permission-failure behavior are unit tested; live `lsof` output is environment-dependent.
+
+### Project Groups
+
+Projects are grouped by workspace instead of one flat list. Each group shows its detected kind, total size, a reveal action and rebuild guidance appropriate to that ecosystem. Filters apply within each group, and each group has its own reviewed selection. Detection is name-based and remains advisory. A project can show a cautious “possibly active” hint when a running command contains its absolute path, or when a listening TCP process or a common development process has a current directory under the project root. Check activity refreshes this read-only mapping; it remains heuristic.
+
+### Mounted Volumes
+
+The Files toolbar lists mounted volumes with free capacity; choosing one starts the normal bounded Files scan at that root. Root, internal and external volumes are ordered predictably, hidden system volumes are skipped, and no cleanup is implied. See [VOLUMES.md](docs/VOLUMES.md).
+
+### Scheduled Scans
+
+Files → Schedules can schedule hourly, daily or weekly measurements for a folder. The scheduler runs only while the app is open and awake, runs one scan at a time, and saves only complete results through the existing Growth history path. It has no cleanup authority and no network path. Quiet hours and finish notifications are opt-in and local. See [AUTOMATION.md](docs/AUTOMATION.md).
+
+### Appearance
+
+The app follows the system appearance by default; Settings → Menu bar exposes System, Light and Dark for the main window and the menu-bar tool. Theme colors are adaptive: text and separators use system semantic colors where possible, while the cream paper, rail, surface, rust accent and status colors have explicit light and dark variants. Primary actions use charcoal in light and rust in dark with white text. The brand mark uses the primary label color so it remains visible on both backgrounds. Charts already provide labeled marks and a picker alternative; keyboard traversal and VoiceOver coverage for every custom tree remain an ongoing audit.
+
+### AI Assist
+
+AI assist is off by default in Settings. The page is a provider manager: local, DeepSeek, Anthropic, Gemini and any number of OpenAI-compatible endpoints. Keys are stored per provider in the login Keychain. Cloud endpoints require HTTPS; HTTP is restricted to 127.0.0.1, localhost or ::1. Providers can be added, edited, tested, switched or removed; removing a provider deletes its key. Plan can use a different provider/model from Explain. Plan proposals may add scope exclusions; exclusions only protect. Growth compares stored scans. A payload preview shows the exact metadata shape before use, and a session request log records provider, item name, outcome and latency without payloads.
+
+Tree rows expose “Explain with AI” on hover, for unknown/source-like evidence, and in the context menu. The cleanup review sheet offers the same action for each pending item. The tree header adds **Draft with AI**: an instruction becomes a top-level selection plan, blocked/source-like items are excluded locally, and applying only checks boxes for the normal review. Settings adds Test connection, model discovery and a hard cloud-block switch. The request sends only name, relative path, size, kind, evidence label/detail, rebuild hint, Git ignore state and scope label/policy. No file contents, source, credentials, receipt paths or absolute home paths are sent. Responses are parsed into a strict category/confidence/explanation/rebuild/risks schema and shown as an advisory card; AI cannot select, run tools, move files or override a hard block. Local inference is the privacy-preserving default; DeepSeek is an explicit cloud opt-in.
 
 ### Review Surfaces
 

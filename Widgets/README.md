@@ -21,6 +21,8 @@ A timeline requests another refresh after 15 minutes. macOS controls actual refr
 NUKE_SIGN_IDENTITY="<installed identity name or SHA-1>" ./scripts/build-app.sh
 ```
 
+The extension is linked with `-e _NSExtensionMain`, as Xcode links every app extension. Without it the binary starts at `main`, signs and registers normally, and then traps inside ExtensionFoundation on its first system launch; run directly, a correctly linked build prints "An XPC Service cannot be run directly." instead of trapping.
+
 The extension requests only App Sandbox. It does not request App Groups, network, Full Disk Access, or notification privileges. The host app retains its existing cleanup access model.
 
 A local ad-hoc extension may be rejected or omitted by the widget gallery. A signed development build can be used for local testing; public distribution still needs an appropriate signing/notarization workflow. Never disable Gatekeeper or other OS security protections to install a widget.
