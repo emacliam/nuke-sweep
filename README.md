@@ -10,13 +10,13 @@ Nuke Sweep tells a developer what is safe to clear and what clearing it will cos
 
 Reviewed items move to Trash with a receipt and a way back. Nothing is selected for you, and every item is rechecked at the moment it moves.
 
-**In the source, not yet in the 0.8.2 download:** a one-button check of the whole Mac that ends on how much can be cleared and how much of that regenerates by itself; rebuild cost and last-use shown per item; a warning that holds back anything with no copy anywhere else (not regenerable and not in Time Machine scope); a check that Put Back will work before items move; an optional weekly check that notifies when clearable space has grown and names the locations that grew; a low-storage alert that runs the check first and says what grew and what can go; a first-run walkthrough for Full Disk Access, with a notice when a result is a lower bound without it; an opt-in automatic cleanup, described below; and a search of your own files during the check, also described below. The source also drops four things that were a system monitor's job rather than a cleanup tool's: the Processes and Startup pages, the in-app Widgets page, the live single-folder watch and the sustained-CPU alert. Scheduled folder scans remain, under Files → Schedules.
+**New in 0.9.0:** a one-button check of the whole Mac that ends on how much can be cleared and how much of that regenerates by itself; rebuild cost and last-use shown per item; a warning that holds back anything with no copy anywhere else (not regenerable and not in Time Machine scope); a check that Put Back will work before items move; an optional weekly check that notifies when clearable space has grown and names the locations that grew; a low-storage alert that runs the check first and says what grew and what can go; a first-run walkthrough for Full Disk Access, with a notice when a result is a lower bound without it; an opt-in automatic cleanup, described below; and a search of your own files during the check, also described below. The source also drops four things that were a system monitor's job rather than a cleanup tool's: the Processes and Startup pages, the in-app Widgets page, the live single-folder watch and the sustained-CPU alert. Scheduled folder scans remain, under Files → Schedules.
 
-**Version 0.8.2 is an early release.** Cleanup requires review, and backups are recommended. An intermittent freeze was reported in this release; see [known limitations](#known-limitations).
+**0.9.0 release candidate.** The public download is listed on the website after release verification. See [known limitations](#known-limitations).
 
 ## Download
 
-[**Download Nuke Sweep 0.8.2 for Mac**](https://sweep.zyncraft.com/downloads/Nuke-Sweep-0.8.2.dmg)
+[**Download Nuke Sweep for Mac**](https://sweep.zyncraft.com/#download)
 
 - **Requirements:** macOS Sonoma 14 or later, **Apple silicon** (M-series Mac).
 - **Distribution:** Developer ID signed, notarized by Apple, and stapled for offline ticket verification.
@@ -27,7 +27,7 @@ Apple notarization checks malware and signing requirements; it is not a review o
 
 ## Install
 
-1. Download and open `Nuke-Sweep-0.8.2.dmg`.
+1. Download and open the Nuke Sweep DMG.
 2. Drag **Nuke Sweep** to the **Applications** shortcut.
 3. Eject the disk image, then open Nuke Sweep from Applications.
 4. Start in **Cleanup** to measure common build-up, or **Files** to select a folder.
@@ -111,7 +111,7 @@ shasum -a 256 -c SHA256SUMS.txt
 You can also check Apple’s signature and approval:
 
 ```sh
-spctl -a -t open --context context:primary-signature -vv Nuke-Sweep-0.8.2.dmg
+spctl -a -t open --context context:primary-signature -vv Nuke-Sweep-0.9.0.dmg
 ```
 
 Expected: `accepted`, `source=Notarized Developer ID`.
