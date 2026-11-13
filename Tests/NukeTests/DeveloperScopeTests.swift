@@ -50,6 +50,7 @@ final class DeveloperScopeTests: XCTestCase {
     func testPresetsAreSafeRelativeStartingPoints() {
         let ids = DeveloperScopePreset.all.map(\.id)
         XCTAssertEqual(Set(ids).count, ids.count)
+        for id in ["deno", "flutter", "jvm", "dotnet"] { XCTAssertTrue(ids.contains(id), id) }
         for preset in DeveloperScopePreset.all {
             XCTAssertFalse(preset.exclusions.isEmpty)
             XCTAssertTrue(preset.scope.cleanupAllowed)
@@ -59,5 +60,30 @@ final class DeveloperScopeTests: XCTestCase {
 
     private func blocks(_ scope: DeveloperScope, _ url: URL) -> Bool {
         scope.blocksSelection(DiskItem(url: url, size: 0, allocated: 0, directory: true, symlink: false, modified: nil, identity: nil, incomplete: false))
+    }
+}
+
+final class PlanScopeTests: XCTestCase {
+    func testApplyingExclusionsUsesRelativePathsAndDeduplicates() throws {
+        let root = URL(fileURLWithPath: "/tmp/nuke-plan-scope-\(UUID().uuidString)")
+        let existing = DeveloperScope(label: "Example", path: root.path, cleanupAllowed: false, exclusions: ["src"])
+        let additions = [
+            root.appendingPathComponent("src"),
+            root.appendingPathComponent("node_modules"),
+            URL(fileURLWithPath: "/tmp/outside-project/cache")
+        ]
+        let scope = DeveloperScope.applyingPlanExclusions(root: root, existing: existing, additions: additions)
+        XCTAssertEqual(scope.exclusions, ["src", "node_modules"])
+        XCTAssertFalse(scope.cleanupAllowed)
+        XCTAssertEqual(scope.id, existing.id)
+    }
+
+    func testApplyingExclusionsCreatesAScopeWhenMissing() {
+        let root = URL(fileURLWithPath: "/tmp/nuke-plan-new-\(UUID().uuidString)")
+        let scope = DeveloperScope.applyingPlanExclusions(root: root, existing: nil, additions: [root.appendingPathComponent("dist")])
+        XCTAssertEqual(scope.path, root.standardizedFileURL.path)
+        XCTAssertEqual(scope.exclusions, ["dist"])
+        XCTAssertTrue(scope.cleanupAllowed)
+        XCTAssertEqual(scope.label, root.lastPathComponent)
     }
 }

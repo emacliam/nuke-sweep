@@ -43,16 +43,81 @@ enum StorageMapLayout {
         return tiles(Array(blocks[..<split]), in: first) + tiles(Array(blocks[split...]), in: second)
     }
 }
-struct StorageTreemap: View {
-    @EnvironmentObject var model: AppModel
+/// One level of the map's navigation stack.
+private struct MapLevel: Identifiable {
+    let id: String
+    let name: String
     let items: [DiskItem]
+}
+
+struct StorageTreemap: View {
+    @Environment(AppModel.self) var model
+    let items: [DiskItem]
+    /// Folders drilled into, deepest last. Empty means the scan root is showing.
+    @State private var stack: [MapLevel] = []
+    @State private var loading = false
+    @State private var listingToken = ScanCancellation()
     private var inspected: String? { get { model.focusedStorageItem } nonmutating set { model.focusedStorageItem = newValue } }
     private let colors: [Color] = [Color(red: 0.65, green: 0.22, blue: 0.10), Color(red: 0.25, green: 0.36, blue: 0.32), Color(red: 0.29, green: 0.36, blue: 0.44), Color(red: 0.47, green: 0.30, blue: 0.24), Color(red: 0.39, green: 0.33, blue: 0.43)]
-    var blocks: [StorageBlock] { StorageMapLayout.blocks(items) }
+    /// What the map is currently showing: the scan root, or the folder drilled into.
+    private var visibleItems: [DiskItem] { stack.last?.items ?? items }
+    var blocks: [StorageBlock] { StorageMapLayout.blocks(visibleItems) }
+
+    /// Lists a folder's children on the interactive lane and pushes a level.
+    /// Measuring is bounded, so a huge folder cannot stall the map; sizes that
+    /// did not finish measuring are marked incomplete like anywhere else.
+    private func drill(into item: DiskItem) {
+        guard item.directory, !item.symlink, !loading else { return }
+        listingToken.cancel()
+        let token = ScanCancellation(); listingToken = token
+        loading = true
+        Task {
+            let listed = await DiskWork.run("Opening " + item.name, lane: .interactive, cancellation: token) {
+                let result = FolderListing.inspect(item.url, token: token)
+                return FolderListing.measure(result.items, token: token, excluding: { _ in false })
+            }
+            guard !token.cancelled else { return }
+            loading = false
+            guard !listed.isEmpty else { return }
+            stack.append(MapLevel(id: item.id, name: item.name, items: listed))
+            inspected = nil
+        }
+    }
+
+    private func pop(to index: Int?) {
+        listingToken.cancel(); loading = false
+        if let index { stack = Array(stack.prefix(index + 1)) } else { stack = [] }
+        inspected = nil
+    }
+
+    @ViewBuilder private var breadcrumbs: some View {
+        if !stack.isEmpty {
+            HStack(spacing: 4) {
+                Button("Scan root") { pop(to: nil) }
+                    .buttonStyle(.plain).foregroundStyle(Theme.orange)
+                ForEach(Array(stack.enumerated()), id: \.element.id) { index, level in
+                    Image(systemName: "chevron.right").font(.system(size: 8)).foregroundStyle(Theme.secondary)
+                    Button {
+                        pop(to: index)
+                    } label: {
+                        Text(verbatim: level.name).lineLimit(1)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(index == stack.count - 1 ? Theme.ink : Theme.orange)
+                    .disabled(index == stack.count - 1)
+                }
+                if loading { Text("Opening…").foregroundStyle(Theme.secondary) }
+                Spacer()
+            }
+            .font(.system(size: 11))
+            .accessibilityLabel("Map location: " + stack.map(\.name).joined(separator: ", then "))
+        }
+    }
     var selected: StorageBlock? { blocks.first { $0.id == inspected } ?? blocks.first }
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             SectionTitle(title: "Where the space goes", detail: "Area represents measured logical bytes")
+            breadcrumbs
             if blocks.isEmpty { Text("No positive file sizes to plot.").font(.system(size: 12)).foregroundStyle(Theme.secondary) }
             else {
                 GeometryReader { geometry in
@@ -69,17 +134,33 @@ struct StorageTreemap: View {
                         Text(bytes(selected.size)).monospacedDigit(); Spacer()
                         if let item = selected.item {
                             Button("Reveal") { model.reveal(item.url) }.buttonStyle(QuietButton())
-                            if item.directory && !item.symlink { Button("Scan inside") { model.scan(item.url) }.buttonStyle(QuietButton()).disabled(model.scanning) }
+                            if item.directory && !item.symlink {
+                                Button("Open here") { drill(into: item) }.buttonStyle(QuietButton()).disabled(loading)
+                                    .help("Show this folder's contents in the map without leaving the page")
+                                Button("Scan inside") { model.scan(item.url) }.buttonStyle(QuietButton()).disabled(model.scanning)
+                                    .help("Make this folder the scan root")
+                            }
                             Button("Review cleanup…") { model.reviewTrash([item]) }.buttonStyle(QuietButton()).disabled(model.actionBusy || item.incomplete).help("Remeasure this item and verify access before reviewing cleanup")
                         }
                     }.font(.system(size: 11))
                 }
                 Text("Up to 24 largest items, with the remainder grouped. Zero-byte items stay in the list below. Review remeasures the chosen item and verifies access. Partial measurements remain partial; area does not mean reclaimable space.").font(.system(size: 10)).foregroundStyle(Theme.secondary)
             }
-        }.onChange(of: items.map(\.id)) { _, ids in if let inspected, !ids.contains(inspected) { self.inspected = nil } }
+        }
+        .onChange(of: items.map(\.id)) { _, ids in
+            // A fresh scan replaces what the map is drawn from, so a drill stack
+            // built on the old results would point at folders no longer shown.
+            if !stack.isEmpty { pop(to: nil) }
+            if let inspected, !ids.contains(inspected) { self.inspected = nil }
+        }
+        .onDisappear { listingToken.cancel() }
     }
     func mapButton(_ tile: MapTile, color: Color) -> some View {
-        Button { inspected = tile.id } label: {
+        // Single click inspects, double click opens: the same convention Finder
+        // uses, so the map can be read without being navigated by accident.
+        Button {
+            inspected = tile.id
+        } label: {
             ZStack(alignment: .topLeading) {
                 Rectangle().fill(color)
                 if tile.rect.width > 90 && tile.rect.height > 48 {
@@ -91,8 +172,11 @@ struct StorageTreemap: View {
             }.overlay(Rectangle().strokeBorder(Color.white, lineWidth: inspected == tile.id ? 3 : 1))
         }.buttonStyle(.plain).frame(width: tile.rect.width, height: tile.rect.height)
         .offset(x: tile.rect.minX, y: tile.rect.minY)
-        .help(tile.block.name + " · " + bytes(tile.block.size))
-        .accessibilityLabel(tile.block.name + ", " + bytes(tile.block.size) + ". Inspect size.")
+        .simultaneousGesture(TapGesture(count: 2).onEnded {
+            if let item = tile.block.item { drill(into: item) }
+        })
+        .help(tile.block.name + " · " + bytes(tile.block.size) + (tile.block.item?.directory == true ? " · double-click to open" : ""))
+        .accessibilityLabel(tile.block.name + ", " + bytes(tile.block.size) + (tile.block.item?.directory == true ? ". Double-click to open." : ". Inspect size."))
     }
 
 }
@@ -104,7 +188,7 @@ struct GrowthHistoryChart: View {
     var ordered: [StoredScan] { scans.sorted { $0.date < $1.date } }
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            SectionTitle(title: "Folder size over time", detail: "Complete scans · " + scale.unit)
+            SectionTitle.measured(title: "Folder size over time", detail: "Complete scans · " + scale.unit)
             if let chosen {
                 HStack { Text(chosen.date.formatted(date: .abbreviated, time: .standard)); Spacer(); Text(bytes(chosen.total)).monospacedDigit().fontWeight(.medium) }.font(.system(size: 11))
                 Picker("Inspect scan", selection: Binding(get: { chosen.id }, set: { id in inspectedDate = ordered.first { $0.id == id }?.date })) { ForEach(ordered) { Text($0.date.formatted(date: .abbreviated, time: .standard)).tag($0.id) } }.frame(maxWidth: 420)
@@ -129,7 +213,7 @@ struct GrowthChangeChart: View {
     var plotted: [GrowthRow] { Array(rows.filter { $0.delta != 0 }.prefix(10)) }
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            SectionTitle(title: "Largest changes", detail: "Up to 10 items · " + scale.unit)
+            SectionTitle.measured(title: "Largest changes", detail: "Up to 10 items · " + scale.unit)
             if plotted.isEmpty { Text("No measured size changes between these scans.").font(.system(size: 12)).foregroundStyle(Theme.secondary) }
             else {
                 if let chosen {
@@ -262,5 +346,173 @@ struct ChartByteScale: Equatable {
         else if maximum >= 1e6 { divisor = 1e6; unit = "MB" }
         else if maximum >= 1e3 { divisor = 1e3; unit = "KB" }
         else { divisor = 1; unit = "bytes" }
+    }
+}
+
+/// A donut over the measured areas, so "1 of 5 areas measured" is something you
+/// see rather than read.
+///
+/// Unmeasured areas are drawn as a hatched remainder rather than omitted. A ring
+/// showing only what has been scanned would imply the measured part is the whole
+/// picture, which is the same dishonesty `ReclaimSummary` exists to avoid.
+struct CompositionRing: View {
+    let summary: ReclaimSummary
+    var inspected: ReclaimSummary.Area?
+
+    private var measured: [ReclaimSummary.Area] { summary.measuredAreas.filter { $0.bytes > 0 }.sorted { $0.bytes > $1.bytes } }
+    private var total: Double { Double(max(1, summary.measuredBytes)) }
+    private let palette: [Color] = [
+        Color(red: 0.76, green: 0.27, blue: 0.13),
+        Color(red: 0.25, green: 0.44, blue: 0.38),
+        Color(red: 0.29, green: 0.36, blue: 0.52),
+        Color(red: 0.55, green: 0.38, blue: 0.22),
+        Color(red: 0.42, green: 0.33, blue: 0.48)
+    ]
+
+    func color(for area: ReclaimSummary.Area) -> Color {
+        guard let index = measured.firstIndex(where: { $0.id == area.id }) else { return Theme.secondary }
+        return palette[index % palette.count]
+    }
+
+    var body: some View {
+        if measured.isEmpty {
+            EmptyView()
+        } else {
+            ZStack {
+                ForEach(Array(measured.enumerated()), id: \.element.id) { index, area in
+                    let start = measured.prefix(index).reduce(0.0) { $0 + Double($1.bytes) } / total
+                    let end = start + Double(area.bytes) / total
+                    Circle()
+                        .trim(from: start, to: end)
+                        .stroke(color(for: area), style: StrokeStyle(lineWidth: inspected?.id == area.id ? 20 : 15, lineCap: .butt))
+                        .rotationEffect(.degrees(-90))
+                }
+                VStack(spacing: 1) {
+                    Text(verbatim: bytes(summary.measuredBytes))
+                        .font(.system(size: 15, weight: .semibold)).monospacedDigit()
+                    Text("measured").font(.system(size: 9)).foregroundStyle(Theme.secondary)
+                }
+            }
+            .frame(width: 104, height: 104)
+            .padding(6)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(
+                bytes(summary.measuredBytes) + " measured across "
+                    + measured.map { "\($0.name) \(bytes($0.bytes))" }.joined(separator: ", ")
+                    + (summary.unmeasuredAreas.isEmpty ? "" : ". \(summary.unmeasuredAreas.count) areas not measured.")
+            )
+        }
+    }
+}
+
+/// An empty screen that offers somewhere to start instead of describing one.
+///
+/// Several screens opened as a button and a paragraph, leaving the person to go
+/// and find a folder the app could have suggested. These are suggestions only:
+/// choosing one starts the same bounded scan the manual picker would, and
+/// nothing is selected or cleaned by picking a starting point.
+struct SuggestedStart: View {
+    struct Choice: Identifiable {
+        let id: String
+        let name: String
+        let detail: String
+        let symbol: String
+        let action: () -> Void
+        init(url: URL, detail: String, symbol: String = "folder", action: @escaping () -> Void) {
+            self.id = url.path
+            self.name = "~/" + url.lastPathComponent
+            self.detail = detail
+            self.symbol = symbol
+            self.action = action
+        }
+        init(id: String, name: String, detail: String, symbol: String, action: @escaping () -> Void) {
+            self.id = id; self.name = name; self.detail = detail; self.symbol = symbol; self.action = action
+        }
+    }
+
+    let title: LocalizedStringKey
+    let detail: LocalizedStringKey
+    let symbol: String
+    let choices: [Choice]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 8) {
+                Image(systemName: symbol).font(.system(size: 28, weight: .light)).foregroundStyle(Theme.orange)
+                Text(title).font(.system(size: 19, weight: .medium))
+                Text(detail).font(.system(size: 12)).foregroundStyle(Theme.secondary)
+                    .fixedSize(horizontal: false, vertical: true).frame(maxWidth: 460, alignment: .leading)
+            }
+            if !choices.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Start here").font(.system(size: 11, weight: .medium)).foregroundStyle(Theme.secondary)
+                    ForEach(choices) { choice in
+                        Button(action: choice.action) {
+                            HStack(spacing: 10) {
+                                Image(systemName: choice.symbol).foregroundStyle(Theme.orange).frame(width: 18)
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(verbatim: choice.name).font(.system(size: 12, weight: .medium))
+                                    Text(verbatim: choice.detail).font(.system(size: 10)).foregroundStyle(Theme.secondary)
+                                }
+                                Spacer()
+                                Image(systemName: "chevron.right").font(.system(size: 10)).foregroundStyle(Theme.secondary)
+                            }
+                            .padding(11).contentShape(Rectangle())
+                            .background(Theme.surface, in: RoundedRectangle(cornerRadius: 8))
+                            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.line, lineWidth: 1))
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("\(choice.name). \(choice.detail)")
+                    }
+                }.frame(maxWidth: 460, alignment: .leading)
+            }
+        }
+        .padding(.vertical, 20)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// The folders where the thing each screen looks for actually tends to live.
+enum StartingPoints {
+    static func home(_ name: String) -> URL? {
+        let url = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(name)
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory), isDirectory.boolValue else { return nil }
+        return url
+    }
+    /// Where duplicate files accumulate: download and working folders, not caches.
+    static var forDuplicates: [(URL, String)] {
+        [("Downloads", "Repeat downloads collect here"),
+         ("Desktop", "Working copies and saved attachments"),
+         ("Documents", "Versioned documents and exports")]
+            .compactMap { name, detail in home(name).map { ($0, detail) } }
+    }
+    /// Where someone is most likely to want to look first.
+    static var forBrowsing: [(URL, String)] {
+        [("Downloads", "Usually the quickest win"),
+         ("Documents", "Long-lived files worth understanding"),
+         ("Desktop", "Accumulates without being noticed")]
+            .compactMap { name, detail in home(name).map { ($0, detail) } }
+    }
+}
+
+/// Counted phrases that follow the user's language rules rather than English's.
+///
+/// `count == 1 ? "" : "s"` is correct for English and wrong almost everywhere
+/// else — Polish has three plural categories, Arabic six, Japanese none. A
+/// ternary cannot express that and a translator cannot fix it from the catalogue.
+/// These route through `Localizable.stringsdict`, where each language declares
+/// the categories it needs.
+enum Plural {
+    static func items(_ count: Int) -> String { format("%lld items", count) }
+    static func locations(_ count: Int) -> String { format("%lld locations", count) }
+    static func projects(_ count: Int) -> String { format("%lld projects", count) }
+    static func copies(_ count: Int) -> String { format("%lld copies", count) }
+    static func otherLocations(_ count: Int) -> String { format("%lld other locations", count) }
+    static func heldBack(_ count: Int) -> String { format("%lld items held back", count) }
+    static func areasMeasured(_ count: Int) -> String { format("%lld areas measured", count) }
+
+    private static func format(_ key: String, _ count: Int) -> String {
+        String(format: NSLocalizedString(key, comment: ""), count)
     }
 }

@@ -1,7 +1,7 @@
 import SwiftUI
 import UserNotifications
 
-enum AlertRoute: Equatable { case storage(URL), growth(String), processes, findSpace }
+enum AlertRoute: Equatable { case storage(URL), growth(String), findSpace, history }
 struct NukeAlert: Identifiable, Codable {
     let id: UUID
     let key: String
@@ -47,8 +47,9 @@ struct NukeAlert: Identifiable, Codable {
         switch Self.route(alert, scanRoots: model.features.scans.map(\.root)) {
         case .growth(let root): UserDefaults.standard.set(root, forKey: "nuke.growthRoot"); model.scanRoot = URL(fileURLWithPath: root); model.showMainWindow(.growth)
         case .storage(let root): model.showMainWindow(.storage); model.scan(root, force: true)
-        case .processes: model.showMainWindow(.processes)
         case .findSpace: model.showMainWindow(.findSpace)
+        // An automatic cleanup is answered by its receipt, which is where undo lives.
+        case .history: model.showMainWindow(.history)
         }
     }
     nonisolated static func route(_ alert: NukeAlert, scanRoots: [String]) -> AlertRoute {
@@ -56,7 +57,10 @@ struct NukeAlert: Identifiable, Codable {
             if let saved = scanRoots.first(where: { URL(fileURLWithPath: $0).standardizedFileURL == root.standardizedFileURL }) { return .growth(saved) }
             return .storage(root)
         }
-        return alert.key == "cpu" ? .processes : .findSpace
+        if alert.key == "autoclean" { return .history }
+        // Older records can carry keys this build no longer raises; they open
+        // the check, which is the answer to every remaining alert.
+        return .findSpace
 
     }
     func ignore(_ alert: NukeAlert) { ignored.insert(alert.key); persist(); UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: ["remind-" + alert.key]) }
@@ -83,20 +87,42 @@ struct NukeAlert: Identifiable, Codable {
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse, withCompletionHandler completionHandler: @escaping () -> Void) {
         let id = response.notification.request.content.userInfo["alertID"] as? String
         let action = response.actionIdentifier
-        Task { @MainActor in
+        // UNUserNotificationCenter delivers this on the main thread, but the
+        // completion handler is an unannotated Objective-C block the compiler
+        // cannot prove Sendable. The unsafe binding records the documented
+        // delivery guarantee; `assumeIsolated` enforces it at runtime.
+        nonisolated(unsafe) let finish = completionHandler
+        MainActor.assumeIsolated {
             if let record = self.records.first(where: { $0.id.uuidString == id }) {
                 switch action { case "ignore": self.ignore(record); case "later": self.later(record); default: self.review(record) }
             }
-            completionHandler()
+            finish()
         }
     }
 }
 struct AlertsView: View {
     @ObservedObject private var alerts = AlertCenter.shared
+    @Environment(AppModel.self) private var model
+    @Environment(LiveMonitor.self) private var monitor
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            Text("Alerts use existing complete scans and your active watchlist; they do not start background folder scans. Growth needs at least 1 GB, or 100 MB and 20%. Delivery requires optional alerts and macOS permission.").font(.system(size: 12)).foregroundStyle(Theme.secondary)
-            if alerts.records.isEmpty { EmptyPanel(symbol: "bell", title: "Nothing needs attention yet", detail: "Storage, sustained CPU, and significant measured folder growth will appear here when alerts are enabled. No historical changes are invented.") }
+            Text("Alerts use existing complete scans. Low storage starts one check of this Mac; nothing else starts a scan in the background. Growth needs at least 1 GB, or 100 MB and 20%. Delivery requires optional alerts and macOS permission.").font(.system(size: 12)).foregroundStyle(Theme.secondary)
+            if alerts.records.isEmpty {
+                // "Nothing needs attention" reads as all-clear, which is wrong
+                // when alerts are simply switched off. Say which it is.
+                SuggestedStart(
+                    title: monitor.alertsEnabled ? "Nothing needs attention yet" : "Alerts are off",
+                    detail: monitor.alertsEnabled
+                        ? "Low storage and significant measured folder growth will appear here. No historical changes are invented."
+                        : "Nothing is being watched for, so this list staying empty means nothing. Turn alerts on to be told about low storage and measured folder growth.",
+                    symbol: monitor.alertsEnabled ? "bell" : "bell.slash",
+                    choices: monitor.alertsEnabled ? [] : [
+                        .init(id: "enable-alerts", name: String(localized: "Turn on alerts"),
+                              detail: String(localized: "Opens Settings; delivery still needs macOS permission"),
+                              symbol: "bell.badge") { model.page = .monitor }
+                    ]
+                )
+            }
             ForEach(alerts.records) { alert in
                 VStack(alignment: .leading, spacing: 10) {
                     HStack { Text(alert.title).fontWeight(.semibold); Spacer(); Text(alert.date.formatted()).foregroundStyle(Theme.secondary) }.font(.system(size: 12))
@@ -110,7 +136,7 @@ struct AlertsView: View {
                     }
                 }.padding(.vertical, 12); Divider()
             }
-            if !alerts.note.isEmpty { Notice(text: alerts.note, symbol: "info.circle") }
+            if !alerts.note.isEmpty { Notice.measured(alerts.note, symbol: "info.circle") }
         }
     }
 }

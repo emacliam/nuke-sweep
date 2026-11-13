@@ -2,7 +2,7 @@ import SwiftUI
 import AppKit
 
 struct TrashCleanupView: View {
-    @EnvironmentObject var model: AppModel
+    @Environment(AppModel.self) var model
     @State private var review: TrashDeletionPlan?
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -13,10 +13,16 @@ struct TrashCleanupView: View {
                 Button("Scan Trash") { model.inspectTrash() }.buttonStyle(PrimaryButton()).disabled(model.trashLoading || model.actionBusy)
             }
             Text("Inspects ~/.Trash on your home volume. External-drive Trash is not included.").font(.system(size: 11)).foregroundStyle(Theme.secondary)
-            if let error = model.trashError, !model.trashLoading {
-                Notice(text: error, symbol: "exclamationmark.triangle")
+            if model.trashLoading {
+                BusyLine(text: "Reading Trash…")
+            } else if let error = model.trashError {
+                Text("Trash contents unavailable").font(.system(size: 15, weight: .semibold))
+                Notice.measured(error, symbol: "exclamationmark.triangle")
                 AccessRecovery()
             } else if let snapshot = model.trashSnapshot {
+                if !snapshot.complete {
+                    Notice(text: "Only part of Trash could be inspected. You can see the items found so far. Scan again or use Finder before permanently deleting items.", symbol: "exclamationmark.triangle")
+                }
                 if snapshot.entries.isEmpty {
                     EmptyPanel(symbol: "trash", title: "Nothing to empty", detail: "This Trash folder is empty. Items you move to Trash will appear after the next scan.")
                 } else {
@@ -28,29 +34,29 @@ struct TrashCleanupView: View {
                     HStack {
                         Button(model.trashSelected.count == snapshot.entries.count ? "Deselect all" : "Select all") {
                             model.trashSelected = model.trashSelected.count == snapshot.entries.count ? [] : Set(snapshot.entries.map(\.id))
-                        }.buttonStyle(.borderless)
+                        }.buttonStyle(.borderless).disabled(!snapshot.complete)
                         Spacer(); Text("Largest first").foregroundStyle(Theme.secondary)
                     }.font(.system(size: 11))
                     LazyVStack(spacing: 0) {
                         ForEach(snapshot.entries) { entry in
                             HStack(spacing: 12) {
-                                Toggle("Select \(entry.item.name)", isOn: Binding(get: { model.trashSelected.contains(entry.id) }, set: { if $0 { model.trashSelected.insert(entry.id) } else { model.trashSelected.remove(entry.id) } })).labelsHidden().toggleStyle(.checkbox)
+                                Toggle("Select \(entry.item.name)", isOn: Binding(get: { model.trashSelected.contains(entry.id) }, set: { if $0 { model.trashSelected.insert(entry.id) } else { model.trashSelected.remove(entry.id) } })).labelsHidden().toggleStyle(.checkbox).disabled(!snapshot.complete)
                                 Image(systemName: entry.item.symlink ? "link" : entry.item.directory ? "folder" : "doc").foregroundStyle(Theme.secondary)
                                 Text(entry.item.name).font(.system(size: 12, weight: .medium)).lineLimit(1).truncationMode(.middle)
                                 Spacer()
                                 Text(bytes(entry.item.size)).font(.system(size: 11)).monospacedDigit()
-                                Button { model.reveal(entry.item.url) } label: { Image(systemName: "arrow.up.forward.square") }.buttonStyle(.plain).help("Reveal in Finder")
+                                Button { model.reveal(entry.item.url) } label: { Image(systemName: "arrow.up.forward.square") }.buttonStyle(.plain).help("Reveal in Finder").accessibilityLabel("Reveal item in Finder")
                             }.padding(14)
                             Divider()
                         }
-                    }.background(.white).clipShape(RoundedRectangle(cornerRadius: 9)).overlay(RoundedRectangle(cornerRadius: 9).stroke(Theme.line))
+                    }.background(Theme.surface).clipShape(RoundedRectangle(cornerRadius: 9)).overlay(RoundedRectangle(cornerRadius: 9).stroke(Theme.line))
                     Notice(text: "Emptying Trash permanently deletes files. Logical size is not guaranteed recovered space: hard links, APFS sharing, and snapshots can affect the result. New top-level arrivals are excluded; changed items require a new scan.", symbol: "exclamationmark.triangle")
                     HStack {
                         Text("\(model.trashSelected.count) selected").font(.system(size: 11))
                         Spacer()
                         Button(model.trashSelected.count == snapshot.entries.count ? "Review emptying Trash…" : "Review selected…") {
                             review = TrashDeletionPlan(entries: snapshot.entries.filter { model.trashSelected.contains($0.id) }, rootIdentity: snapshot.rootIdentity)
-                        }.buttonStyle(PrimaryButton()).disabled(model.trashSelected.isEmpty || model.actionBusy)
+                        }.buttonStyle(PrimaryButton()).disabled(!snapshot.complete || model.trashSelected.isEmpty || model.actionBusy)
                     }
                 }
             }
@@ -65,7 +71,7 @@ private struct TrashDeletionPlan: Identifiable {
     let rootIdentity: FileIdentity
 }
 private struct PermanentTrashReview: View {
-    @EnvironmentObject var model: AppModel
+    @Environment(AppModel.self) var model
     @Environment(\.dismiss) var dismiss
     let plan: TrashDeletionPlan
     @State private var confirmation = ""

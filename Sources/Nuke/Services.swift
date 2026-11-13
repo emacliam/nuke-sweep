@@ -66,7 +66,7 @@ enum DiskScanner {
                 }
             }
             if !isDir && !link { categories[GrowthComparison.category(url), default: 0] += logical }
-            return DiskItem(url: url, size: logical, allocated: allocated, directory: isDir, symlink: link, modified: Date(timeIntervalSince1970: Double(s.st_mtimespec.tv_sec)), identity: FileIdentity(device: UInt64(s.st_dev), inode: UInt64(s.st_ino)), incomplete: incomplete)
+            return DiskItem(url: url, size: logical, allocated: allocated, directory: isDir, symlink: link, modified: Date(timeIntervalSince1970: Double(s.st_mtimespec.tv_sec)), accessed: Date(timeIntervalSince1970: Double(s.st_atimespec.tv_sec)), identity: FileIdentity(device: UInt64(s.st_dev), inode: UInt64(s.st_ino)), incomplete: incomplete)
         }
         var items: [DiskItem] = []
         do {
@@ -92,16 +92,17 @@ struct CommandResult: Sendable {
 }
 enum CommandRunner {
     private static let lock = NSLock()
-    private static var active: [Int32: Process] = [:]
+    // Guarded by `lock`; see DiskWork for the same pattern.
+    nonisolated(unsafe) private static var active: [Int32: Process] = [:]
     static func shutdown() {
         lock.lock(); let children = Array(active.values); lock.unlock()
         for child in children where child.isRunning { child.terminate() }
     }
-    static func run(_ executable: String, _ arguments: [String], timeout: TimeInterval = 15) -> CommandResult {
+    static func run(_ executable: String, _ arguments: [String], timeout: TimeInterval = 15, environment suppliedEnvironment: [String: String]? = nil) -> CommandResult {
         let process = Process(), output = Pipe()
         process.executableURL = URL(fileURLWithPath: executable); process.arguments = arguments
         process.standardOutput = output; process.standardError = output
-        var environment = ProcessInfo.processInfo.environment
+        var environment = suppliedEnvironment ?? ProcessInfo.processInfo.environment
         environment["PATH"] = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
         process.environment = environment
         process.terminationHandler = { child in lock.lock(); active[child.processIdentifier] = nil; lock.unlock() }
@@ -156,7 +157,12 @@ enum CleanupSafety {
     /// Source-control metadata and personal/credential stores are never cleanup targets.
     static func isSensitive(_ path: String, home: String = FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL.path) -> Bool {
         let name = URL(fileURLWithPath: path).lastPathComponent.lowercased()
-        if [".git", ".hg", ".svn"].contains(name) { return true }
+        let components = Set(URL(fileURLWithPath: path).pathComponents.map { $0.lowercased() })
+        if !components.isDisjoint(with: [".git", ".hg", ".svn", ".ssh", ".gnupg", ".aws"]) { return true }
+        let examples = [".example", ".sample", ".template"]
+        if (name == ".env" || name.hasPrefix(".env.")) && !examples.contains(where: { name.hasSuffix($0) }) { return true }
+        if [".npmrc", ".pypirc", ".netrc", "credentials.json", "service-account.json"].contains(name) { return true }
+        if ["pem", "key", "p12", "pfx", "jks", "keystore"].contains(URL(fileURLWithPath: path).pathExtension.lowercased()) { return true }
         let trees = [
             home + "/.ssh", home + "/.gnupg", home + "/.aws",
             home + "/Library/Keychains", home + "/Library/Mail", home + "/Library/Messages",
@@ -167,12 +173,17 @@ enum CleanupSafety {
         return trees.contains { path == $0 || path.hasPrefix($0 + "/") }
     }
 
-    static func validate(_ item: DiskItem, allowedRoots: [CleanupScope] = []) throws {
+    static func validate(_ item: DiskItem, allowedRoots: [CleanupScope] = [], developerScopes: [DeveloperScope] = []) throws {
         let path = item.url.standardizedFileURL.path
         let home = FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL.path
         let resolvedParent = item.url.deletingLastPathComponent().resolvingSymlinksInPath().standardizedFileURL
         let effectivePath = resolvedParent.appendingPathComponent(item.url.lastPathComponent).standardizedFileURL.path
         let checkedPaths = [path, effectivePath]
+        for candidate in Set(checkedPaths) {
+            if let reason = DeveloperScope.cleanupBlock(for: candidate, in: developerScopes, resolvingRoots: true) {
+                throw SafetyError.developerScope(reason)
+            }
+        }
         guard !checkedPaths.contains(where: { isSensitive($0) }) else { throw SafetyError.sensitive }
         let protected = [home, home + "/Library", home + "/Documents", home + "/Desktop", home + "/Downloads", home + "/Pictures", home + "/Movies", home + "/Music", home + "/.Trash"]
         let dockerData = home + "/Library/Containers/com.docker.docker"
@@ -189,25 +200,14 @@ enum CleanupSafety {
     }
     enum SafetyError: LocalizedError {
         case protectedPath, sensitive, changed
+        case developerScope(String)
         var errorDescription: String? {
             switch self {
             case .protectedPath: return "This location is protected, outside a chosen folder, or incompletely measured. Choose a specific folder in Permissions & access, then scan again."
             case .sensitive: return "Nuke Sweep does not clean source-control metadata, credentials, or personal data stores. This item is protected."
+            case .developerScope(let reason): return reason
             case .changed: return "This item changed since the scan. Scan again before moving it to Trash."
             }
         }
-    }
-}
-final class FolderWatcher {
-    private var source: DispatchSourceFileSystemObject?
-    func stop() { source?.cancel(); source = nil }
-    deinit { stop() }
-    func start(_ url: URL, onChange: @escaping () -> Void) -> Bool {
-        stop()
-        let descriptor = open(url.path, O_EVTONLY)
-        guard descriptor >= 0 else { return false }
-        let s = DispatchSource.makeFileSystemObjectSource(fileDescriptor: descriptor, eventMask: [.write, .delete, .rename, .extend, .attrib], queue: .main)
-        s.setEventHandler(handler: onChange); s.setCancelHandler { close(descriptor) }
-        source = s; s.resume(); return true
     }
 }

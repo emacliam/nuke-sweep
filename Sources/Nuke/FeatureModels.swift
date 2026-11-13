@@ -51,6 +51,20 @@ struct ProjectGroup: Identifiable, Sendable {
     let kind: String
     let entries: [InventoryEntry]
     var size: Int64 { entries.reduce(0) { $0 + $1.item.size } }
+    var rebuildGuidance: String {
+        switch kind {
+        case "Deno / TypeScript": return "Recreate with deno task build or the project's documented Deno task."
+        case "JavaScript / TypeScript": return "Reinstall dependencies with the project's package manager, then rebuild."
+        case "Rust": return "Rebuild with cargo build (or cargo build --release)."
+        case "Swift": return "Rebuild with swift build or the Xcode scheme."
+        case "Go": return "Rebuild with go build ./... for the project's packages."
+        case "Python": return "Recreate the virtual environment and reinstall project dependencies."
+        case "Flutter / Dart": return "Run flutter pub get, then flutter build for the target."
+        case "Java / Kotlin": return "Run the Gradle or Maven build described by the project."
+        case ".NET": return "Run dotnet restore and dotnet build."
+        default: return "Rebuild from source using the project's documented command."
+        }
+    }
 }
 struct ProjectDockerObject: Identifiable, Sendable {
     var id: String { kind + ":" + name }
@@ -67,17 +81,6 @@ struct InstalledApp: Identifiable, Sendable {
     let bundleID: String
     let version: String
 }
-struct StartupEntry: Identifiable, Sendable {
-    var id: String { source.path }
-    let source: URL
-    let label: String
-    let executable: String
-    let owner: String
-    let state: String
-    let scope: String
-    let missing: Bool
-    let canRemove: Bool
-}
 struct DuplicateGroup: Identifiable, Sendable {
     var id: String { digest }
     let digest: String
@@ -89,6 +92,9 @@ struct DuplicateReport: Sendable {
     let skipped: Int
     let limited: Bool
     let checked: Int
+    var bytesRead: Int64 = 0
+    var stopReason: String? = nil
+    var inProgress = false
 }
 struct DuplicateProof: Sendable {
     let keeper: DiskItem
@@ -111,12 +117,14 @@ struct ReceiptItem: Identifiable, Codable, Sendable {
     let size: Int64
     let success: Bool
     let outcome: String
+    var restoreEvidence: RestoreEvidence? = nil
+    var restoredAt: Date? = nil
 }
 struct CleanupReceipt: Identifiable, Codable, Sendable {
     var id = UUID()
     let date: Date
     let title: String
-    let items: [ReceiptItem]
+    var items: [ReceiptItem]
     let freeBefore: Int64?
     let freeAfter: Int64?
     let undo: String
@@ -132,7 +140,7 @@ struct MonitorSample: Sendable {
     let date: Date
 }
 enum LocalStore {
-    static var root: URL { FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/Nuke") }
+    static var root: URL { AppEnvironment.supportRoot }
     static func load<T: Decodable>(_ type: T.Type, name: String) -> T? {
         guard let data = try? Data(contentsOf: root.appendingPathComponent(name)) else { return nil }
         return try? JSONDecoder().decode(type, from: data)

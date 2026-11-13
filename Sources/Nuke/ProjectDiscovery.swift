@@ -11,7 +11,7 @@ struct ProjectDiscoveryReport: Sendable {
     }
 }
 enum ProjectDiscovery {
-    static let artifactNames: Set<String> = ["node_modules", ".next", ".nuxt", ".svelte-kit", ".turbo", "dist", "build", "target", ".build", "DerivedData", ".venv", "venv", ".pytest_cache", ".mypy_cache", "__pycache__", "Pods", "coverage"]
+    static let artifactNames: Set<String> = ["node_modules", ".next", ".nuxt", ".svelte-kit", ".turbo", "dist", "build", "target", ".build", "DerivedData", ".venv", "venv", ".pytest_cache", ".mypy_cache", "__pycache__", "Pods", "coverage", ".dart_tool", ".expo", ".angular", ".parcel-cache", "bin", "obj"]
     static func scan(_ root: URL, token: ScanCancellation, maxDirectories: Int = 10_000, maxDepth: Int = 12, budget: TimeInterval = 90) -> ProjectDiscoveryReport {
         var report = ProjectDiscoveryReport(), namesVisited = 0, measuredEntries = 0
         let deadline = Date().addingTimeInterval(budget)
@@ -46,7 +46,28 @@ enum ProjectDiscovery {
                 if !complete { report.limited = true }
             } catch { report.skipped += 1 }
             if !entries.isEmpty {
-                let kind = markers.contains("package.json") ? "JavaScript / TypeScript" : markers.contains("Cargo.toml") ? "Rust" : markers.contains("Package.swift") ? "Swift" : markers.contains("go.mod") ? "Go" : markers.contains("pyproject.toml") || markers.contains("requirements.txt") ? "Python" : "Workspace candidates"
+                let kind: String
+                if markers.contains("deno.json") || markers.contains("deno.jsonc") {
+                    kind = "Deno / TypeScript"
+                } else if markers.contains("package.json") || markers.contains("bun.lockb") || markers.contains("bun.lock") || markers.contains("pnpm-lock.yaml") || markers.contains("yarn.lock") {
+                    kind = "JavaScript / TypeScript"
+                } else if markers.contains("Cargo.toml") {
+                    kind = "Rust"
+                } else if markers.contains("Package.swift") {
+                    kind = "Swift"
+                } else if markers.contains("go.mod") {
+                    kind = "Go"
+                } else if markers.contains("pyproject.toml") || markers.contains("requirements.txt") || markers.contains("poetry.lock") || markers.contains("uv.lock") {
+                    kind = "Python"
+                } else if markers.contains("pubspec.yaml") {
+                    kind = "Flutter / Dart"
+                } else if markers.contains("build.gradle") || markers.contains("build.gradle.kts") || markers.contains("pom.xml") {
+                    kind = "Java / Kotlin"
+                } else if markers.contains(where: { $0.hasSuffix(".csproj") || $0.hasSuffix(".sln") }) {
+                    kind = ".NET"
+                } else {
+                    kind = "Workspace candidates"
+                }
                 report.projects.append(.init(root: directory, kind: kind, entries: entries))
             }
             stack.append(contentsOf: next.sorted { $0.path > $1.path }.map { ($0, depth + 1) })

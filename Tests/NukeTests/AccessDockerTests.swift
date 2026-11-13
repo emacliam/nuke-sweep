@@ -91,3 +91,32 @@ final class AccessDockerTests: XCTestCase {
         XCTAssertEqual(ChartInspection.nearest(dates, date: Date(timeIntervalSince1970: 12), dateOf: { $0 }), dates[1])
     }
 }
+
+final class DockerVolumeTests: XCTestCase {
+    func testVolumeInventoryParsesAndSortsWithoutPrune() {
+        let lines = [
+            #"{"Name":"zeta_db","Driver":"local","Mountpoint":"/var/lib/docker/volumes/zeta_db/_data","Scope":"local"}"#,
+            #"{"Name":"alpha_cache","Driver":"local","Mountpoint":"/var/lib/docker/volumes/alpha_cache/_data","Scope":"local"}"#
+        ].joined(separator: "\n")
+        let volumes = DockerInspection.parseVolumes(lines)
+        XCTAssertEqual(volumes.map(\.name), ["alpha_cache", "zeta_db"])
+        XCTAssertEqual(volumes.first?.driver, "local")
+
+        var commands: [[String]] = []
+        let report = DockerInspection.inspect { args, _ in
+            commands.append(args)
+            if args == ["context", "show"] { return .init(output: "desktop-linux", status: 0) }
+            if args.contains("volume") { return .init(output: #"{"Name":"db","Driver":"local","Mountpoint":"/var/lib/docker/volumes/db/_data","Scope":"local"}"#, status: 0) }
+            return .init(output: #"{"Type":"Images","TotalCount":1,"Size":"1GB","Reclaimable":"0B"}"#, status: 0)
+        }
+        XCTAssertEqual(report.volumes.map(\.name), ["db"])
+        XCTAssertFalse(commands.joined().contains("prune"))
+    }
+
+    func testOldSavedDockerUsageWithoutVolumesStillDecodes() throws {
+        let json = #"{"context":"desktop-linux","rows":[{"type":"Images","total":"1","active":"1","size":"1 GB","reclaimable":"0 B"}],"date":0}"#
+        let decoded = try JSONDecoder().decode(DockerSavedUsage.self, from: Data(json.utf8))
+        XCTAssertEqual(decoded.context, "desktop-linux")
+        XCTAssertNil(decoded.volumes)
+    }
+}

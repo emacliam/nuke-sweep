@@ -1,27 +1,55 @@
 import SwiftUI
 
 struct ReceiptFinishView: View {
-    @EnvironmentObject var model: AppModel
-    @EnvironmentObject var features: FeatureModel
+    @Environment(AppModel.self) var model
+    @Environment(FeatureModel.self) var features
     @Environment(\.dismiss) private var dismiss
     let receipt: CleanupReceipt
+    @State private var restoreError: String?
+    private var currentItems: [ReceiptItem] {
+        features.receipts.first(where: { $0.id == receipt.id })?.items ?? receipt.items
+    }
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             Text("Cleanup result").font(.system(size: 23, weight: .semibold))
-            if let error = features.error { Notice(text: error, symbol: "exclamationmark.triangle") }
+            if let error = features.error { Notice.measured(error, symbol: "exclamationmark.triangle") }
             Text(receipt.title).font(.system(size: 14))
-            HStack { Text("\(receipt.items.filter(\.success).count) succeeded"); Text("\(receipt.items.filter { !$0.success }.count) failed").foregroundStyle(Theme.error) }.font(.system(size: 13, weight: .medium))
-            if let before = receipt.freeBefore, let after = receipt.freeAfter { Text("Observed available-space change: \(after >= before ? "+" : "−")\(bytes(abs(after - before))). Other activity and APFS sharing can affect this. Moving to Trash does not itself reclaim space.").font(.system(size: 12)).foregroundStyle(Theme.secondary) }
+            let moved = currentItems.filter { $0.success && $0.trashPath != nil }
+            let failed = currentItems.filter { !$0.success }.count
+            HStack {
+                if !moved.isEmpty {
+                    Text("\(moved.count) moved to Trash · \(bytes(moved.reduce(0) { $0 + $1.size })) logical size")
+                } else {
+                    Text("\(currentItems.filter(\.success).count) succeeded")
+                }
+                if failed > 0 { Text("\(failed) failed").foregroundStyle(Theme.error) }
+            }.font(.system(size: 13, weight: .medium))
+            if let delta = receipt.observedFreeDelta {
+                Text("Change in available space: \(delta >= 0 ? "+" : "−")\(bytes(abs(delta))). This is the observed change across the volume.")
+                    .font(.system(size: 12)).foregroundStyle(Theme.secondary)
+            }
+            if !moved.isEmpty {
+                Text("Items still in Trash continue to use disk space. Restore eligible items below.")
+                    .font(.system(size: 12)).foregroundStyle(Theme.secondary)
+            }
+            if let restoreError { Notice.measured(restoreError, symbol: "exclamationmark.triangle") }
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 14) {
-                    ForEach(receipt.items) { item in
+                    ForEach(currentItems) { item in
                         VStack(alignment: .leading, spacing: 6) {
                             Text(item.originalPath).font(.system(size: 11, weight: .medium)).textSelection(.enabled)
                             Text(item.outcome).font(.system(size: 11)).foregroundStyle(item.success ? Theme.secondary : Theme.error)
-                            if let trash = item.trashPath {
+                            if item.restoredAt != nil {
+                                Text("Restored to original folder").font(.system(size: 11))
+                            } else if let trash = item.trashPath {
                                 HStack {
                                     Button("Show in Trash") { model.reveal(URL(fileURLWithPath: trash)) }
-                                    Button(model.restoredReceiptItems.contains(item.id) ? "Restored" : "Restore to original folder") { model.restoreReceiptItem(item) }.disabled(model.actionBusy || model.restoredReceiptItems.contains(item.id))
+                                    if item.success && item.restoreEvidence != nil {
+                                        Button("Restore to original folder") {
+                                            restoreError = nil
+                                            model.restoreReceiptItem(item) { restoreError = $0 }
+                                        }.disabled(model.actionBusy)
+                                    }
                                 }.buttonStyle(QuietButton())
                             }
                         }; Divider()

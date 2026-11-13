@@ -10,6 +10,7 @@ struct TrashEntry: Identifiable, Sendable {
 struct TrashSnapshot: Sendable {
     let rootIdentity: FileIdentity
     let entries: [TrashEntry]
+    var complete = true
     var size: Int64 { entries.reduce(0) { $0 + $1.item.size } }
 }
 /// Only instantiated with ~/.Trash in the application. Tests use isolated disposable directories.
@@ -56,15 +57,25 @@ struct TrashService: Sendable {
         let identity = try rootIdentity()
         let result = DiskScanner.scan(root, cancellation: token, deadline: deadline)
         if token.cancelled { throw Failure.cancelled }
-        guard result.skipped == 0, !result.limited else { throw Failure.inaccessible }
-        let entries = try result.items.map { item -> TrashEntry in
-            guard item.identity != nil, !item.incomplete else { throw Failure.inaccessible }
-            return TrashEntry(item: item, fingerprint: try fingerprint(item.url, token: token, deadline: deadline))
+        let measuredCompletely = result.skipped == 0 && !result.limited
+            && result.items.allSatisfy { $0.identity != nil && !$0.incomplete }
+        guard measuredCompletely || !result.items.isEmpty else { throw Failure.inaccessible }
+        var entries: [TrashEntry] = []
+        var complete = measuredCompletely
+        for item in result.items {
+            guard !token.cancelled else { throw Failure.cancelled }
+            let seal = complete ? try? fingerprint(item.url, token: token, deadline: deadline) : nil
+            if seal == nil { complete = false }
+            entries.append(TrashEntry(item: item, fingerprint: seal ?? ""))
         }
+        guard !token.cancelled else { throw Failure.cancelled }
         guard try rootIdentity() == identity else { throw Failure.changed }
-        return TrashSnapshot(rootIdentity: identity, entries: entries)
+        if !complete { entries = entries.map { TrashEntry(item: $0.item, fingerprint: "") } }
+        return TrashSnapshot(rootIdentity: identity, entries: entries, complete: complete)
     }
+
     func validate(_ entry: TrashEntry, rootIdentity expected: FileIdentity) throws {
+        guard !entry.fingerprint.isEmpty else { throw Failure.inaccessible }
         guard try rootIdentity() == expected else { throw Failure.changed }
         let parent = entry.item.url.deletingLastPathComponent().standardizedFileURL
         guard parent == root.standardizedFileURL else { throw Failure.outsideRoot }

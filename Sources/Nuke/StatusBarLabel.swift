@@ -19,7 +19,7 @@ enum StatusBarMetric: String, CaseIterable, Identifiable {
     }
 }
 struct NukeStatusBarLabel: View {
-    @EnvironmentObject var monitor: LiveMonitor
+    @Environment(LiveMonitor.self) var monitor
     private var mode: StatusBarMetric { StatusBarMetric(rawValue: monitor.statusBarMetric) ?? .storage }
     var body: some View {
         HStack(spacing: 4) {

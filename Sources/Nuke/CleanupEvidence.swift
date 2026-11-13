@@ -10,6 +10,10 @@ enum CleanupEvidenceKind: String, Codable, Sendable {
     case sensitive
     case unknown
 
+    var supportsContentsReview: Bool {
+        self == .knownCache || self == .dependency || self == .buildOutput
+    }
+
     var label: String {
         switch self {
         case .knownCache: return "Cache"
@@ -45,17 +49,50 @@ enum CleanupEvidenceService {
     private static let caches: [CachePath] = {
         let h = FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL.path
         return [
-            .init(prefix: h + "/Library/Developer/Xcode/DerivedData", detail: "Xcode build products and indexes.", rebuild: "Xcode rebuilds products and indexes on the next build."),
-            .init(prefix: h + "/Library/Caches", detail: "An application or tool cache.", rebuild: "Applications and tools rebuild caches as needed."),
-            .init(prefix: h + "/.npm/_cacache", detail: "Downloaded npm package content.", rebuild: "npm downloads packages again."),
-            .init(prefix: h + "/Library/pnpm/store", detail: "The pnpm content-addressable store.", rebuild: "pnpm re-links or re-downloads packages."),
-            .init(prefix: h + "/.cargo/registry", detail: "Downloaded Cargo crate sources.", rebuild: "Cargo downloads crates again."),
-            .init(prefix: h + "/Library/Caches/go-build", detail: "The Go build cache.", rebuild: "go build repopulates the cache."),
-            .init(prefix: h + "/Library/Caches/org.swift.swiftpm", detail: "Swift package download cache.", rebuild: "SwiftPM downloads packages again."),
-            .init(prefix: h + "/Library/Caches/Homebrew", detail: "Downloaded Homebrew bottles and sources.", rebuild: "Homebrew downloads again if needed."),
-            .init(prefix: h + "/.gradle/caches", detail: "Gradle dependency and build caches.", rebuild: "Gradle re-downloads dependencies."),
-            .init(prefix: h + "/Library/Caches/pip", detail: "Downloaded Python wheels and HTTP cache.", rebuild: "pip downloads packages again."),
-            .init(prefix: h + "/Library/Caches/CocoaPods", detail: "CocoaPods spec and pod cache.", rebuild: "pod install downloads again.")
+            .init(prefix: h + "/Library/Developer/Xcode/DerivedData", detail: String(localized: "Xcode build products and indexes."), rebuild: String(localized: "Xcode rebuilds products and indexes on the next build.")),
+            .init(prefix: h + "/Library/Caches", detail: String(localized: "An application or tool cache."), rebuild: String(localized: "Applications and tools rebuild caches as needed.")),
+            .init(prefix: h + "/.npm/_cacache", detail: String(localized: "Downloaded npm package content."), rebuild: String(localized: "npm downloads packages again.")),
+            .init(prefix: h + "/Library/pnpm/store", detail: String(localized: "The pnpm content-addressable store."), rebuild: String(localized: "pnpm re-links or re-downloads packages.")),
+            .init(prefix: h + "/.cargo/registry", detail: String(localized: "Downloaded Cargo crate sources."), rebuild: String(localized: "Cargo downloads crates again.")),
+            .init(prefix: h + "/Library/Caches/go-build", detail: String(localized: "The Go build cache."), rebuild: String(localized: "go build repopulates the cache.")),
+            .init(prefix: h + "/Library/Caches/org.swift.swiftpm", detail: String(localized: "Swift package download cache."), rebuild: String(localized: "SwiftPM downloads packages again.")),
+            .init(prefix: h + "/Library/Caches/Homebrew", detail: String(localized: "Downloaded Homebrew bottles and sources."), rebuild: String(localized: "Homebrew downloads again if needed.")),
+            .init(prefix: h + "/.gradle/caches", detail: String(localized: "Gradle dependency and build caches."), rebuild: String(localized: "Gradle re-downloads dependencies.")),
+            .init(prefix: h + "/Library/Caches/pip", detail: String(localized: "Downloaded Python wheels and HTTP cache."), rebuild: String(localized: "pip downloads packages again.")),
+            .init(prefix: h + "/Library/Caches/CocoaPods", detail: String(localized: "CocoaPods spec and pod cache."), rebuild: String(localized: "pod install downloads again.")),
+            // Xcode leaves most of its bulk outside DerivedData. Without these the
+            // largest folders on a developer's Mac report no evidence at all, which
+            // reads as "unknown" when their purpose is in fact well understood.
+            .init(prefix: h + "/Library/Developer/Xcode/iOS DeviceSupport", detail: String(localized: "Symbol files cached per connected iOS device and build. Xcode re-downloads them the next time that device is attached."), rebuild: String(localized: "Xcode re-fetches symbols when the device is connected again.")),
+            .init(prefix: h + "/Library/Developer/Xcode/watchOS DeviceSupport", detail: String(localized: "Symbol files cached per connected watchOS device and build."), rebuild: String(localized: "Xcode re-fetches symbols when the device is connected again.")),
+            .init(prefix: h + "/Library/Developer/Xcode/tvOS DeviceSupport", detail: String(localized: "Symbol files cached per connected tvOS device and build."), rebuild: String(localized: "Xcode re-fetches symbols when the device is connected again.")),
+            .init(prefix: h + "/Library/Developer/Xcode/macOS DeviceSupport", detail: String(localized: "Symbol files cached per connected macOS device and build."), rebuild: String(localized: "Xcode re-fetches symbols when the device is connected again.")),
+            .init(prefix: h + "/Library/Developer/Xcode/DocumentationCache", detail: String(localized: "Downloaded Xcode documentation content."), rebuild: String(localized: "Xcode downloads documentation again when browsed.")),
+            .init(prefix: h + "/Library/Developer/Xcode/DocumentationIndex", detail: String(localized: "Generated index over downloaded Xcode documentation."), rebuild: String(localized: "Xcode rebuilds the documentation index.")),
+            .init(prefix: h + "/Library/Developer/Xcode/iOS Device Logs", detail: String(localized: "Crash and diagnostic logs copied from connected devices."), rebuild: String(localized: "Not regenerated; copy anything you still need before removing.")),
+            .init(prefix: h + "/Library/Developer/Xcode/UserData/IB Support", detail: String(localized: "Interface Builder support cache."), rebuild: String(localized: "Xcode recreates it as needed.")),
+            .init(prefix: h + "/Library/Developer/CoreSimulator/Caches", detail: String(localized: "Simulator runtime and device caches."), rebuild: String(localized: "The simulator repopulates them on next use.")),
+            .init(prefix: h + "/Library/Developer/XCPGDevices", detail: String(localized: "Playground simulator devices created by Xcode."), rebuild: String(localized: "Xcode recreates playground devices on demand.")),
+            .init(prefix: h + "/.cache", detail: String(localized: "A tool cache directory following the XDG convention."), rebuild: String(localized: "The owning tool repopulates it as needed.")),
+            .init(prefix: h + "/Library/Caches/ms-playwright", detail: String(localized: "Downloaded Playwright browser builds."), rebuild: String(localized: "npx playwright install downloads them again.")),
+            .init(prefix: h + "/Library/Caches/deno", detail: String(localized: "Deno module and build cache."), rebuild: String(localized: "Deno re-downloads modules on next run.")),
+            .init(prefix: h + "/.bun/install/cache", detail: String(localized: "Bun package install cache."), rebuild: String(localized: "bun install downloads packages again.")),
+            .init(prefix: h + "/.m2/repository", detail: String(localized: "Downloaded Maven artifacts."), rebuild: String(localized: "Maven downloads dependencies again.")),
+            .init(prefix: h + "/.nuget/packages", detail: String(localized: "Downloaded NuGet packages."), rebuild: String(localized: "dotnet restore downloads packages again.")),
+            .init(prefix: h + "/go/pkg/mod", detail: String(localized: "Downloaded Go module sources."), rebuild: String(localized: "go mod download fetches modules again.")),
+            .init(prefix: h + "/.rustup/toolchains", detail: String(localized: "Installed Rust toolchains."), rebuild: String(localized: "rustup reinstalls a toolchain on demand.")),
+            .init(prefix: h + "/.pub-cache", detail: String(localized: "Downloaded Dart and Flutter packages."), rebuild: String(localized: "pub get downloads packages again."))
+        ]
+    }()
+
+    /// Xcode writes these beside its caches, but they are products rather than
+    /// caches: removing one loses the only copy, so they are evidenced as build
+    /// output with an explicit warning instead of being called a cache.
+    private static let archives: [CachePath] = {
+        let h = FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL.path
+        return [
+            .init(prefix: h + "/Library/Developer/Xcode/Archives", detail: String(localized: "Built app archives kept for distribution and crash symbolication. These are products, not a cache: nothing regenerates them except another archive build."), rebuild: String(localized: "Only a new archive build recreates these. Keep any archive matching a release you still support.")),
+            .init(prefix: h + "/Library/Developer/Xcode/Products", detail: String(localized: "Built products written outside DerivedData."), rebuild: String(localized: "A rebuild recreates these."))
         ]
     }()
 
@@ -72,31 +109,34 @@ enum CleanupEvidenceService {
         let path = url.standardizedFileURL.path
         let name = url.lastPathComponent.lowercased()
         if CleanupSafety.isSensitive(path) {
-            return CleanupEvidence(kind: .sensitive, detail: "Source-control metadata, credentials, or a personal data store.", rebuild: nil, gitIgnored: false)
+            return CleanupEvidence(kind: .sensitive, detail: String(localized: "Source-control metadata, credentials, or a personal data store."), rebuild: nil, gitIgnored: false)
         }
         let isDirectory = url.hasDirectoryPath || (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
         if isDirectory, FileManager.default.fileExists(atPath: url.appendingPathComponent(".git").path) {
-            return CleanupEvidence(kind: .projectRoot, detail: "Contains a Git repository. Nuke Sweep refuses to move a project or source root whole.", rebuild: nil, gitIgnored: gitIgnored ?? false)
+            return CleanupEvidence(kind: .projectRoot, detail: String(localized: "Contains a Git repository. Nuke Sweep refuses to move a project or source root whole."), rebuild: nil, gitIgnored: gitIgnored ?? false)
         }
         if let cache = caches.first(where: { path == $0.prefix || path.hasPrefix($0.prefix + "/") }) {
             return CleanupEvidence(kind: .knownCache, detail: cache.detail, rebuild: cache.rebuild, gitIgnored: gitIgnored ?? false)
         }
+        if let archive = archives.first(where: { path == $0.prefix || path.hasPrefix($0.prefix + "/") }) {
+            return CleanupEvidence(kind: .buildOutput, detail: archive.detail, rebuild: archive.rebuild, gitIgnored: gitIgnored ?? false)
+        }
         if dependencyNames.contains(name) {
-            return CleanupEvidence(kind: .dependency, detail: "A dependency or package store that can be recreated.", rebuild: rebuildAdvice(for: name), gitIgnored: gitIgnored ?? false)
+            return CleanupEvidence(kind: .dependency, detail: String(localized: "A dependency or package store that can be recreated."), rebuild: rebuildAdvice(for: name), gitIgnored: gitIgnored ?? false)
         }
         if outputNames.contains(name) {
-            return CleanupEvidence(kind: .buildOutput, detail: "Generated build output. A copied manifest inside does not make it source.", rebuild: rebuildAdvice(for: name), gitIgnored: gitIgnored ?? false)
+            return CleanupEvidence(kind: .buildOutput, detail: String(localized: "Generated build output. A copied manifest inside does not make it source."), rebuild: rebuildAdvice(for: name), gitIgnored: gitIgnored ?? false)
         }
         if isDirectory, sourceCheck, looksLikeSourceDirectory(url) {
-            return CleanupEvidence(kind: .sourceLike, detail: "Contains source-like files and no clear build-output signature. Nuke Sweep refuses to move it whole.", rebuild: nil, gitIgnored: gitIgnored ?? false)
+            return CleanupEvidence(kind: .sourceLike, detail: String(localized: "Contains source-like files and no clear build-output signature. Nuke Sweep refuses to move it whole."), rebuild: nil, gitIgnored: gitIgnored ?? false)
         }
         if gitIgnored == true {
-            return CleanupEvidence(kind: .gitIgnored, detail: "Git reports this path as ignored, which is evidence it is generated.", rebuild: "Rebuild or regenerate it from the tracked source.", gitIgnored: true)
+            return CleanupEvidence(kind: .gitIgnored, detail: String(localized: "Git reports this path as ignored, which is evidence it is generated."), rebuild: String(localized: "Rebuild or regenerate it from the tracked source."), gitIgnored: true)
         }
         if isDirectory, ReviewPlanner.looksLikeProjectRoot(url) {
-            return CleanupEvidence(kind: .projectRoot, detail: "Contains project or source markers at its top level. Nuke Sweep refuses to move it whole.", rebuild: nil, gitIgnored: false)
+            return CleanupEvidence(kind: .projectRoot, detail: String(localized: "Contains project or source markers at its top level. Nuke Sweep refuses to move it whole."), rebuild: nil, gitIgnored: false)
         }
-        return CleanupEvidence(kind: .unknown, detail: "Nuke Sweep has no reliable evidence about this item. Review it before selecting.", rebuild: nil, gitIgnored: gitIgnored ?? false)
+        return CleanupEvidence(kind: .unknown, detail: String(localized: "Nuke Sweep has no reliable evidence about this item. Review it before selecting."), rebuild: nil, gitIgnored: gitIgnored ?? false)
     }
 
     /// A bounded, conservative source-tree probe. It skips dependency/build names
@@ -128,29 +168,11 @@ enum CleanupEvidenceService {
     }
 
     static func repoRoot(for url: URL) -> URL? {
-        let fm = FileManager.default
-        var cursor = url.hasDirectoryPath ? url : url.deletingLastPathComponent()
-        for _ in 0..<24 {
-            if fm.fileExists(atPath: cursor.appendingPathComponent(".git").path) { return cursor }
-            let parent = cursor.deletingLastPathComponent()
-            if parent.path == cursor.path { break }
-            cursor = parent
-        }
+        if case .found(let root) = GitInspection.repository(for: url) { return root }
         return nil
     }
 
-    static func gitTracked(_ url: URL) -> Bool? {
-        guard let repo = repoRoot(for: url), FileManager.default.fileExists(atPath: "/usr/bin/git") else { return nil }
-        let repoPath = repo.standardizedFileURL.path
-        let itemPath = url.standardizedFileURL.path
-        let rel: String
-        if itemPath == repoPath { rel = "." }
-        else if itemPath.hasPrefix(repoPath + "/") { rel = String(itemPath.dropFirst(repoPath.count + 1)) }
-        else { return nil }
-        let r = CommandRunner.run("/usr/bin/git", ["-C", repo.path, "ls-files", "-z", "--", rel], timeout: 2)
-        guard r.status == 0 else { return nil }
-        return !r.output.isEmpty
-    }
+    static func gitTracked(_ url: URL) -> Bool? { GitInspection.inspect(url).tracked }
 
     static func rebuildAdvice(for name: String) -> String {
         switch name {
@@ -168,13 +190,7 @@ enum CleanupEvidenceService {
     }
 
     /// A bounded git probe used by the review plan, where only selected items are checked.
-    static func gitIgnored(_ url: URL) -> Bool? {
-        guard let repo = repoRoot(for: url), FileManager.default.fileExists(atPath: "/usr/bin/git") else { return nil }
-        let r = CommandRunner.run("/usr/bin/git", ["-C", repo.path, "check-ignore", "-q", "--", url.path], timeout: 2)
-        if r.status == 0 { return true }
-        if r.status == 1 { return false }
-        return nil
-    }
+    static func gitIgnored(_ url: URL) -> Bool? { GitInspection.ignored(url) }
 }
 
 struct CleanupPlan: Codable {

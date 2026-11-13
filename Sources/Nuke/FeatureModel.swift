@@ -4,64 +4,60 @@ import UserNotifications
 import WidgetKit
 import UniformTypeIdentifiers
 
-@MainActor final class FeatureModel: ObservableObject {
-    @Published var scans: [StoredScan] = []
-    @Published var receipts: [CleanupReceipt] = []
-    @Published var projects: [ProjectGroup] = []
-    @Published var projectDocker: [ProjectDockerObject] = []
-    @Published var projectContext = ""
-    @Published var projectNote = ""
-    @Published var projectDiscoveryNote = ""
-    @Published var projectRoot: URL?
-    @Published var projectLoading = false
-    @Published var projectMeasured: Date?
-    @Published var deviceMeasured: Date?
-    @Published var appMeasured: Date?
-    @Published var ai = InventoryReport()
-    @Published var aiLoading = false
-    @Published var aiScanned = false
-    @Published var aiMeasured: Date?
-    @Published var aiModels: [LocalModelRecord] = []
-    @Published var aiCustomPaths = UserDefaults.standard.stringArray(forKey: "nuke.modelRoots") ?? []
+@Observable @MainActor final class FeatureModel {
+    var scans: [StoredScan] = []
+    var receipts: [CleanupReceipt] = []
+    var projects: [ProjectGroup] = []
+    var projectDocker: [ProjectDockerObject] = []
+    var projectContext = ""
+    var projectNote = ""
+    var projectDiscoveryNote = ""
+    var projectRoot: URL?
+    var projectLoading = false
+    var projectMeasured: Date?
+    var deviceMeasured: Date?
+    var appMeasured: Date?
+    var ai = InventoryReport()
+    var aiLoading = false
+    var aiScanned = false
+    var aiMeasured: Date?
+    var aiModels: [LocalModelRecord] = []
+    var aiCustomPaths = UserDefaults.standard.stringArray(forKey: "nuke.modelRoots") ?? []
     private var aiToken = ScanCancellation()
     private var projectToken = ScanCancellation()
     private var appToken = ScanCancellation()
-    @Published var devices = InventoryReport()
-    @Published var simulators = SimulatorInventory()
-    @Published var simulatorActionBusy = false
-    @Published var simulatorActionResult: String?
-    @Published var deviceLoading = false
-    @Published var apps: [InstalledApp] = []
-    @Published var appLoading = false
-    @Published var appNote = ""
-    private var startupToken = ScanCancellation()
-    @Published var appReport = InventoryReport()
-    @Published var selectedApp: InstalledApp?
-    @Published var leftovers = InventoryReport()
-    @Published var leftoversScanned = false
-    @Published var startup: [StartupEntry] = []
-    @Published var startupLoading = false
-    @Published var startupNote = ""
-    @Published var duplicateRoot: URL?
-    @Published var duplicates: DuplicateReport?
-    @Published var duplicateLoading = false
-    @Published var showUse = false
-    @Published var useURL: URL?
-    @Published var useReport: OpenFileReport?
-    @Published var useLoading = false
-    @Published var error: String?
+    var devices = InventoryReport()
+    var simulators = SimulatorInventory()
+    var simulatorActionBusy = false
+    var simulatorActionResult: String?
+    var deviceLoading = false
+    var apps: [InstalledApp] = []
+    var appLoading = false
+    var appNote = ""
+    var appReport = InventoryReport()
+    var selectedApp: InstalledApp?
+    var leftovers = InventoryReport()
+    var leftoversScanned = false
+    var duplicateRoot: URL?
+    var duplicates: DuplicateReport?
+    var duplicateLoading = false
+    var showUse = false
+    var useURL: URL?
+    var useReport: OpenFileReport?
+    var useLoading = false
+    var error: String?
     private var storageGeneration = UUID()
     private var dirtyStoragePages = Set<Page>()
     private var historyStarted = false
-    @Published var historyLoading = false
-    @Published var developerScopes: [DeveloperScope] = {
+    var historyLoading = false
+    var developerScopes: [DeveloperScope] = {
         guard let data = UserDefaults.standard.data(forKey: "nuke.developerScopes"),
               let saved = try? JSONDecoder().decode([DeveloperScope].self, from: data) else { return [] }
         return saved
     }()
-    @Published var scopeMeasurements: [UUID: ScopeMeasurement] = [:]
-    @Published var measuringScopes = Set<UUID>()
-    @Published var scopeStatus: String?
+    var scopeMeasurements: [UUID: ScopeMeasurement] = [:]
+    var measuringScopes = Set<UUID>()
+    var scopeStatus: String?
     private var scopeTokens: [UUID: ScanCancellation] = [:]
     func loadHistory() {
         guard !historyStarted else { return }; historyStarted = true; historyLoading = true
@@ -85,6 +81,14 @@ import UniformTypeIdentifiers
         scans = Array(scans.prefix(200))
         FilePersistence.save(scans, name: "scans.json") { [weak self] message in Task { @MainActor in self?.error = "Could not save scan history: " + message } }
     }
+    func markRestored(_ id: UUID) {
+        guard let receipt = receipts.firstIndex(where: { $0.items.contains(where: { $0.id == id }) }),
+              let item = receipts[receipt].items.firstIndex(where: { $0.id == id }) else { return }
+        receipts[receipt].items[item].restoredAt = Date()
+        FilePersistence.save(receipts, name: "receipts.json") { [weak self] message in
+            Task { @MainActor in self?.error = "The item was restored, but its receipt could not be updated. " + message }
+        }
+    }
     func receipt(_ receipt: CleanupReceipt) {
         onReceipt?(receipt)
         receipts.insert(receipt, at: 0); receipts = Array(receipts.prefix(200))
@@ -95,15 +99,14 @@ import UniformTypeIdentifiers
         if projectRoot != nil { dirtyStoragePages.insert(.projects) }
         if appMeasured != nil || appLoading { dirtyStoragePages.insert(.apps) }
         if deviceMeasured != nil || deviceLoading { dirtyStoragePages.insert(.devices) }
-        if !startup.isEmpty || startupLoading { dirtyStoragePages.insert(.startup) }
         if duplicateRoot != nil { dirtyStoragePages.insert(.duplicates) }
         storageGeneration = UUID()
-        for token in [aiToken, projectToken, appToken, deviceToken, startupToken, duplicateToken] { token.cancel() }
+        for token in [aiToken, projectToken, appToken, deviceToken, duplicateToken] { token.cancel() }
         ai = .init(); aiModels = []; aiScanned = false; aiMeasured = nil; aiLoading = false
         projects = []; projectDocker = []; projectMeasured = nil; projectLoading = false
         apps = []; selectedApp = nil; appReport = .init(); leftovers = .init(); leftoversScanned = false; appMeasured = nil; appLoading = false
         devices = .init(); simulators = .init(); deviceMeasured = nil; deviceLoading = false
-        startup = []; startupLoading = false; duplicates = nil; duplicateLoading = false
+        duplicates = nil; duplicateLoading = false
     }
     func refreshDirtyStorage(_ page: Page) {
         guard dirtyStoragePages.remove(page) != nil else { return }
@@ -112,17 +115,18 @@ import UniformTypeIdentifiers
         case .projects: if let projectRoot { scanProjects(rootOverride: projectRoot) }
         case .apps: scanApps()
         case .devices: scanDevices()
-        case .startup: scanStartup()
         case .duplicates: if let duplicateRoot { findDuplicates(rootOverride: duplicateRoot) }
         default: break
         }
     }
-    func folder(_ prompt: String) -> URL? {
-        let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false; panel.allowsMultipleSelection = false; panel.prompt = prompt
-        if panel.runModal() == .OK, let url = panel.url { FolderAccess.shared.remember(url); return url }; return nil
-    }
     func scanProjects(rootOverride: URL? = nil) {
-        guard !projectLoading, let root = rootOverride ?? folder("Inspect projects") else { return }
+        guard !projectLoading else { return }
+        guard let root = rootOverride else {
+            FolderAccess.shared.chooseFolder(prompt: "Inspect projects") { [weak self] url in
+                self?.scanProjects(rootOverride: url)
+            }
+            return
+        }
         projectToken = ScanCancellation(); let token = projectToken
         projectRoot = root; projectLoading = true; projects = []; projectNote = ""; projectDiscoveryNote = ""
         let generation = storageGeneration
@@ -137,9 +141,15 @@ import UniformTypeIdentifiers
     }
     func cancelProjects() { projectToken.cancel() }
     func addModelFolder() {
-        guard !aiLoading, let url = folder("Inspect model folder") else { return }
-        if !aiCustomPaths.contains(url.path) { aiCustomPaths.append(url.path); UserDefaults.standard.set(aiCustomPaths, forKey: "nuke.modelRoots") }
-        scanAI()
+        guard !aiLoading else { return }
+        FolderAccess.shared.chooseFolder(prompt: "Inspect model folder") { [weak self] url in
+            guard let self, !self.aiLoading else { return }
+            if !self.aiCustomPaths.contains(url.path) {
+                self.aiCustomPaths.append(url.path)
+                UserDefaults.standard.set(self.aiCustomPaths, forKey: "nuke.modelRoots")
+            }
+            self.scanAI()
+        }
     }
     func forgetModelFolder(_ path: String) {
         aiCustomPaths.removeAll { $0 == path }; UserDefaults.standard.set(aiCustomPaths, forKey: "nuke.modelRoots")
@@ -193,38 +203,30 @@ import UniformTypeIdentifiers
         }
     }
     func cancelApps() { appToken.cancel() }
-    func cancelStartup() { startupToken.cancel() }
-    func scanStartup() {
-        guard !startupLoading else { return }; startupLoading = true
-        startupToken = ScanCancellation(); let token = startupToken
-        let generation = storageGeneration
-        Task {
-            let result = await DiskWork.run("Inspecting startup items", cancellation: token) { () -> ([StartupEntry], String) in
-                let report = StartupService.inspect(token: token)
-                var rows = report.entries
-                let installed = AppInventory.apps(token: token)
-                for app in installed {
-                    if token.cancelled { break }
-                    let root = app.url.appendingPathComponent("Contents/Library/LoginItems")
-                    for url in (try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)) ?? [] where url.pathExtension == "app" {
-                        if token.cancelled { break }
-                        let executable = Bundle(url: url)?.executableURL?.path ?? url.path + "/Contents/MacOS/Unknown"
-                        rows.append(.init(source: url, label: url.deletingPathExtension().lastPathComponent, executable: executable, owner: "Bundled with \(app.name) (\(app.bundleID))", state: "Registration/enabled state unknown", scope: "Bundled login helper", missing: StartupService.isMissing(executable), canRemove: false))
-                    }
-                }
-                return (rows, report.note)
-            }
-            guard generation == storageGeneration else { return }
-            startup = result.0; startupNote = (token.cancelled ? "Stopped — partial inspection. " : "") + result.1 + " Bundled helpers are candidates, not enabled login items. macOS manages registration in System Settings."
-            startupLoading = false
-        }
-    }
     func findDuplicates(rootOverride: URL? = nil) {
-        guard !duplicateLoading, let root = rootOverride ?? folder("Find duplicates") else { return }
+        guard !duplicateLoading else { return }
+        guard let root = rootOverride else {
+            FolderAccess.shared.chooseFolder(prompt: "Find duplicates") { [weak self] url in
+                self?.findDuplicates(rootOverride: url)
+            }
+            return
+        }
         duplicateRoot = root; duplicates = nil; duplicateLoading = true
         duplicateToken = ScanCancellation(); let token = duplicateToken
         let generation = storageGeneration
-        Task { let measured = await DiskWork.run("Finding duplicates", cancellation: token) { DuplicateFinder.find(root, token: token) }; guard generation == storageGeneration else { return }; duplicates = measured; duplicateLoading = false }
+        Task {
+            let measured = await DiskWork.run("Finding duplicates", cancellation: token) {
+                DuplicateFinder.find(root, token: token) { report in
+                    Task { @MainActor in
+                        guard generation == self.storageGeneration, self.duplicateToken === token, self.duplicateLoading, report.inProgress else { return }
+                        self.duplicates = report
+                    }
+                }
+            }
+            guard generation == storageGeneration, duplicateToken === token else { return }
+            duplicates = measured; duplicateLoading = false
+            Log.scan.info("Duplicate scan finished: groups=\(measured.groups.count, privacy: .public) checked=\(measured.checked, privacy: .public) limited=\(measured.limited, privacy: .public)")
+        }
     }
     func cancelDuplicates() { duplicateToken.cancel() }
     func inspectUse(_ url: URL) {
@@ -280,7 +282,7 @@ import UniformTypeIdentifiers
         do {
             let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
             try encoder.encode(developerScopes).write(to: url, options: .atomic)
-            scopeStatus = "Exported \(developerScopes.count) scope\(developerScopes.count == 1 ? "" : "s") to \(url.lastPathComponent)."
+            scopeStatus = String(format: String(localized: "Exported %lld scopes to %@."), developerScopes.count, url.lastPathComponent)
         } catch { scopeStatus = "Scope export failed: " + error.localizedDescription }
     }
     func importDeveloperScopes() {

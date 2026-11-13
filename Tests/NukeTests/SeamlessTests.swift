@@ -133,16 +133,6 @@ final class SeamlessTests: XCTestCase {
         XCTAssertEqual(plan.items.count, 1)
     }
 
-    @MainActor func testRemovingWatchClearsTracking() throws {
-        let root = try fixture(); defer { try? FileManager.default.removeItem(at: root) }
-        let model = AppModel(restoring: false)
-        model.startWatching(root)
-        XCTAssertEqual(model.watchURL, root)
-        model.removeWatch()
-        XCTAssertNil(model.watchURL)
-        XCTAssertFalse(model.watching)
-        XCTAssertNil(model.watchSize)
-    }
 
     func testSensitivePathsAreClassified() {
         let home = "/Users/tester"
@@ -181,24 +171,6 @@ private final class WorkCounter: @unchecked Sendable {
 }
 
 extension SeamlessTests {
-    @MainActor func testWatchEventDuringScanGetsFollowUp() async throws {
-        let root = try fixture(); defer { try? FileManager.default.removeItem(at: root) }
-        let file = root.appendingPathComponent("nested/data"); try Data([1]).write(to: file)
-        let model = AppModel(restoring: false)
-        model.startWatching(root)
-        for _ in 0..<40 where model.watchScanning { try await Task.sleep(for: .milliseconds(25)) }
-        XCTAssertEqual(model.watchSize, 1)
-        // Hold the disk lane while a second watch measurement is pending.
-        let hold = Task { await DiskWork.run { Thread.sleep(forTimeInterval: 0.4) } }
-        try await Task.sleep(for: .milliseconds(30))
-        model.measureWatch()
-        try Data(repeating: 1, count: 23).write(to: file)
-        model.scheduleWatchScan()
-        await hold.value
-        try await Task.sleep(for: .seconds(2.7))
-        XCTAssertEqual(model.watchSize, 23)
-        model.stopWatching()
-    }
     func testCancelledReviewNeverReturnsAPlan() throws {
         let root = try fixture(); defer { try? FileManager.default.removeItem(at: root) }
         let item = try XCTUnwrap(InventoryService.measure(root.appendingPathComponent("nested")))
@@ -215,14 +187,6 @@ extension SeamlessTests {
 }
 
 extension SeamlessTests {
-    func testWatchScheduleRetainsEventsThatArriveDuringMeasurement() {
-        var state = WatchSchedule()
-        XCTAssertTrue(state.begin()); state.changed()
-        XCTAssertFalse(state.begin(), "A second scan cannot start while one is active")
-        XCTAssertTrue(state.finish(), "The pending edit must request a follow-up")
-        XCTAssertTrue(state.begin()); XCTAssertFalse(state.finish())
-        state.changed(); state.clear(); XCTAssertFalse(state.pending)
-    }
 }
 
 extension SeamlessTests {

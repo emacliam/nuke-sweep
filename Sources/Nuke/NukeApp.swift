@@ -2,12 +2,18 @@ import SwiftUI
 import AppKit
 
 @main struct NukeApp: App {
-    @StateObject private var model = AppModel()
+    @State private var model: AppModel
+    @AppStorage("nuke.appearance") private var appearance = "system"
     @NSApplicationDelegateAdaptor(AppDelegate.self) var delegate
+    init() {
+        AppEnvironment.migrateProductionPreferences()
+        _model = State(initialValue: AppModel())
+    }
+
     var body: some Scene {
         Window("Nuke Sweep", id: "main") {
-            ContentView().environmentObject(model).environmentObject(model.features).environmentObject(model.features.monitor).frame(minWidth: 980, minHeight: 650)
-                .preferredColorScheme(.light)
+            ContentView().environment(model).environment(model.features).environment(model.features.monitor).environment(model.ai).environment(model.scheduledScans).frame(minWidth: 980, minHeight: 650)
+                .preferredColorScheme(appearance == "dark" ? .dark : appearance == "light" ? .light : nil)
         }
         .windowStyle(.hiddenTitleBar).defaultSize(width: 1180, height: 790)
         .commands {
@@ -23,7 +29,7 @@ import AppKit
                 }
             }
             CommandGroup(after: .appInfo) { Button("Check for Updates…") { model.page = .updates; model.showMainWindow() } }
-            CommandGroup(replacing: .newItem) { Button("Scan Folder…") { model.chooseFolder() }.keyboardShortcut("o"); Button("Refresh") { model.refreshResources(); if model.page == .storage { model.scan() }; if model.page == .processes { model.refreshProcesses() } }.keyboardShortcut("r") }
+            CommandGroup(replacing: .newItem) { Button("Scan Folder…") { model.chooseFolder() }.keyboardShortcut("o"); Button("Refresh") { model.refreshResources(); if model.page == .storage { model.scan() } }.keyboardShortcut("r") }
             CommandGroup(after: .textEditing) {
                 Divider()
                 Button("Filter") { model.focusFilterRequest += 1 }.keyboardShortcut("f")
@@ -54,29 +60,64 @@ import AppKit
         model.quitWhenIdle = true
         return .terminateLater
     }
-    func applicationWillTerminate(_ notification: Notification) { model?.saveSession(); FilePersistence.flush(); CommandRunner.shutdown() }
+    func applicationWillTerminate(_ notification: Notification) {
+        Log.lifecycle.info("Terminating")
+        model?.saveSession(); FilePersistence.flush(); CommandRunner.shutdown()
+    }
     static func captureCurrent() {
         guard let view = NSApp.keyWindow?.contentView, let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return }
         view.cacheDisplay(in: view.bounds, to: rep)
         if let data = rep.representation(using: .png, properties: [:]) { try? data.write(to: URL(fileURLWithPath: "/tmp/nuke-current.png")) }
     }
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // `NSWindow.title` is main-actor state. These observers are already
+        // delivered on .main, but that is a runtime fact the compiler cannot
+        // check, so the window is identified inside an explicit hop.
+        // Registered with `queue: .main`, so these bodies genuinely run on the
+        // main actor. `assumeIsolated` states that rather than sending a
+        // non-Sendable NSWindow across isolation, and traps if it ever stops
+        // being true.
         windowOpenObserver = NotificationCenter.default.addObserver(forName: NSWindow.didBecomeKeyNotification, object: nil, queue: .main) { [weak self] notification in
-            guard let window = notification.object as? NSWindow, window.title == "Nuke Sweep" else { return }
-            Task { @MainActor in self?.model?.mainWindowVisible = true }
+            // `Notification` is not Sendable and NotificationCenter is not
+            // annotated for concurrency, so the compiler cannot see that
+            // `queue: .main` already guarantees main-thread delivery. The unsafe
+            // binding records that guarantee; `assumeIsolated` enforces it at
+            // runtime and traps if it is ever violated.
+            nonisolated(unsafe) let delivered = notification
+            MainActor.assumeIsolated {
+                guard let window = delivered.object as? NSWindow, window.title == "Nuke Sweep" else { return }
+                self?.model?.mainWindowVisible = true
+            }
         }
         windowObserver = NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: nil, queue: .main) { [weak self] notification in
-            guard let window = notification.object as? NSWindow, window.title == "Nuke Sweep" else { return }
-            Task { @MainActor in if !NSApp.windows.contains(where: { $0.title == "Nuke Sweep" && $0.isVisible }) { self?.model?.mainWindowVisible = false } }
+            nonisolated(unsafe) let delivered = notification
+            MainActor.assumeIsolated {
+                guard let window = delivered.object as? NSWindow, window.title == "Nuke Sweep" else { return }
+                if !NSApp.windows.contains(where: { $0.title == "Nuke Sweep" && $0.isVisible }) { self?.model?.mainWindowVisible = false }
+            }
         }
         sleepObserver = NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { [weak self] _ in Task { @MainActor in self?.model?.sleep() } }
         wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in Task { @MainActor in self?.model?.wake() } }
+        Log.lifecycle.info("Launched: version=\(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown", privacy: .public)")
         UIResponsiveness.startIfRequested()
+        HangWatchdog.startIfEnabled()
+        if ProcessInfo.processInfo.arguments.contains("--simulate-hang") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { Thread.sleep(forTimeInterval: 3) }
+        }
         NSApp.setActivationPolicy(.regular); NSApp.activate(ignoringOtherApps: true)
         if ProcessInfo.processInfo.arguments.contains("--compact") {
             NSApp.windows.first?.setContentSize(NSSize(width: 980, height: 650))
         }
         if ProcessInfo.processInfo.arguments.contains("--capture") {
+            // The menu-bar popover is a separate window, so it needs showing before
+            // the capture and must be captured as the key window.
+            if ProcessInfo.processInfo.arguments.contains("--capture-monitor") {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+                    self?.model?.statusController?.show()
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 4) { Self.capture(name: "monitor") }
+                return
+            }
             DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
                 Self.capture(name: ProcessInfo.processInfo.arguments.contains("--compact") ? "compact" : "overview")
             }
@@ -85,9 +126,12 @@ import AppKit
     static func capture(name: String) {
         // The hidden-title-bar window can report an empty title, so prefer the largest
         // visible content window instead of matching the title exactly.
-        let window = NSApp.windows
-            .filter { $0.isVisible && $0.contentView != nil }
-            .max { $0.frame.width * $0.frame.height < $1.frame.width * $1.frame.height }
+        let keyWindow = NSApp.keyWindow
+        let window = ProcessInfo.processInfo.arguments.contains("--capture-key") || ProcessInfo.processInfo.arguments.contains("--capture-monitor")
+            ? keyWindow
+            : NSApp.windows
+                .filter { $0.isVisible && $0.contentView != nil }
+                .max { $0.frame.width * $0.frame.height < $1.frame.width * $1.frame.height }
         guard let view = window?.contentView, let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return }
         view.cacheDisplay(in: view.bounds, to: rep)
         if let data = rep.representation(using: .png, properties: [:]) { try? data.write(to: URL(fileURLWithPath: "/tmp/nuke-" + name + ".png")) }

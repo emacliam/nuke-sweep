@@ -12,7 +12,8 @@ import Foundation
     var canRefresh: () -> Bool = { true }
     var onChange: () -> Void = {}
     var onRefresh: () -> Void = {}
-    deinit { scheduled?.cancel(); fallback?.invalidate() }
+    /// Isolated: the timer and work item below belong to this actor.
+    isolated deinit { scheduled?.cancel(); fallback?.invalidate() }
     var available: Bool { events?.available == true }
     func configure(_ url: URL?) {
         let canonical = url?.standardizedFileURL
@@ -21,7 +22,10 @@ import Foundation
         guard let canonical else { return }
         let id = generation
         events = RecursiveChanges(canonical) { [weak self] in
-            DispatchQueue.main.async { guard let self, self.generation == id else { return }; self.changed() }
+            Task { @MainActor in
+                guard let self, self.generation == id else { return }
+                self.changed()
+            }
         }
         if !available { fallback = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in Task { @MainActor in self?.changed() } }; fallback?.tolerance = 15 }
     }

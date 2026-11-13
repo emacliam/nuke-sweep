@@ -1,12 +1,11 @@
 import SwiftUI
 import AppKit
-import Combine
 import UserNotifications
 
-@MainActor final class AppModel: ObservableObject {
+@Observable @MainActor final class AppModel {
     let features = FeatureModel()
-    @Published var mainWindowVisible = true { didSet { if oldValue != mainWindowVisible { reconcileLiveFolder(); if mainWindowVisible { refreshDirtyVisibleInventory() } } } }
-    @Published var storageIsLive = false
+    var mainWindowVisible = true { didSet { if oldValue != mainWindowVisible { reconcileLiveFolder(); if mainWindowVisible { refreshDirtyVisibleInventory() } } } }
+    var storageIsLive = false
     private let folderFreshness = FolderFreshness()
     private var storageUpdatesStarted = false
     private var resourceRefreshID = UUID()
@@ -19,20 +18,113 @@ import UserNotifications
     private var filters: [String: String] = [:]
     private var persistSessionEnabled = true
     private var sessionSave: DispatchWorkItem?
-    @Published var focusedStorageItem: String? { didSet { scheduleSessionSave() } }
-    @Published var resultMeasured: Date?
-    @Published var scanState = "Not scanned"
-    @Published var recovery: RecoveryTask?
-    @Published var reviewPreparing = false
+    var focusedStorageItem: String? { didSet { scheduleSessionSave() } }
+    var resultMeasured: Date?
+    var scanState = "Not scanned"
+    var recovery: RecoveryTask?
+    var reviewPreparing = false
+    var cleanupBasket = CleanupBasket()
+    var showCleanupBasket = false
+    var basketReviewRequested = false
+    func addToBasket(_ items: [DiskItem], proofs: [DuplicateProof] = []) {
+        do { try cleanupBasket.add(items, proofs: proofs); showCleanupBasket = true }
+        catch { message = error.localizedDescription }
+    }
+    func reviewBasketIfRequested() {
+        guard basketReviewRequested else { return }; basketReviewRequested = false
+        reviewTrash(cleanupBasket.items, proofs: cleanupBasket.proofs)
+    }
     private var reviewToken = ScanCancellation()
-    private var watchSchedule = WatchSchedule()
-    private var watchAlertBaseline: Int64?
     private var dockerStartTask: Task<Void, Never>?
-    @Published var finishedReceipt: CleanupReceipt?
-    @Published var quick = QuickScanState()
+    var finishedReceipt: CleanupReceipt?
+    var quick = QuickScanState()
+    let ai = AISettings()
+    /// Owns the ranked "what matters here" shortlist. Separate from AppModel so
+    /// ranking and AI state invalidate only the panel that shows them.
+    let triage = TriageStore()
+    /// The one-button "check this Mac" pass. See `FullCheck.swift`.
+    var fullCheck = FullCheckState()
+    var personal = PersonalFilesState()
+    @ObservationIgnored var personalToken = ScanCancellation()
+    /// Mirrors the stored preference so the toggle redraws when it changes.
+    var fullCheckWeekly = FullCheckHistory.weeklyEnabled
+    /// Mirror the automatic-cleanup preferences for the same reason.
+    var autoCleanEnabled = AutoClean.enabled
+    var autoCleanIdleDays = AutoClean.idleDays
+    /// Whether Full Disk Access appears granted. See `DiskAccessProbe`.
+    var diskAccess = DiskAccessProbe.Status.unknown
+    private var weeklyCheckTimer: Timer?
+    /// Local context that sharpens the ranking when it happens to be available.
+    /// Every part is optional: triage degrades to size-and-evidence without it,
+    /// and nothing here triggers work of its own.
+    func triageSignals() -> StorageTriage.Signals {
+        var signals = StorageTriage.Signals()
+        // Project ids are their root paths; a mapped port or dev process means
+        // something is using that workspace right now.
+        signals.activeRoots = Set(projectPortActivity.filter { !$0.value.isEmpty }.keys)
+        signals.duplicateExtraBytes = duplicateProofs.reduce(into: [:]) { totals, proof in
+            totals[proof.duplicate.id, default: 0] += proof.duplicate.size
+        }
+        signals.uncommittedRoots = uncommittedProjectRoots
+        signals.openPaths = openFilePaths
+        signals.manualOnlyRoots = Set(personal.report?.strayProjectRoots ?? [])
+        return signals
+    }
+
+    /// Paths a running process currently holds open, from the same bounded lsof
+    /// snapshot review already uses. Cached rather than probed per ranking: one
+    /// snapshot answers for every item.
+    private(set) var openFilePaths: Set<String> = []
+
+    /// Takes one lsof snapshot off the main actor. Safe to call repeatedly.
+    func refreshOpenFiles() {
+        Task {
+            let paths = await DiskWork.run("Checking open files", lane: .interactive) {
+                Set(FileUseService.snapshot().map(\.path))
+            }
+            openFilePaths = paths
+            Log.scan.info("Open-file snapshot: paths=\(paths.count, privacy: .public)")
+        }
+    }
+
+    /// What has been measured across every area, and what has not been looked at.
+    /// Deliberately not a single reclaimable total: see `ReclaimSummary`.
+    var reclaimSummary: ReclaimSummary {
+        ReclaimSummary.make(
+            quickBytes: quick.entries.reduce(0) { $0 + $1.item.size },
+            quickMeasured: quick.measured != nil,
+            developerBytes: caches.compactMap(\.item).reduce(0) { $0 + $1.size },
+            developerMeasured: !caches.isEmpty,
+            projectBytes: features.projects.reduce(0) { $0 + $1.size },
+            projectsMeasured: features.projectRoot != nil,
+            trashBytes: quick.trashSize,
+            duplicateBytes: features.duplicates?.groups.reduce(0) { $0 + $1.extraBytes } ?? 0,
+            duplicatesMeasured: features.duplicates != nil
+        )
+    }
+
+    /// Project roots whose repository has uncommitted work. Refreshed by
+    /// `refreshRepositoryState()` rather than probed inline: each check shells out
+    /// to git, and triage must not start a process per item.
+    private(set) var uncommittedProjectRoots: Set<String> = []
+
+    /// Probes the discovered project roots once, off the main actor. Safe to call
+    /// repeatedly; it replaces the previous answer wholesale.
+    func refreshRepositoryState() {
+        let roots = features.projects.map(\.root)
+        guard !roots.isEmpty else { uncommittedProjectRoots = []; return }
+        Task {
+            let dirty = await DiskWork.run("Checking repository state", lane: .interactive) {
+                Set(roots.filter { GitInspection.hasUncommittedChanges(near: $0) == true }.map(\.path))
+            }
+            uncommittedProjectRoots = dirty
+            Log.scan.info("Repository state: dirty=\(dirty.count, privacy: .public) of \(roots.count, privacy: .public)")
+        }
+    }
+    let scheduledScans = ScheduledScanStore()
     /// Last completed pass, kept while a new pass runs so quitting mid-scan cannot erase evidence.
     private var completedQuick: QuickScanState?
-    @Published var quickSelected = Set<String>()
+    var quickSelected = Set<String>()
     var quickSelectedItems: [DiskItem] { quick.entries.filter { quickSelected.contains($0.id) && !$0.item.incomplete }.map(\.item) }
     private let scanner = IncrementalScanner()
     private var quickToken = ScanCancellation()
@@ -41,82 +133,94 @@ import UserNotifications
     func newQuickToken() -> ScanCancellation { quickToken = ScanCancellation(); return quickToken }
     func stopFindSpace() { quickToken.cancel() }
     private var duplicateProofs: [DuplicateProof] = []
-    @Published var page: Page = .findSpace {
+    var page: Page = .findSpace {
         didSet { if oldValue != page { filters[oldValue.rawValue] = search; search = filters[page.rawValue] ?? ""; scheduleSessionSave(); reconcileLiveFolder(); refreshDirtyVisibleInventory() } }
     }
-    @Published var resources = ResourceSnapshot()
-    @Published var result: ScanResult?
-    @Published var scanRoot = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Downloads") { didSet { scheduleSessionSave(); reconcileLiveFolder() } }
-    @Published var scanning = false
-    @Published var cacheScanning = false
-    @Published var cacheOutcome = "Not scanned"
-    @Published var caches: [CacheMeasurement] = []
-    @Published var processes: [ProcessRow] = []
-    @Published var processLoading = false
-    @Published var processError: String?
-    @Published var docker: [DockerUsage] = []
-    @Published var dockerContext = ""
-    @Published var dockerLoading = false
-    @Published var dockerError: String?
-    @Published var dockerUpdated: Date?
-    @Published var dockerReachable = false
-    @Published var dockerStarting = false
-    @Published var dockerDisks: [DiskItem] = []
-    @Published var selected = Set<String>()
+    var resources = ResourceSnapshot()
+    var result: ScanResult?
+    var scanRoot = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Downloads") { didSet { scheduleSessionSave(); reconcileLiveFolder() } }
+    var scanning = false
+    var cacheScanning = false
+    var cacheOutcome = "Not scanned"
+    var caches: [CacheMeasurement] = []
+    var processes: [ProcessRow] = []
+    var processLoading = false
+    var processError: String?
+    var listeningPorts: [ListeningPort] = []
+    var portsLoading = false
+    var portsError: String?
+    var portsUpdated: Date?
+    var projectPortActivity: [String: [String]] = [:]
+    var projectActivityLoading = false
+    var docker: [DockerUsage] = []
+    var dockerContext = ""
+    var dockerLoading = false
+    var dockerError: String?
+    var dockerUpdated: Date?
+    var dockerReachable = false
+    var dockerStarting = false
+    var dockerDisks: [DiskItem] = []
+    var dockerVolumes: [DockerVolume] = []
+    var dockerVolumeError: String?
+    var selected = Set<String>()
     /// Bumped for manual scans so the Files tree can drop stale expansions without collapsing on periodic refresh.
-    @Published var treeResetToken = UUID()
-    @Published var search = "" { didSet { filters[page.rawValue] = search; scheduleSessionSave() } }
+    var treeResetToken = UUID()
+    var search = "" { didSet { filters[page.rawValue] = search; scheduleSessionSave() } }
     /// Incremented by the ⌘F command so whichever filter is on screen can take focus.
-    @Published var focusFilterRequest = 0
-    @Published var pendingTrash: [DiskItem] = []
-    @Published var pendingEvidence: [String: CleanupEvidence] = [:]
-    @Published var pendingWarnings: [String] = []
-    @Published var restoredReceiptItems = Set<UUID>()
-    @Published var pendingBlocked: [ReviewBlockedItem] = []
-    @Published var showTrashReview = false
+    var focusFilterRequest = 0
+    var pendingTrash: [DiskItem] = []
+    var pendingTrashSelection = Set<String>()
+    var selectedPendingTrash: [DiskItem] { pendingTrash.filter { pendingTrashSelection.contains($0.id) } }
+    var pendingEvidence: [String: CleanupEvidence] = [:]
+    var pendingWarnings: [String] = []
+    var pendingBlocked: [ReviewBlockedItem] = []
+    var showTrashReview = false
     var quitWhenIdle = false
-    @Published var actionBusy = false {
+    var actionBusy = false {
         didSet { if !actionBusy && quitWhenIdle { FilePersistence.flush(); NSApp.reply(toApplicationShouldTerminate: true) }; if !actionBusy && pendingMutationRefresh && !quitWhenIdle { pendingMutationRefresh = false; refreshAfterMutation() } }
     }
-    @Published var message: String?
-    @Published var activities: [Activity] = []
-    @Published var watchURL: URL?
-    @Published var watching = false
-    @Published var watchEvents = 0
-    @Published var watchChanged: Date?
-    @Published var watchBaseline: Int64?
-    @Published var watchSize: Int64?
-    @Published var watchScanning = false
-    @Published var watchError: String?
-    @Published var trashSnapshot: TrashSnapshot?
-    @Published var trashLoading = false
-    @Published var trashError: String?
-    @Published var trashSelected = Set<String>()
-    @Published var trashUpdated: Date?
+    var message: String?
+    var activities: [Activity] = []
+    var trashSnapshot: TrashSnapshot?
+    var trashLoading = false
+    var trashError: String?
+    var trashSelected = Set<String>()
+    var trashUpdated: Date?
     private var scanToken = ScanCancellation()
     private var cacheToken = ScanCancellation()
     private var cacheGeneration = UUID()
-    private var watchToken = ScanCancellation()
-    private var recursiveWatch: RecursiveChanges?
-    private var watchTask: Task<Void, Never>?
-    private var watchTimer: Timer?
     private var scanGeneration = UUID()
-    private var watchGeneration = UUID()
     var visibleItems: [DiskItem] { (result?.items ?? []).filter { search.isEmpty || $0.name.localizedCaseInsensitiveContains(search) } }
-    var visibleProcesses: [ProcessRow] { processes.filter { search.isEmpty || $0.name.localizedCaseInsensitiveContains(search) || String($0.pid).contains(search) } }
     var selectedItems: [DiskItem] { (result?.items ?? []).filter { selected.contains($0.id) } }
     var cacheBytes: Int64 { caches.reduce(0) { $0 + ($1.item?.size ?? 0) } }
     init(restoring: Bool = true) {
-        persistSessionEnabled = restoring
+        let shouldRestore = restoring && !ProcessInfo.processInfo.arguments.contains("--capture-fresh")
+        scheduledScans.onScan = { [weak self] url, result in
+            guard let self else { return nil }
+            // Compared before saving, while the previous scan is still the newest.
+            let digest = GrowthDigest.sentence(previous: self.features.scans.first { $0.root == url.path }, current: result)
+            self.features.saveScan(root: url, result: result)
+            // Close the loop: a scheduled scan that only files a measurement
+            // leaves the work of reading it to the user. Ranking it here means
+            // the notification leads somewhere already answered. Still never
+            // selects or cleans anything -- triage only describes.
+            guard !result.items.isEmpty else { return digest }
+            self.triage.refresh(items: result.items, rootName: url.lastPathComponent, signals: self.triageSignals())
+            Log.scan.info("Scheduled scan ranked: items=\(result.items.count, privacy: .public)")
+            return digest
+        }
+        persistSessionEnabled = shouldRestore && !ProcessInfo.processInfo.arguments.contains("--demo-fixtures")
         if let data = UserDefaults.standard.data(forKey: "nuke.history"), let stored = try? JSONDecoder().decode([Activity].self, from: data) { activities = stored }
-        if restoring { refreshResources() }
-        if restoring, let data = UserDefaults.standard.data(forKey: "nuke.dockerUsage"), let saved = try? JSONDecoder().decode(DockerSavedUsage.self, from: data) { docker = saved.rows; dockerContext = saved.context; dockerUpdated = saved.date; dockerError = "Saved Docker measurement — refresh to check the engine." }
+        if shouldRestore { refreshResources() }
+        if shouldRestore, let data = UserDefaults.standard.data(forKey: "nuke.dockerUsage"), let saved = try? JSONDecoder().decode(DockerSavedUsage.self, from: data) { docker = saved.rows; dockerContext = saved.context; dockerUpdated = saved.date; dockerVolumes = saved.volumes ?? []; dockerError = "Saved Docker measurement — refresh to check the engine." }
+        if ProcessInfo.processInfo.arguments.contains("--demo-fixtures") { DemoFixtures.apply(to: self) }
+        if ProcessInfo.processInfo.arguments.contains("--demo-ai") { ai.applyDemoConfiguration() }
         features.onReceipt = { [weak self] receipt in
             guard let self else { return }; self.finishedReceipt = receipt
             self.pendingMutationRefresh = true
             if !self.actionBusy { self.pendingMutationRefresh = false; self.refreshAfterMutation() }
         }
-        if restoring, let data = UserDefaults.standard.data(forKey: "nuke.workspace"), let saved = try? JSONDecoder().decode(WorkspaceState.self, from: data) {
+        if shouldRestore, let data = UserDefaults.standard.data(forKey: "nuke.workspace"), let saved = try? JSONDecoder().decode(WorkspaceState.self, from: data) {
             filters = saved.filters; page = saved.page == "AI storage" ? .ai : (saved.page == "Overview" ? .findSpace : (Page(rawValue: saved.page) ?? .findSpace)); scanRoot = saved.root
             search = saved.filters[page.rawValue] ?? ""; focusedStorageItem = saved.focusedItem
             result = saved.snapshot; resultMeasured = saved.measured
@@ -125,6 +229,14 @@ import UserNotifications
                 quick = saved; quick.busy = false; completedQuick = saved
                 if quick.measured == nil { quick.step = "Interrupted — the last pass did not finish" }
                 quickSelected = []
+            }
+            // A restored measurement is still a measurement: rank it so the panel
+            // is populated on launch rather than only after a fresh scan. The
+            // saved sizes are stale, which the page already states.
+            if let restored = result, !restored.items.isEmpty {
+                triage.refresh(items: restored.items, rootName: scanRoot.lastPathComponent, signals: triageSignals())
+            } else if let entries = saved.quick?.entries, !entries.isEmpty {
+                triage.refresh(items: entries.map(\.item), rootName: "Cleanup", signals: triageSignals())
             }
         }
     }
@@ -147,13 +259,36 @@ import UserNotifications
         if !ProcessInfo.processInfo.arguments.contains("--without-status-item") { statusController = StatusBarController(model: self) }; features.monitor.configureMonitor()
         AppDelegate.shared?.model = self
         AlertCenter.shared.model = self
+        // Started here rather than in applicationDidFinishLaunching: the delegate's
+        // model reference is only assigned above, once the first view appears.
+        LatencyBench.startIfRequested(model: self)
+        // The weekly check: once shortly after launch, then on a slow timer so a
+        // menu-bar session that stays open for days still gets its turn.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 60) { [weak self] in self?.runWeeklyCheckIfDue() }
+        weeklyCheckTimer = Timer.scheduledTimer(withTimeInterval: 3 * 3_600, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.runWeeklyCheckIfDue() }
+        }
+        weeklyCheckTimer?.tolerance = 600
+        features.monitor.onLowStorage = { [weak self] free in self?.handleLowStorage(free: free) ?? false }
+        refreshDiskAccess()
+        // Verification hook: lets a capture run show the whole-Mac result screen.
+        if ProcessInfo.processInfo.arguments.contains("--run-full-check") {
+            startFullCheck()
+            Task {
+                while fullCheck.running || triage.computing { try? await Task.sleep(for: .milliseconds(500)) }
+                try? await Task.sleep(for: .seconds(1))
+                AppDelegate.capture(name: "fullcheck")
+            }
+        }
         UNUserNotificationCenter.current().delegate = AlertCenter.shared
         AlertCenter.shared.registerActions()
         startStorageUpdates()
-        features.loadHistory()
-        if page == .processes { refreshProcesses() }
-        if page == .trash { inspectTrash() }
-        if page == .docker { inspectDocker() }
+        if !ProcessInfo.processInfo.arguments.contains("--demo-fixtures") { features.loadHistory() }
+        scheduledScans.start()
+        if !ProcessInfo.processInfo.arguments.contains("--demo-fixtures") {
+            if page == .trash { inspectTrash() }
+            if page == .docker { inspectDocker() }
+        }
     }
     func showMainWindow(_ page: Page? = nil) {
         mainWindowVisible = true
@@ -174,8 +309,8 @@ import UserNotifications
         guard let recovery else { return }; FolderAccess.shared.restore(); self.recovery = nil
         switch recovery.kind { case .storage(let url): page = .storage; scan(url, force: true); case .trash: page = .trash; inspectTrash(); case .findSpace: page = .findSpace; findSpace() }
     }
-    func sleep() { sleeping = true; reconcileLiveFolder(); features.monitor.sleep(); scanner.invalidate(); watchToken.cancel(); watchGeneration = UUID(); watchScanning = false; watchSchedule.clear(); if watching { watchSchedule.changed() }; saveSession() }
-    func wake() { sleeping = false; features.monitor.wake(); scanner.invalidate(); storageDirty = result != nil; reconcileLiveFolder(); if watching { scheduleWatchScan() } }
+    func sleep() { sleeping = true; reconcileLiveFolder(); features.monitor.sleep(); scheduledScans.pause(); scanner.invalidate(); saveSession() }
+    func wake() { sleeping = false; features.monitor.wake(); scheduledScans.resume(); scanner.invalidate(); storageDirty = result != nil; reconcileLiveFolder() }
     func startDockerAndRefresh() {
         guard !dockerLoading else { return }
         dockerLoading = true; dockerStarting = true; dockerError = "Waiting for Docker Desktop to become reachable…"
@@ -193,27 +328,43 @@ import UserNotifications
     }
     func cancelDockerWait() { dockerStartTask?.cancel(); dockerStartTask = nil; dockerLoading = false; dockerStarting = false; dockerError = "Stopped waiting. Docker may continue starting; refresh when ready." }
     func refreshResources() { let id = UUID(); resourceRefreshID = id; Task { let reading = await Task.detached(priority: .utility) { MachineService.snapshot() }.value; guard resourceRefreshID == id else { return }; resources = reading } }
-    func chooseFolder(forWatch: Bool = false) {
-        let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false; panel.allowsMultipleSelection = false
-        panel.prompt = forWatch ? "Watch folder" : "Scan folder"
-        if panel.runModal() == .OK, let url = panel.url { FolderAccess.shared.remember(url); if forWatch { startWatching(url) } else { scan(url); page = .storage } }
+    func chooseFolder() {
+        FolderAccess.shared.chooseFolder(prompt: "Scan folder") { [weak self] url in
+            guard let self else { return }
+            self.scan(url)
+            self.page = .storage
+        }
     }
+
     func scan(_ url: URL? = nil, force: Bool = false, automatic: Bool = false) {
         guard !quitWhenIdle else { return }
         scanToken.cancel(); let token = ScanCancellation(); scanToken = token
         let generation = UUID(); scanGeneration = generation
+        UIResponsiveness.mark(.scanQueued)
         if !automatic { treeResetToken = UUID() }
         if let url { scanRoot = url }
         let root = scanRoot; if !automatic { folderFreshness.cancelPending() }; scanning = true; if !automatic { selected.removeAll() }; storageDirty = false; scanState = "Refreshing…"
         reconcileLiveFolder()
+        Log.scan.info("Folder scan starting: automatic=\(automatic, privacy: .public) force=\(force, privacy: .public)")
         Task {
-            let output = await DiskWork.run(automatic ? "Updating visible folder" : "Scanning folder", priority: automatic ? .background : .foreground, cancellation: token) { [scanner] in scanner.scan(root, token: token, force: force) }
+            let output = await DiskWork.run(automatic ? "Updating visible folder" : "Scanning folder", priority: automatic ? .background : .foreground, cancellation: token) { [scanner] in
+                UIResponsiveness.mark(.scanStarted)
+                let result = scanner.scan(root, token: token, force: force)
+                UIResponsiveness.mark(.scanReturned)
+                return result
+            }
             let r = output.result
             guard scanGeneration == generation else { return }
-            if automatic { let identities = Dictionary(uniqueKeysWithValues: (result?.items ?? []).filter { selected.contains($0.id) }.map { ($0.id, $0.identity) }); selected = Set(r.items.filter { identities[$0.id] != nil && identities[$0.id]! == $0.identity && !$0.incomplete }.map(\.id)) }
+            if automatic { let identities = Dictionary(uniqueKeysWithValues: (result?.items ?? []).filter { selected.contains($0.id) }.map { ($0.id, $0.identity) }); selected = Set(r.items.filter { item in identities[item.id].map { $0 == item.identity } == true && !item.incomplete }.map(\.id)) }
             result = r; resultMeasured = output.date
+            UIResponsiveness.mark(.scanPublished)
             scanState = token.cancelled ? "Stopped — partial results" : r.limited ? "Scan limit reached — partial results" : r.skipped > 0 ? "Access incomplete — partial results" : storageDirty ? "Folder changed — update pending" : output.reused > 0 ? "\(output.reused) items reused · cached estimate; Full scan measures again" : "Measured now"
+            Log.scan.info("Folder scan finished: items=\(r.items.count, privacy: .public) visited=\(r.visited, privacy: .public) skipped=\(r.skipped, privacy: .public) limited=\(r.limited, privacy: .public) reused=\(output.reused, privacy: .public)")
+            if r.skipped > 0 { Log.access.notice("Scan could not read \(r.skipped, privacy: .public) entries; access issues=\(r.accessIssues.count, privacy: .public)") }
             if output.reused == 0 && !automatic { features.saveScan(root: root, result: r) }; scanning = false; refreshResources(); if !automatic { scheduleSessionSave() }; folderFreshness.finished()
+            // Background refreshes repaint the same folder; only an explicit scan
+            // is a new question worth re-ranking and re-asking about.
+            if !automatic { triage.refresh(items: r.items, rootName: root.lastPathComponent, signals: triageSignals()) }
         }
     }
     func cancelScan() { scanToken.cancel(); folderFreshness.cancelPending() }
@@ -227,6 +378,7 @@ import UserNotifications
     func scanCaches() {
         guard !cacheScanning else { return }
         cacheScanning = true; cacheOutcome = "Measuring…"; caches = []; let token = ScanCancellation(); cacheToken = token
+        refreshOpenFiles()
         let generation = UUID(); cacheGeneration = generation
         Task {
             for rule in CacheRule.all {
@@ -236,23 +388,59 @@ import UserNotifications
             }
             cacheScanning = false
             cacheOutcome = token.cancelled ? "Stopped — partial results" : caches.contains { $0.skipped > 0 } ? "Inspection finished — access gaps" : caches.contains { $0.item?.incomplete == true } ? "Scan limit reached — partial results" : "Inspection finished"
+            let measured = caches.compactMap(\.item)
+            Log.scan.info("Developer cache scan finished: locations=\(self.caches.count, privacy: .public) measured=\(measured.count, privacy: .public)")
+            triage.refresh(items: measured, rootName: "Developer", signals: triageSignals())
         }
     }
+    func refreshPorts() {
+        guard !portsLoading else { return }
+        portsLoading = true; portsError = nil
+        Task {
+            let report = await Task.detached(priority: .utility) { PortInspection.inspect() }.value
+            listeningPorts = report.rows
+            portsError = report.error
+            portsUpdated = Date()
+            portsLoading = false
+        }
+    }
+
+    func refreshProjectActivity() {
+        guard !projectActivityLoading else { return }
+        projectActivityLoading = true
+        Task {
+            let processReport = await Task.detached(priority: .utility) { ProcessService.snapshot() }.value
+            let portReport = await Task.detached(priority: .utility) { PortInspection.inspect() }.value
+            processes = processReport.rows
+            processError = processReport.error
+            portsError = portReport.error
+            listeningPorts = portReport.rows
+            portsUpdated = Date()
+            let processPids = processReport.rows.filter { ProjectActivityDetector.isDevelopmentProcess($0) }.map(\.pid)
+            let portPids = portReport.rows.map(\.pid)
+            let pids = Array(Set(processPids + portPids)).prefix(48)
+            var cwd: [Int32: String] = [:]
+            await withTaskGroup(of: (Int32, String?).self) { group in
+                for pid in pids {
+                    group.addTask { (pid, PortInspection.currentDirectory(pid: pid)) }
+                }
+                for await (pid, directory) in group {
+                    if let directory { cwd[pid] = directory }
+                }
+            }
+            var merged = ProjectActivityDetector.activeWithPorts(projects: features.projects, ports: portReport.rows, cwd: cwd)
+            for (id, names) in ProjectActivityDetector.activeWithProcessCWD(projects: features.projects, processes: processReport.rows, cwd: cwd) {
+                merged[id, default: []].append(contentsOf: names)
+            }
+            projectPortActivity = merged.mapValues { Array(Set($0)).sorted() }
+            processLoading = false
+            projectActivityLoading = false
+        }
+    }
+
     func refreshProcesses() {
         guard !processLoading else { return }; processLoading = true
         Task { let report = await Task.detached(priority: .utility) { ProcessService.snapshot() }.value; processes = report.rows; processError = report.error; processLoading = false; refreshResources() }
-    }
-    func terminate(_ row: ProcessRow) {
-        Task {
-            let current = await Task.detached { ProcessService.list().first { $0.pid == row.pid } }.value
-            guard let current, current.started == row.started, current.command == row.command, row.owner == getuid(), row.pid != getpid(), row.pid > 1 else { message = "The process changed, belongs to another user, or is protected. Refresh the list."; return }
-            if let app = NSRunningApplication(processIdentifier: row.pid) {
-                message = app.terminate() ? "Quit requested for \(row.name). Unsaved work may require attention in the app." : "The app did not accept the quit request. Use Activity Monitor to inspect it."
-            } else {
-                message = kill(row.pid, SIGTERM) == 0 ? "Termination requested for \(row.name)." : "Could not terminate the process: \(String(cString: strerror(errno)))."
-            }
-            record("Quit requested", detail: "\(row.name) · PID \(row.pid)"); refreshProcesses()
-        }
     }
     func inspectDocker() {
         guard !quitWhenIdle else { return }
@@ -260,11 +448,13 @@ import UserNotifications
         Task {
             let report = await Task.detached(priority: .utility) { DockerInspection.inspect() }.value
             let disks = await Task.detached(priority: .utility) { DockerInspection.localDisks() }.value
-            if report.context != dockerContext { docker = []; dockerUpdated = nil }
+            if report.context != dockerContext { docker = []; dockerVolumes = []; dockerUpdated = nil }
             dockerContext = report.context; dockerReachable = report.reachable; dockerError = report.note; dockerDisks = disks
+            dockerVolumes = report.volumes; dockerVolumeError = report.volumeError
             if report.reachable {
-                docker = report.rows; dockerUpdated = Date()
-                if let data = try? JSONEncoder().encode(DockerSavedUsage(context: report.context, rows: report.rows, date: dockerUpdated!)) { UserDefaults.standard.set(data, forKey: "nuke.dockerUsage") }
+                let updated = Date()
+                docker = report.rows; dockerUpdated = updated
+                if let data = try? JSONEncoder().encode(DockerSavedUsage(context: report.context, rows: report.rows, date: updated, volumes: report.volumes)) { UserDefaults.standard.set(data, forKey: "nuke.dockerUsage") }
             }
             dockerLoading = false
         }
@@ -300,17 +490,21 @@ import UserNotifications
             features.scanDevices()
         }
     }
-    func reviewTrash(_ items: [DiskItem], proofs: [DuplicateProof] = [], cacheContents: CacheRule? = nil) {
+    func reviewTrash(_ items: [DiskItem], proofs: [DuplicateProof] = [], cacheContents: CacheRule? = nil, folderContents: DiskItem? = nil) {
         guard !actionBusy else { return }; actionBusy = true
-        pendingTrash = []; duplicateProofs = []; pendingEvidence = [:]; pendingWarnings = []; pendingBlocked = []
+        pendingTrash = []; pendingTrashSelection = []; duplicateProofs = []; pendingEvidence = [:]; pendingWarnings = []; pendingBlocked = []
         reviewPreparing = true; let token = ScanCancellation(); reviewToken = token
         let scopes = FolderAccess.shared.cleanupScopes
+        let developerScopes = features.developerScopes
         Task {
             let preparation = await DiskWork.run("Preparing cleanup review", cancellation: token) { () -> ReviewPreparation in
                 if let cacheContents {
-                    return ReviewPlanner.prepareCacheContents(cacheContents, scopes: scopes, token: token)
+                    return ReviewPlanner.prepareCacheContents(cacheContents, scopes: scopes, token: token, developerScopes: developerScopes)
                 }
-                return ReviewPlanner.prepare(items, scopes: scopes, token: token)
+                if let folderContents {
+                    return ReviewPlanner.prepareFolderContents(folderContents, scopes: scopes, token: token, developerScopes: developerScopes)
+                }
+                return ReviewPlanner.prepare(items, scopes: scopes, token: token, developerScopes: developerScopes)
             }
             guard reviewToken === token else { return }
             reviewPreparing = false; actionBusy = false
@@ -322,56 +516,66 @@ import UserNotifications
                 if pendingBlocked.isEmpty { message = preparation.failures.joined(separator: "\n") }
                 return
             }
+            Log.cleanup.info("Review prepared: eligible=\(preparation.items.count, privacy: .public) blocked=\(preparation.blocked.count, privacy: .public) warnings=\(preparation.warnings.count, privacy: .public)")
             duplicateProofs = proofs
             pendingEvidence = preparation.evidence
             pendingWarnings = preparation.warnings
-            pendingTrash = preparation.items; showTrashReview = !pendingTrash.isEmpty
+            pendingTrash = preparation.items
+            pendingTrashSelection = folderContents == nil ? Set(preparation.items.map(\.id)) : []
+            showTrashReview = !pendingTrash.isEmpty
         }
     }
 
     func cancelReview() { reviewToken.cancel(); reviewPreparing = false; actionBusy = false; pendingEvidence = [:]; pendingWarnings = []; pendingBlocked = [] }
     func trashReviewed() {
-        guard !actionBusy, !pendingTrash.isEmpty else { return }; let items = pendingTrash; showTrashReview = false; actionBusy = true
-        let proofs = duplicateProofs
+        let items = selectedPendingTrash
+        guard !actionBusy, !items.isEmpty else { return }
+        showTrashReview = false
+        actionBusy = true
+        let proofs = duplicateProofs.filter { pendingTrashSelection.contains($0.duplicate.id) }
         let allowedRoots = FolderAccess.shared.cleanupScopes
+        let developerScopes = features.developerScopes
         let running = NSWorkspace.shared.runningApplications.compactMap { $0.bundleURL?.path }
+        Log.cleanup.notice("Executing reviewed cleanup: items=\(items.count, privacy: .public) bytes=\(items.reduce(0) { $0 + $1.size }, privacy: .public)")
         Task {
-            let receipt = await DiskWork.run { ReceiptService.moveToTrash(items, proofs: proofs, runningAppPaths: running, allowedRoots: allowedRoots) }
+            let receipt = await DiskWork.run { ReceiptService.moveToTrash(items, proofs: proofs, runningAppPaths: running, allowedRoots: allowedRoots, developerScopes: developerScopes) }
+            let moved = receipt.items.filter(\.success).count
+            Log.cleanup.notice("Cleanup finished: moved=\(moved, privacy: .public) failed=\(receipt.items.count - moved, privacy: .public)")
             features.receipt(receipt)
             let detail = receipt.items.map { "\($0.success ? "Moved to Trash" : "Failed"): \($0.originalPath) · \($0.outcome)" }.joined(separator: "\n")
-            record("File cleanup", detail: detail); actionBusy = false; pendingTrash = []; pendingEvidence = [:]; pendingWarnings = []; pendingBlocked = []; duplicateProofs = []
+            cleanupBasket.removeMoved(receipt.items.filter(\.success).map(\.originalPath))
+            personalFilesMoved(receipt.items.filter(\.success).map(\.originalPath))
+            record("File cleanup", detail: detail); actionBusy = false; pendingTrash = []; pendingTrashSelection = []; pendingEvidence = [:]; pendingWarnings = []; pendingBlocked = []; duplicateProofs = []
 
         }
     }
 
-    /// Restores one successful receipt item from Trash. Refuses to overwrite an existing
-    /// original path and never invents a directory. The Trash copy is the only source.
-    func restoreReceiptItem(_ item: ReceiptItem) {
-        guard !actionBusy, item.success, let trashPath = item.trashPath else { return }
+    func restoreReceiptItem(_ item: ReceiptItem, onFailure: ((String) -> Void)? = nil) {
+        guard !actionBusy, let current = features.receipts.lazy.flatMap(\.items).first(where: { $0.id == item.id }),
+              current.success, current.restoredAt == nil, current.restoreEvidence != nil else { return }
         actionBusy = true
         Task {
-            let failure = await DiskWork.run("Restoring from Trash") { () -> String? in
-                let trashURL = URL(fileURLWithPath: trashPath), originalURL = URL(fileURLWithPath: item.originalPath)
-                let fm = FileManager.default
-                guard fm.fileExists(atPath: trashURL.path) else { return "The Trash copy is no longer present. Check Trash in Finder." }
-                guard !fm.fileExists(atPath: originalURL.path) else { return "The original path already exists. Nuke Sweep will not overwrite it." }
-                guard fm.fileExists(atPath: originalURL.deletingLastPathComponent().path) else { return "The original parent folder no longer exists. Recreate it before restoring, or use Finder." }
-                do { try fm.moveItem(at: trashURL, to: originalURL); return nil }
-                catch { return "Could not restore \(item.originalPath): " + error.localizedDescription }
+            let outcome = await DiskWork.run("Restoring from Trash") { Result { try ReceiptRestore.restore(current) } }
+            switch outcome {
+            case .success:
+                features.markRestored(current.id)
+                record("Restored item", detail: "Restored " + current.originalPath + " from Trash.")
+            case .failure(let error):
+                if let onFailure { onFailure(error.localizedDescription) }
+                else { message = error.localizedDescription }
             }
-            if let failure { message = failure }
-            else { restoredReceiptItems.insert(item.id); record("Restored item", detail: "Restored \(item.originalPath) from Trash.") }
             actionBusy = false
         }
     }
 
     func exportPendingPlan() {
-        guard !pendingTrash.isEmpty else { return }
+        let items = selectedPendingTrash
+        guard !items.isEmpty else { return }
         let plan = CleanupPlan(
             generatedAt: Date(),
             note: "Dry run only. No files were moved. Each normal cleanup moves reviewed items to macOS Trash; space is reclaimed only after Trash is emptied.",
-            totalLogicalSize: pendingTrash.reduce(0) { $0 + $1.size },
-            items: pendingTrash.map { .init(path: $0.url.path, size: $0.size, directory: $0.directory, evidence: pendingEvidence[$0.id]) },
+            totalLogicalSize: items.reduce(0) { $0 + $1.size },
+            items: items.map { .init(path: $0.url.path, size: $0.size, directory: $0.directory, evidence: pendingEvidence[$0.id]) },
             warnings: pendingWarnings
         )
         let panel = NSSavePanel(); panel.nameFieldStringValue = "Nuke Sweep-cleanup-plan.json"
@@ -397,7 +601,7 @@ import UserNotifications
         }
     }
     func permanentlyDeleteTrash(_ entries: [TrashEntry], rootIdentity: FileIdentity) {
-        guard !actionBusy, !entries.isEmpty, let snapshot = trashSnapshot, snapshot.rootIdentity == rootIdentity,
+        guard !actionBusy, !entries.isEmpty, let snapshot = trashSnapshot, snapshot.complete, snapshot.rootIdentity == rootIdentity,
               entries.allSatisfy({ entry in snapshot.entries.contains { $0.id == entry.id && $0.fingerprint == entry.fingerprint } }) else { return }
         actionBusy = true
         Task {
@@ -413,43 +617,6 @@ import UserNotifications
     func record(_ title: String, detail: String) {
         activities.insert(.init(date: Date(), title: title, detail: detail), at: 0); activities = Array(activities.prefix(100))
         if let d = try? JSONEncoder().encode(activities) { UserDefaults.standard.set(d, forKey: "nuke.history") }
-    }
-    func startWatching(_ url: URL) {
-        stopWatching(); watchURL = url; watchEvents = 0; watchBaseline = nil; watchAlertBaseline = nil; watchSize = nil; watchError = nil
-        let eventGeneration = watchGeneration
-        recursiveWatch = RecursiveChanges(url) { [weak self] in
-            DispatchQueue.main.async { guard let self, self.watching, self.watchGeneration == eventGeneration else { return }; self.watchEvents += 1; self.watchChanged = Date(); self.scheduleWatchScan() }
-        }
-        watching = recursiveWatch?.available == true
-        if watching {
-            measureWatch()
-
-        } else { watchError = "Nuke Sweep could not watch this folder. Choose a readable location." }
-    }
-    func scheduleWatchScan() {
-        watchSchedule.changed()
-        watchTask?.cancel(); watchTask = Task { try? await Task.sleep(for: .seconds(2)); if !Task.isCancelled { measureWatch() } }
-    }
-    func measureWatch() {
-        guard watching, let url = watchURL, watchSchedule.begin() else { return }
-        watchScanning = true; let token = ScanCancellation(); watchToken = token; let generation = watchGeneration
-        Task {
-            let r = await DiskWork.run("Watching folder", priority: .background, cancellation: token) { DiskScanner.scan(url, cancellation: token) }
-            guard generation == watchGeneration else { return }
-            watchSize = r.logical; if watchBaseline == nil { watchBaseline = r.logical }; watchScanning = false
-            if r.skipped == 0 && !r.limited {
-                if let baseline = watchAlertBaseline { if AlertCenter.shared.recordGrowth(root: url, before: baseline, after: r.logical, enabled: features.monitor.alertsEnabled) { watchAlertBaseline = r.logical } } else { watchAlertBaseline = r.logical }
-            }
-            watchError = r.skipped > 0 || r.limited ? "Some files could not be measured. Growth is an estimate." : nil
-            if watchSchedule.finish() { scheduleWatchScan() }
-        }
-    }
-    func stopWatching() { recursiveWatch = nil; watchTimer?.invalidate(); watchTimer = nil; watchTask?.cancel(); watchToken.cancel(); watchGeneration = UUID(); watching = false; watchScanning = false; watchSchedule.clear() }
-    /// Removes the current folder from the watchlist. No files are touched.
-    func removeWatch() {
-        stopWatching()
-        watchURL = nil; watchBaseline = nil; watchAlertBaseline = nil
-        watchSize = nil; watchEvents = 0; watchChanged = nil; watchError = nil
     }
     func reveal(_ url: URL) { NSWorkspace.shared.activateFileViewerSelecting([url]) }
 }
@@ -483,7 +650,6 @@ extension AppModel {
         trashInspectionToken.cancel(); trashInspectionToken = ScanCancellation(); trashLoading = false; trashSnapshot = nil; trashSelected = []
         features.invalidateStorageInventories()
         refreshResources(); features.monitor.storageDidChange()
-        if watching { watchSchedule.changed(); scheduleWatchScan() }
         if result != nil { scan(force: true, automatic: true) }
         if page == .developer || page == .overview { scanCaches() }
         if page == .findSpace { findSpace() }

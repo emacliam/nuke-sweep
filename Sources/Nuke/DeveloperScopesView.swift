@@ -2,8 +2,8 @@ import SwiftUI
 import AppKit
 
 struct DeveloperScopesSection: View {
-    @EnvironmentObject var model: AppModel
-    @EnvironmentObject var features: FeatureModel
+    @Environment(AppModel.self) var model
+    @Environment(FeatureModel.self) var features
     @State private var editing: DeveloperScope?
 
     var body: some View {
@@ -75,14 +75,14 @@ struct DeveloperScopesSection: View {
 }
 
 private struct ScopeCard: View {
-    @EnvironmentObject var model: AppModel
-    @EnvironmentObject var features: FeatureModel
+    @Environment(AppModel.self) var model
+    @Environment(FeatureModel.self) var features
     @ObservedObject private var access = FolderAccess.shared
     let scope: DeveloperScope
     var onEdit: (DeveloperScope) -> Void
     @State private var expanded = false
     @State private var selection: [String: DiskItem] = [:]
-    @StateObject private var tree = FolderTreeStore()
+    @State private var tree = FolderTreeStore()
 
     private var measurement: ScopeMeasurement? { features.scopeMeasurements[scope.id] }
     private var measuring: Bool { features.measuringScopes.contains(scope.id) }
@@ -137,12 +137,21 @@ private struct ScopeCard: View {
 
             if expanded { details }
         }
-        .background(.white, in: RoundedRectangle(cornerRadius: 9))
+        .background(Theme.surface, in: RoundedRectangle(cornerRadius: 9))
         .overlay(RoundedRectangle(cornerRadius: 9).stroke(Theme.line))
-        .onAppear { tree.configure(isExcluded: scope.isExcluded) }
-        .onChange(of: scope) { _, _ in tree.configure(isExcluded: scope.isExcluded) }
+        // The scope is captured by value rather than passing a bound method
+        // reference, so the predicate is provably Sendable for the disk lanes.
+        .onAppear { let current = scope; tree.configure { current.isExcluded($0) } }
+        .onChange(of: scope) { _, updated in tree.configure { updated.isExcluded($0) } }
         .onChange(of: measurement?.measured) { _, _ in tree.reset(); selection = [:] }
         .onChange(of: model.finishedReceipt?.id) { _, _ in tree.reset(); selection = [:] }
+    }
+
+    private func applyExclusions(_ items: [DiskItem]) {
+        let updated = DeveloperScope.applyingPlanExclusions(root: scope.url, existing: scope, additions: items.map(\.url))
+        guard updated.exclusions != scope.exclusions else { return }
+        features.upsertDeveloperScope(updated)
+        features.measureDeveloperScope(updated)
     }
 
     private var details: some View {
@@ -171,6 +180,8 @@ private struct ScopeCard: View {
                         items: measurement.items,
                         selectionEnabled: scope.cleanupAllowed,
                         blocked: { scope.blocksSelection($0) },
+                        scope: scope,
+                        onApplyExclusions: applyExclusions,
                         hint: "Excluded paths are skipped; a folder containing one cannot be selected. Project-looking folders are refused at review."
                     ).frame(height: 280)
                     if measurement.limited || measurement.skipped > 0 {
@@ -181,6 +192,7 @@ private struct ScopeCard: View {
                         HStack(spacing: 8) {
                             Text("\(selection.count) selected").font(.system(size: 11))
                             Spacer()
+                            Button("Add to basket") { model.addToBasket(Array(selection.values)) }.buttonStyle(QuietButton()).disabled(selection.isEmpty || model.actionBusy || measuring || !covered)
                             Button("Review selected…") { model.reviewTrash(Array(selection.values)) }
                                 .buttonStyle(PrimaryButton())
                                 .disabled(selection.isEmpty || model.actionBusy || measuring || !covered)
@@ -235,7 +247,7 @@ private struct ScopeEditor: View {
                     .font(.system(size: 11, design: .monospaced))
                     .frame(height: 72)
                     .padding(6)
-                    .background(.white, in: RoundedRectangle(cornerRadius: 6))
+                    .background(Theme.surface, in: RoundedRectangle(cornerRadius: 6))
                     .overlay(RoundedRectangle(cornerRadius: 6).stroke(Theme.line))
                 Text("One relative path per line or comma-separated, for example node_modules or packages/web/build. Excluded paths are not measured, and a folder containing one cannot be selected. Wildcards are not supported.")
                     .font(.system(size: 10)).foregroundStyle(Theme.secondary).fixedSize(horizontal: false, vertical: true)

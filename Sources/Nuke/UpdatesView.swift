@@ -28,12 +28,16 @@ struct PublicRelease: Decodable, Sendable {
     @Published var note = "Check the public GitHub release when you choose. No checks run automatically."
     @Published var releaseURL: URL?
     static var installed: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.8.2" }
+    static let latestReleaseEndpoint = "https://api.github.com/repos/emacliam/nuke-sweep/releases/latest"
+    static let releasesPage = "https://github.com/emacliam/nuke-sweep/releases"
     func check() {
+        guard !AppEnvironment.isDevelopment else { note = "Development build: this artifact is not a public release. Open releases to install a signed distribution."; return }
         guard !checking else { return }; checking = true; releaseURL = nil
         Task {
             defer { checking = false }
             do {
-                var request = URLRequest(url: URL(string: "https://api.github.com/repos/emacliam/nuke-sweep/releases/latest")!)
+                guard let endpoint = URL(string: Self.latestReleaseEndpoint) else { note = "The update endpoint could not be built."; return }
+        var request = URLRequest(url: endpoint)
                 request.timeoutInterval = 15; request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
                 let (data, response) = try await URLSession.shared.data(for: request)
                 guard (response as? HTTPURLResponse)?.statusCode == 200 else { note = "Could not read the latest release. Try again later or visit the releases page."; return }
@@ -46,14 +50,14 @@ struct PublicRelease: Decodable, Sendable {
     }
 }
 struct UpdatesView: View {
-    @StateObject private var checker = UpdateChecker()
+    @State private var checker = UpdateChecker()
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             Text("Nuke Sweep \(UpdateChecker.installed)").font(.system(size: 18, weight: .semibold))
             Text(checker.checking ? "Checking the public release…" : checker.note).font(.system(size: 12)).foregroundStyle(Theme.secondary)
             HStack {
                 Button("Check for updates") { checker.check() }.buttonStyle(PrimaryButton()).disabled(checker.checking)
-                Button("Open releases") { NSWorkspace.shared.open(checker.releaseURL ?? URL(string: "https://github.com/emacliam/nuke-sweep/releases")!) }.buttonStyle(QuietButton())
+                Button("Open releases") { if let url = checker.releaseURL ?? URL(string: UpdateChecker.releasesPage) { NSWorkspace.shared.open(url) } }.buttonStyle(QuietButton())
             }
             Notice(text: "Downloads and installation remain under your control. This check contacts GitHub; it does not upload scans or file paths.", symbol: "info.circle")
         }

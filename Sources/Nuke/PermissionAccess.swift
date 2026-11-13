@@ -26,6 +26,35 @@ struct CleanupScope: Sendable {
         if let data = UserDefaults.standard.data(forKey: "nuke.folderBookmarks"), let saved = try? JSONDecoder().decode([FolderGrant].self, from: data) { grants = saved }
         restore()
     }
+    private var folderPickerPending = false
+
+    func chooseFolder(prompt: String, onChoose: @escaping (URL) -> Void) {
+        guard !folderPickerPending else { return }
+        folderPickerPending = true
+        UIResponsiveness.mark(.folderPickerRequested)
+        DispatchQueue.main.async {
+            let window = NSApp.keyWindow
+            let panel = NSOpenPanel()
+            panel.canChooseDirectories = true
+            panel.canChooseFiles = false
+            panel.allowsMultipleSelection = false
+            panel.prompt = prompt
+            let completion: (NSApplication.ModalResponse) -> Void = { response in
+                self.folderPickerPending = false
+                UIResponsiveness.mark(.folderPickerReturned)
+                guard response == .OK, let url = panel.url else { return }
+                self.remember(url)
+                onChoose(url)
+            }
+            UIResponsiveness.mark(.folderPickerOpened)
+            if let window, window.isVisible, window.attachedSheet == nil {
+                panel.beginSheetModal(for: window, completionHandler: completion)
+            } else {
+                panel.begin(completionHandler: completion)
+            }
+        }
+    }
+
     func restore() {
         for id in scopedRoots { roots[id]?.stopAccessingSecurityScopedResource() }
         scopedRoots = []; roots = [:]
@@ -71,6 +100,16 @@ struct CleanupScope: Sendable {
         roots[grant.id] = nil; grants.removeAll { $0.id == grant.id }; persist()
         note = "Folder forgotten. This removes Nuke Sweep’s saved access; it does not change macOS privacy settings."
     }
+    /// Saved access whose folder can no longer be resolved, typically because it
+    /// was deleted or moved. These accumulate and can only be cleared one by one.
+    var unavailableGrants: [FolderGrant] { grants.filter { roots[$0.id] == nil } }
+    func forgetUnavailable() {
+        let stale = unavailableGrants
+        guard !stale.isEmpty else { return }
+        let ids = Set(stale.map(\.id))
+        grants.removeAll { ids.contains($0.id) }; persist()
+        note = "Removed \(stale.count) saved folder\(stale.count == 1 ? "" : "s") that no longer resolve. macOS privacy settings are unchanged."
+    }
     func persist() { if let data = try? JSONEncoder().encode(grants) { UserDefaults.standard.set(data, forKey: "nuke.folderBookmarks") } }
 }
 @MainActor final class PermissionSettings: ObservableObject {
@@ -107,19 +146,19 @@ struct CleanupScope: Sendable {
     static func openNotifications() { if let url = URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension") { NSWorkspace.shared.open(url) } }
 }
 struct PermissionsView: View {
-    @EnvironmentObject var model: AppModel
+    @Environment(AppModel.self) var model
     @ObservedObject private var access = FolderAccess.shared
-    @StateObject private var settings = PermissionSettings()
+    @State private var settings = PermissionSettings()
     var body: some View {
         VStack(alignment: .leading, spacing: 24) {
             if let recovery = model.recovery {
-                Notice(text: "Retry the blocked inspection: " + recovery.title + ". Choose the relevant access below, then retry. macOS may require restarting Nuke Sweep after a Full Disk Access change.", symbol: "hand.raised")
+                Notice.measured("Retry the blocked inspection: " + recovery.title + ". Choose the relevant access below, then retry. macOS may require restarting Nuke Sweep after a Full Disk Access change.", symbol: "hand.raised")
                 Button("Choose folder for this inspection…") { model.chooseFolderForRecovery() }.buttonStyle(QuietButton())
                 Button("Retry this inspection") { model.retryRecovery() }.buttonStyle(PrimaryButton())
             }
             SectionTitle(title: "Folder access", detail: "Choose only the locations you need")
             Text("Nuke Sweep runs without administrator privileges. Choosing a folder uses macOS’s file picker; saved bookmarks remember that choice. Files still need a cleanup review. The chosen root itself and system locations are protected.").font(.system(size: 12)).foregroundStyle(Theme.secondary).frame(maxWidth: 720, alignment: .leading).fixedSize(horizontal: false, vertical: true)
-            HStack { Button("Choose a folder…") { model.chooseFolder() }.buttonStyle(PrimaryButton()); Button("Retry saved access") { access.restore(); settings.refresh() }.buttonStyle(QuietButton()) }
+            HStack { Button("Choose a folder…") { model.chooseFolder() }.buttonStyle(PrimaryButton()); Button("Retry saved access") { access.restore(); settings.refresh() }.buttonStyle(QuietButton()); if access.unavailableGrants.count > 1 { Button("Forget unavailable") { access.forgetUnavailable() }.buttonStyle(QuietButton()).help("Removes saved access for folders that no longer exist") } }
             Text(access.note).font(.system(size: 11)).foregroundStyle(Theme.secondary)
             ForEach(access.grants) { grant in
                 HStack {
@@ -136,14 +175,14 @@ struct PermissionsView: View {
             Button("Open Login Items settings") { SMAppService.openSystemSettingsLoginItems() }.buttonStyle(QuietButton())
             Toggle("Launch Nuke Sweep at login", isOn: Binding(get: { settings.loginEnabled }, set: { settings.setLogin($0) })).font(.system(size: 12))
             Text("Login item: " + settings.loginStatus).font(.system(size: 11)).foregroundStyle(Theme.secondary)
-            if !settings.note.isEmpty { Notice(text: settings.note, symbol: "info.circle") }
+            if !settings.note.isEmpty { Notice.measured(settings.note, symbol: "info.circle") }
             Button("Refresh permission status") { settings.refresh() }.buttonStyle(QuietButton())
-            Notice(text: "No Accessibility, Screen Recording, administrator helper, or automatic deletion is required. Permission to read a folder is not permission to remove it. Forgetting a bookmark does not revoke access already granted in System Settings.", symbol: "hand.raised")
+            Notice(text: "No Accessibility, Screen Recording or administrator helper is required, and nothing is deleted automatically. Permission to read a folder is not permission to remove it. Forgetting a bookmark does not revoke access already granted in System Settings.", symbol: "hand.raised")
         }.onAppear { settings.refresh() }.onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in settings.refresh() }
     }
 }
 struct AccessRecovery: View {
-    @EnvironmentObject var model: AppModel
+    @Environment(AppModel.self) var model
     var body: some View {
         HStack {
             if model.page == .trash { Button("Retry Trash scan") { model.inspectTrash() }.buttonStyle(QuietButton()).disabled(model.trashLoading) }

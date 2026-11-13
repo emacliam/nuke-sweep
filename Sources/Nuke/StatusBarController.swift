@@ -1,6 +1,6 @@
 import SwiftUI
+import NukeMetrics
 import AppKit
-import Combine
 import NukeWidgetUI
 
 @MainActor final class StatusBarController: NSObject, NSPopoverDelegate {
@@ -8,7 +8,8 @@ import NukeWidgetUI
     private let monitor: LiveMonitor
     private var item: NSStatusItem?
     private let popover = NSPopover()
-    private var updates: AnyCancellable?
+    private var pendingUpdate: DispatchWorkItem?
+    private var observing = false
     private var localMouseMonitor: Any?
     private var globalMouseMonitor: Any?
     private var resignObserver: NSObjectProtocol?
@@ -16,17 +17,37 @@ import NukeWidgetUI
         self.model = model; monitor = model.features.monitor
         super.init()
         popover.behavior = .transient; popover.delegate = self
-        // Observe only inputs displayed in the item, not history/alert bookkeeping.
-        updates = Publishers.MergeMany([
-            monitor.$sample.map { _ in () }.eraseToAnyPublisher(),
-            monitor.$monitorPaused.map { _ in () }.eraseToAnyPublisher(),
-            monitor.$sleeping.map { _ in () }.eraseToAnyPublisher(),
-            monitor.$monitorEnabled.map { _ in () }.eraseToAnyPublisher(),
-            monitor.$showStatusName.map { _ in () }.eraseToAnyPublisher(),
-            monitor.$statusBarMetric.map { _ in () }.eraseToAnyPublisher()
-        ]).debounce(for: .milliseconds(100), scheduler: DispatchQueue.main)
-          .sink { [weak self] _ in self?.update() }
+        observeDisplayedInputs()
         update()
+    }
+    /// Observation tracking is single-shot, so each change re-arms the next one.
+    /// Only inputs displayed in the item are read here; history and alert
+    /// bookkeeping must not redraw the status item.
+    private func observeDisplayedInputs() {
+        observing = true
+        withObservationTracking {
+            _ = monitor.sample
+            _ = monitor.monitorPaused
+            _ = monitor.sleeping
+            _ = monitor.monitorEnabled
+            _ = monitor.showStatusName
+            _ = monitor.statusBarMetric
+        } onChange: { [weak self] in
+            // onChange runs before the new value is applied, so hop to the main
+            // queue to read the settled state, then re-arm for the next change.
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.observing else { return }
+                self.scheduleUpdate()
+                self.observeDisplayedInputs()
+            }
+        }
+    }
+    /// A burst of samples or setting changes should redraw the item once.
+    private func scheduleUpdate() {
+        pendingUpdate?.cancel()
+        let work = DispatchWorkItem { [weak self] in self?.update() }
+        pendingUpdate = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(100), execute: work)
     }
     private static func brandImage() -> NSImage {
         let size = NSSize(width: 18, height: 15)
@@ -61,13 +82,19 @@ import NukeWidgetUI
         let width: CGFloat = mode == .icon && !monitor.monitorPaused && !monitor.sleeping ? (monitor.showStatusName ? 105 : 28) : (monitor.showStatusName ? 203 : 128)
         if item?.length != width { item?.length = width }
         if item?.button?.title != title { item?.button?.title = title }
-        item?.button?.toolTip = "Nuke Sweep — " + mode.title + ". Click for storage, CPU, memory, and cleanup scopes."
-        item?.button?.setAccessibilityLabel("Nuke Sweep. " + (reading ?? "Open monitor"))
+        // The tooltip and the spoken label carry the storage state, so a user who
+        // cannot see the popover's colour still learns the disk is under pressure.
+        let pressure = monitor.sample.map {
+            StoragePressure.evaluate(free: $0.disk.freeDisk, total: $0.disk.totalDisk, thresholdGB: monitor.lowSpaceGB)
+        } ?? .unavailable
+        let state = pressure == .unavailable || monitor.monitorPaused || monitor.sleeping ? "" : " " + pressure.spoken + "."
+        item?.button?.toolTip = "Nuke Sweep — " + mode.title + "." + state + " Click for storage, CPU, memory, and cleanup scopes."
+        item?.button?.setAccessibilityLabel("Nuke Sweep. " + (reading ?? "Open monitor") + state)
     }
     @objc func toggle() { if popover.isShown { popover.close() } else { show() } }
     func show() {
         guard !popover.isShown, let button = item?.button, let model else { return }
-        popover.contentViewController = NSHostingController(rootView: MonitorPopover().environmentObject(model).environmentObject(monitor).preferredColorScheme(.light))
+        popover.contentViewController = NSHostingController(rootView: MonitorPopover().environment(model).environment(monitor))
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         popover.contentViewController?.view.window?.makeKey()
         startDismissalMonitoring()
@@ -99,7 +126,10 @@ import NukeWidgetUI
     }
     func popoverDidClose(_ notification: Notification) { stopDismissalMonitoring(); popover.contentViewController = nil }
     func close() { stopDismissalMonitoring(); popover.close() }
-    deinit {
+    /// Isolated so the cleanup below can touch this actor's own stored
+    /// properties; a nonisolated deinit reaching into them is a data race.
+    isolated deinit {
+        pendingUpdate?.cancel()
         if let localMouseMonitor { NSEvent.removeMonitor(localMouseMonitor) }
         if let globalMouseMonitor { NSEvent.removeMonitor(globalMouseMonitor) }
         if let resignObserver { NotificationCenter.default.removeObserver(resignObserver) }

@@ -40,6 +40,48 @@ struct DeveloperScope: Identifiable, Codable, Equatable, Sendable {
         return false
     }
 
+    /// Shared policy for proposals and cleanup. Callers performing a move also
+    /// supply the resolved parent path so an alias cannot bypass an exclusion.
+    static func cleanupBlock(for path: String, in scopes: [Self], resolvingRoots: Bool = false) -> String? {
+        func policyPath(_ value: String) -> String {
+            value.precomposedStringWithCanonicalMapping.folding(options: .caseInsensitive, locale: Locale(identifier: "en_US_POSIX"))
+        }
+        let candidate = policyPath(path)
+        for scope in scopes {
+            let root = policyPath(scope.url.standardizedFileURL.path)
+            let resolved = resolvingRoots ? policyPath(scope.url.resolvingSymlinksInPath().standardizedFileURL.path) : root
+            for base in Set([root, resolved]) {
+                if candidate == base || base.hasPrefix(candidate + "/") {
+                    return "This selection includes the developer scope \(scope.displayName). Select items inside the scope."
+                }
+                let prefix = base == "/" ? base : base + "/"
+                guard candidate.hasPrefix(prefix) else { continue }
+                if !scope.cleanupAllowed {
+                    return "\(scope.displayName) is configured for inspection only."
+                }
+                for exclusion in scope.exclusions {
+                    let excluded = prefix + policyPath(exclusion)
+                    if candidate == excluded || candidate.hasPrefix(excluded + "/") || excluded.hasPrefix(candidate + "/") {
+                        return "This selection includes an excluded path in \(scope.displayName)."
+                    }
+                }
+            }
+        }
+        return nil
+    }
+
+    /// Applies AI-proposed exclusions to an existing scope or a new scope for `root`.
+    /// Only paths inside the root are stored; duplicates are removed.
+    static func applyingPlanExclusions(root: URL, existing: DeveloperScope?, additions: [URL]) -> DeveloperScope {
+        let standardized = root.standardizedFileURL
+        var scope = existing ?? DeveloperScope(label: standardized.lastPathComponent, path: standardized.path, cleanupAllowed: true, exclusions: [])
+        for url in additions {
+            guard let relative = scope.relativePath(url.standardizedFileURL), !relative.isEmpty else { continue }
+            if !scope.exclusions.contains(relative) { scope.exclusions.append(relative) }
+        }
+        return scope
+    }
+
     static func normalizeExclusions(_ text: String, root: URL) -> [String] {
         let rootPath = root.standardizedFileURL.path
         var seen = Set<String>()
@@ -95,6 +137,18 @@ struct DeveloperScopePreset: Identifiable, Sendable {
               exclusions: [".git", "Sources", "Tests", "Package.swift", "README.md"]),
         .init(id: "monorepo", title: "Monorepo",
               detail: "Keeps git metadata and top-level docs; expand packages to select their build and dependency folders.",
-              exclusions: [".git", "docs", "README.md"])
+              exclusions: [".git", "docs", "README.md"]),
+        .init(id: "deno", title: "Deno / TypeScript project",
+              detail: "Keeps source, tests, docs, and Deno manifests; leaves build-like folders selectable.",
+              exclusions: [".git", "src", "tests", "docs", "README.md", "deno.json", "deno.jsonc", "deno.lock"]),
+        .init(id: "flutter", title: "Flutter / Dart project",
+              detail: "Keeps lib, tests, and pubspec; leaves .dart_tool and build selectable.",
+              exclusions: [".git", "lib", "test", "README.md", "pubspec.yaml", "pubspec.lock"]),
+        .init(id: "jvm", title: "Java / Kotlin project",
+              detail: "Keeps source and build manifests; leaves build, target, and Gradle/Maven output selectable.",
+              exclusions: [".git", "src", "README.md", "build.gradle", "build.gradle.kts", "settings.gradle", "pom.xml"]),
+        .init(id: "dotnet", title: ".NET project",
+              detail: "Keeps source and project metadata; leaves bin and obj selectable.",
+              exclusions: [".git", "src", "tests", "README.md", "global.json", "Directory.Build.props"])
     ]
 }

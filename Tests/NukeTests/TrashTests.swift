@@ -7,6 +7,27 @@ final class TrashTests: XCTestCase {
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         return root
     }
+    func testUnreadableChildLeavesVisiblePreviewAndDisablesDeletion() throws {
+        let root = try fixture()
+        let unreadable = root.appendingPathComponent("blocked")
+        let visible = root.appendingPathComponent("visible.txt")
+        let fm = FileManager.default
+        try fm.createDirectory(at: unreadable, withIntermediateDirectories: false)
+        try Data([1]).write(to: unreadable.appendingPathComponent("child"))
+        try Data([2]).write(to: visible)
+        defer {
+            try? fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: unreadable.path)
+            try? fm.removeItem(at: root)
+        }
+        try fm.setAttributes([.posixPermissions: 0], ofItemAtPath: unreadable.path)
+        let service = TrashService(root: root)
+        let snapshot = try service.inspect()
+        XCTAssertFalse(snapshot.complete)
+        let entry = try XCTUnwrap(snapshot.entries.first { $0.item.name == "visible.txt" })
+        XCTAssertThrowsError(try service.validate(entry, rootIdentity: snapshot.rootIdentity))
+        XCTAssertTrue(fm.fileExists(atPath: visible.path))
+    }
+
     func testDeletesOnlyReviewedItemsAndPreservesNewArrivals() throws {
         let root = try fixture(); defer { try? FileManager.default.removeItem(at: root) }
         let reviewed = root.appendingPathComponent("reviewed.txt")

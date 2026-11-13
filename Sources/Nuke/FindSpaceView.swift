@@ -1,4 +1,5 @@
 import SwiftUI
+import NukeMetrics
 import Darwin
 
 /// The last quick pass is persisted with the workspace so Cleanup opens on evidence,
@@ -55,25 +56,33 @@ extension AppModel {
             }
             guard isCurrentQuick(token) else { return }
             quick.busy = false; quick.measured = Date(); quick.step = token.cancelled ? "Stopped — partial results" : "Inspection finished"
+            triage.refresh(items: quick.entries.map(\.item), rootName: "Cleanup", signals: triageSignals())
             scheduleSessionSave()
         }
     }
 }
 struct FindSpaceView: View {
-    @EnvironmentObject var model: AppModel
-    @EnvironmentObject var features: FeatureModel
+    @Environment(AppModel.self) var model
+    @Environment(FeatureModel.self) var features
     var selectedEntries: [InventoryEntry] { model.quick.entries.filter { model.quickSelected.contains($0.id) && !$0.item.incomplete } }
     var hasPass: Bool { model.quick.measured != nil }
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             CleanupStorageSummary()
             if let receipt = features.receipts.first { LastCleanupNote(receipt: receipt) }
-            if hasPass { lastPassHeader } else { QuickStartCard() }
+            // Capture runs put the personal list first so it is inside the frame.
+            let personalFirst = ProcessInfo.processInfo.arguments.contains("--capture-personal")
+            if personalFirst, model.personal.report != nil { PersonalFilesPanel() }
+            FullCheckCard()
+            if !personalFirst, model.personal.running || model.personal.report != nil { PersonalFilesPanel() }
+            if hasPass { lastPassHeader }
+            ReclaimSummaryPanel()
             if hasPass {
+                TriagePanel(store: model.triage)
                 categories
                 trashSection
                 if !model.quick.notes.isEmpty || model.quick.trashPartial {
-                    Notice(text: model.quick.notes.joined(separator: "\n") + (model.quick.trashPartial ? "\nTrash could not be inspected completely. It is not empty by inference." : ""), symbol: "info.circle")
+                    Notice.measured(model.quick.notes.joined(separator: "\n") + (model.quick.trashPartial ? "\nTrash could not be inspected completely. It is not empty by inference." : ""), symbol: "info.circle")
                     Button("Resolve access and retry") { model.prepareRecovery(.findSpace) }.buttonStyle(QuietButton())
                 }
                 if model.quick.entries.isEmpty {
@@ -103,7 +112,7 @@ struct FindSpaceView: View {
         ForEach(["Developer artifacts", "Application caches"], id: \.self) { category in
             let rows = model.quick.entries.filter { $0.category == category }
             if !rows.isEmpty {
-                SectionTitle(title: category, detail: "Review individually · logical size")
+                SectionTitle.measured(title: category, detail: String(localized: "Review individually · logical size"))
                 LazyVStack(spacing: 0) {
                     ForEach(rows) { entry in
                         HStack(alignment: .top, spacing: 12) {
@@ -138,57 +147,18 @@ struct FindSpaceView: View {
 
 /// First-run Cleanup surface: explains exactly what the bounded pass touches and keeps
 /// the primary action beside that explanation instead of stranding it at the window edge.
-struct QuickStartCard: View {
-    @EnvironmentObject var model: AppModel
-    var body: some View {
-        Surface {
-            VStack(alignment: .leading, spacing: 16) {
-                VStack(alignment: .leading, spacing: 5) {
-                    Text("Start with common build-up").font(.system(size: 15, weight: .semibold))
-                    Text("A bounded measurement of application caches and Trash. Developer caches stay in their own tab.")
-                        .font(.system(size: 11)).foregroundStyle(Theme.secondary).fixedSize(horizontal: false, vertical: true)
-                }
-                VStack(spacing: 0) {
-                    scopeRow("folder", "Application caches", "~/Library/Caches · up to 12,000 entries or 8 seconds per location")
-                    Divider()
-                    scopeRow("trash", "Trash", "~/.Trash · size only; emptying has its own review")
-                    Divider()
-                    scopeRow("hammer", "Developer caches", "Xcode, npm, pip, Gradle · measured in the Developer tab") {
-                        model.page = .developer
-                    }
-                }
-                HStack(spacing: 12) {
-                    Label("Nothing is selected automatically.", systemImage: "checkmark.shield").font(.system(size: 10)).foregroundStyle(Theme.secondary)
-                    Spacer()
-                    Button(model.quick.busy ? "Scanning…" : "Find space") {
-                        model.quickSelected = []
-                        model.findSpace()
-                    }.buttonStyle(PrimaryButton()).disabled(model.quick.busy || model.actionBusy)
-                }
-            }
-        }
-    }
-    func scopeRow(_ symbol: String, _ title: String, _ detail: String, go: (() -> Void)? = nil) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: symbol).font(.system(size: 13)).foregroundStyle(Theme.orange).frame(width: 22)
-            VStack(alignment: .leading, spacing: 3) {
-                Text(title).font(.system(size: 12, weight: .medium))
-                Text(detail).font(.system(size: 10)).foregroundStyle(Theme.secondary).fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer(minLength: 12)
-            if let go { Button("Open Developer", action: go).buttonStyle(.plain).font(.system(size: 11, weight: .medium)).foregroundStyle(Theme.orange) }
-        }.padding(.vertical, 10)
-    }
-}
-
-/// Isolated from the scan model so monitor ticks only update this small summary.
 struct CleanupStorageSummary: View {
-    @EnvironmentObject var model: AppModel
-    @EnvironmentObject var monitor: LiveMonitor
+    @Environment(AppModel.self) var model
+    @Environment(LiveMonitor.self) var monitor
     private var disk: ResourceSnapshot { monitor.monitorEnabled && !monitor.monitorPaused ? monitor.sample?.disk ?? model.resources : model.resources }
+    /// Same judgement as the menu-bar popover and the status item: one definition
+    /// of "how much trouble is this disk in", so the three surfaces cannot disagree.
+    private var pressure: StoragePressure {
+        StoragePressure.evaluate(free: disk.freeDisk, total: disk.totalDisk, thresholdGB: monitor.lowSpaceGB)
+    }
     var body: some View {
         HStack(spacing: 14) {
-            Image(systemName: "internaldrive").font(.system(size: 15)).foregroundStyle(Theme.orange)
+            Image(systemName: "internaldrive").font(.system(size: 15)).foregroundStyle(pressure.tint)
             VStack(alignment: .leading, spacing: 2) {
                 Text("Macintosh storage").font(.system(size: 10)).foregroundStyle(Theme.secondary)
                 Text(disk.totalDisk > 0 ? bytes(disk.freeDisk) + " available" : "Storage reading unavailable").font(.system(size: 15, weight: .semibold)).monospacedDigit()
@@ -196,15 +166,89 @@ struct CleanupStorageSummary: View {
             if disk.totalDisk > 0 {
                 GeometryReader { geo in
                     HStack(spacing: 3) {
-                        RoundedRectangle(cornerRadius: 3).fill(Theme.orange).frame(width: max(0, (geo.size.width - 3) * disk.diskFraction))
+                        RoundedRectangle(cornerRadius: 3).fill(pressure.tint).frame(width: max(0, (geo.size.width - 3) * disk.diskFraction))
                         RoundedRectangle(cornerRadius: 3).fill(Theme.rail)
                     }
                 }.frame(width: 170, height: 8)
-                    .accessibilityLabel("\(bytes(disk.usedDisk)) used of \(bytes(disk.totalDisk))")
+                    .accessibilityLabel("\(bytes(disk.usedDisk)) used of \(bytes(disk.totalDisk)). \(pressure.spoken)")
                 Text("of " + bytes(disk.totalDisk)).font(.system(size: 10)).foregroundStyle(Theme.secondary)
+                if pressure.isConcerning {
+                    Text(pressure.label)
+                        .font(.system(size: 9, weight: .semibold))
+                        .padding(.horizontal, 5).padding(.vertical, 1)
+                        .foregroundStyle(pressure.tint)
+                        .background(pressure.tint.opacity(0.14), in: RoundedRectangle(cornerRadius: 3))
+                }
             }
             Spacer(minLength: 12)
-            Button { model.refreshResources() } label: { Image(systemName: "arrow.clockwise").font(.system(size: 11)) }.buttonStyle(.plain).help("Refresh storage reading")
+            Button { model.refreshResources() } label: { Image(systemName: "arrow.clockwise").font(.system(size: 11)) }.buttonStyle(.plain).help("Refresh storage reading").accessibilityLabel("Refresh storage reading")
         }.padding(.vertical, 4)
+    }
+}
+
+/// The cross-screen picture the app never drew: what has been measured, and what
+/// has not been looked at yet.
+///
+/// Reports those separately on purpose. Treating unscanned areas as zero would
+/// produce a confident total that understates the answer, which is exactly the
+/// kind of number this app refuses to show.
+struct ReclaimSummaryPanel: View {
+    @Environment(AppModel.self) var model
+
+    /// Each row carries the ring's colour for its slice, so the two read as one
+    /// picture rather than a chart beside an unrelated list.
+    @ViewBuilder private func areaRows(_ summary: ReclaimSummary) -> some View {
+        let ring = CompositionRing(summary: summary)
+        ForEach(Array(summary.ordered.enumerated()), id: \.element.id) { index, area in
+            if index > 0 { Divider().overlay(Theme.line) }
+            Button { model.page = area.page } label: {
+                HStack(spacing: 10) {
+                    if area.measured && area.bytes > 0 {
+                        RoundedRectangle(cornerRadius: 2).fill(ring.color(for: area)).frame(width: 9, height: 9)
+                    } else {
+                        Image(systemName: "circle.dashed").font(.system(size: 9)).foregroundStyle(Theme.secondary).frame(width: 9)
+                    }
+                    Text(verbatim: area.name).font(.system(size: 12))
+                    Spacer()
+                    if area.measured {
+                        Text(verbatim: bytes(area.bytes)).font(.system(size: 12)).monospacedDigit()
+                    } else {
+                        Text("Not measured").font(.system(size: 11)).foregroundStyle(Theme.secondary)
+                    }
+                    Image(systemName: "chevron.right").font(.system(size: 9)).foregroundStyle(Theme.secondary)
+                }
+                .padding(.vertical, 8).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(area.measured
+                ? "\(area.name), \(bytes(area.bytes)) measured"
+                : "\(area.name), not measured yet")
+        }
+    }
+
+    var body: some View {
+        let summary = model.reclaimSummary
+        if summary.hasAnything {
+            Surface {
+                VStack(alignment: .leading, spacing: 12) {
+                    let ringSummary = summary
+                    let detail: String = summary.measuredAreas.isEmpty
+                        ? String(localized: "Nothing measured yet")
+                        : bytes(summary.measuredBytes) + " · " + String(
+                            format: String(localized: "%@ of %lld"),
+                            Plural.areasMeasured(summary.measuredAreas.count), summary.areas.count
+                        )
+                    SectionTitle.measured(title: "Measured so far", detail: detail)
+                    HStack(alignment: .top, spacing: 18) {
+                        CompositionRing(summary: ringSummary)
+                        VStack(spacing: 0) { areaRows(summary) }
+                    }
+                    if !summary.unmeasuredAreas.isEmpty {
+                        Text("Totals cover measured areas only. Unmeasured areas are not counted as zero.")
+                            .font(.system(size: 10)).foregroundStyle(Theme.secondary)
+                    }
+                }
+            }
+        }
     }
 }

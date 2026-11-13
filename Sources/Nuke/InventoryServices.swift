@@ -17,7 +17,7 @@ enum InventoryService {
         let dir = s.st_mode & mode_t(S_IFMT) == mode_t(S_IFDIR)
         let link = s.st_mode & mode_t(S_IFMT) == mode_t(S_IFLNK)
         let r = dir ? DiskScanner.scan(url, cancellation: token) : nil
-        return DiskItem(url: url, size: r?.logical ?? Int64(s.st_size), allocated: r?.allocated ?? Int64(s.st_blocks) * 512, directory: dir, symlink: link, modified: Date(timeIntervalSince1970: Double(s.st_mtimespec.tv_sec)), identity: FileIdentity(device: UInt64(s.st_dev), inode: UInt64(s.st_ino)), incomplete: r.map { $0.skipped > 0 || $0.limited } ?? false)
+        return DiskItem(url: url, size: r?.logical ?? Int64(s.st_size), allocated: r?.allocated ?? Int64(s.st_blocks) * 512, directory: dir, symlink: link, modified: Date(timeIntervalSince1970: Double(s.st_mtimespec.tv_sec)), accessed: Date(timeIntervalSince1970: Double(s.st_atimespec.tv_sec)), identity: FileIdentity(device: UInt64(s.st_dev), inode: UInt64(s.st_ino)), incomplete: r.map { $0.skipped > 0 || $0.limited } ?? false)
     }
     static func projects(_ root: URL, token: ScanCancellation = ScanCancellation()) -> [ProjectGroup] {
         ProjectDiscovery.scan(root, token: token).projects

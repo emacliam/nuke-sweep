@@ -30,8 +30,9 @@ enum ReviewPlanner {
     static func looksLikeProjectRoot(_ url: URL) -> Bool {
         let own = url.lastPathComponent.lowercased()
         if own.hasSuffix(".xcodeproj") || own.hasSuffix(".xcworkspace") || own.hasSuffix(".sln") { return true }
-        var found = false
-        _ = try? DirectoryEntries.visit(url, shouldContinue: { !found }) { if isProjectMarker($0.lastPathComponent) { found = true } }
+        var found = false, count = 0
+        let deadline = Date().addingTimeInterval(0.05)
+        _ = try? DirectoryEntries.visit(url, shouldContinue: { !found && count < 1_000 && Date() < deadline }) { count += 1; if isProjectMarker($0.lastPathComponent) { found = true } }
         return found
     }
     /// Only built-in cache policy supplies these roots. Folder grants do not turn a
@@ -51,29 +52,29 @@ enum ReviewPlanner {
     /// One complete traversal measures and verifies the selected tree. Nested cache
     /// layouts no longer fail an unrelated four-level metadata probe. Time, entry,
     /// access, cancellation, source-control, and identity guards still fail closed.
-    static func prepare(_ items: [DiskItem], scopes: [CleanupScope], token: ScanCancellation = ScanCancellation(), managedCacheRoots: [URL] = CacheRule.all.map(\.url), openFiles: () -> [OpenFileUse] = { FileUseService.snapshot() }) -> ReviewPreparation {
+    static func prepare(_ items: [DiskItem], scopes: [CleanupScope], token: ScanCancellation = ScanCancellation(), managedCacheRoots: [URL] = CacheRule.all.map(\.url), developerScopes: [DeveloperScope] = [], openFiles: () -> [OpenFileUse] = { FileUseService.snapshot() }) -> ReviewPreparation {
         let deadline = Date().addingTimeInterval(45)
         var fresh: [DiskItem] = [], failures: [String] = [], blocked: [ReviewBlockedItem] = []
         var evidence: [String: CleanupEvidence] = [:], warnings: [String] = []
         for original in topLevel(items) {
             if token.cancelled { return .init(items: [], failures: ["Review cancelled. No files were moved."]) }
             do {
-                try CleanupSafety.validate(original, allowedRoots: scopes)
+                try CleanupSafety.validate(original, allowedRoots: scopes, developerScopes: developerScopes)
                 try EmulatorCleanup.requireAndroidIdle(original.url)
                 guard Date() < deadline else { throw SafetyError.budget }
                 let managed = isManagedCache(original.url, roots: managedCacheRoots) || EmulatorCleanup.isAndroidSnapshot(original.url)
                 let rebuildable = rebuildableNames.contains(original.name.lowercased())
-                let ignored = CleanupEvidenceService.gitIgnored(original.url)
-                let tracked = CleanupEvidenceService.gitTracked(original.url)
-                if tracked == true { throw SafetyError.tracked }
-                if tracked == nil, CleanupEvidenceService.repoRoot(for: original.url) != nil { throw SafetyError.gitUnavailable }
+                try GitInspection.inspect(original.url).requireUntracked()
+                let ignored = !managed && !rebuildable ? CleanupEvidenceService.gitIgnored(original.url) : nil
                 let inspectSource = !managed && !rebuildable && ignored != true
                 if inspectSource && isProjectMarker(original.name) { throw SafetyError.projectRoot }
                 var freshItem = original
+                var seal = ReviewSeal.Builder(); seal.observe(original.url)
                 if original.directory && !original.symlink {
                     var metadata: URL?, protected: URL?, sourceCount = 0, buildCount = 0
                     let rootComponents = original.url.standardizedFileURL.pathComponents.count
                     let scan = DiskScanner.scan(original.url, cancellation: token, deadline: deadline, observing: { child in
+                        seal.observe(child)
                         let name = child.lastPathComponent
                         if [".git", ".hg", ".svn"].contains(name.lowercased()) { protected = child }
                         if CleanupSafety.isSensitive(child.standardizedFileURL.path) { protected = child }
@@ -94,6 +95,11 @@ enum ReviewPlanner {
                     freshItem = DiskItem(url: original.url, size: scan.logical, allocated: scan.allocated, directory: true, symlink: false, modified: original.modified, identity: original.identity, incomplete: false)
                 } else if let current = InventoryService.measure(original.url), current.identity == original.identity { freshItem = current }
                 else { throw CleanupSafety.SafetyError.changed }
+                let reviewedSeal: String
+                if original.directory && !original.symlink { reviewedSeal = try seal.finish() }
+                else { reviewedSeal = try ReviewSeal.capture(freshItem, token: token, deadline: deadline) }
+                guard try ReviewSeal.capture(freshItem, token: token, deadline: deadline) == reviewedSeal else { throw ReviewSeal.Failure.changed }
+                freshItem.reviewSeal = reviewedSeal
                 fresh.append(freshItem)
                 evidence[original.id] = CleanupEvidenceService.classify(original.url, gitIgnored: ignored)
             } catch {
@@ -116,13 +122,41 @@ enum ReviewPlanner {
         return .init(items: fresh, failures: failures, evidence: evidence, warnings: warnings, blocked: blocked)
     }
     /// Keep cache roots and Xcode project containers, reviewing independently measured children.
-    static func prepareCacheContents(_ rule: CacheRule, scopes: [CleanupScope], token: ScanCancellation, openFiles: () -> [OpenFileUse] = { FileUseService.snapshot() }) -> ReviewPreparation {
+    static func prepareCacheContents(_ rule: CacheRule, scopes: [CleanupScope], token: ScanCancellation, developerScopes: [DeveloperScope] = [], openFiles: () -> [OpenFileUse] = { FileUseService.snapshot() }) -> ReviewPreparation {
         let contents = cacheCandidates(at: rule.url, xcodeContainers: rule.url.lastPathComponent == "DerivedData", token: token)
-        var result = prepare(contents.items, scopes: scopes, token: token, openFiles: openFiles)
+        var result = prepare(contents.items, scopes: scopes, token: token, developerScopes: developerScopes, openFiles: openFiles)
         result.blocked += contents.blocked
         if contents.items.isEmpty && contents.blocked.isEmpty { return .init(items: [], failures: ["No cache contents were found. No files were moved."]) }
         return result
     }
+    /// Prepare a bounded batch of immediate children of a generated folder.
+    /// The container stays in place. Each child goes through normal review.
+    static func prepareFolderContents(_ folder: DiskItem, scopes: [CleanupScope], token: ScanCancellation,
+                                      developerScopes: [DeveloperScope] = [],
+                                      openFiles: () -> [OpenFileUse] = { FileUseService.snapshot() }) -> ReviewPreparation {
+        guard !token.cancelled else { return .init(items: [], failures: ["Review cancelled. No files were moved."]) }
+        var info = stat()
+        guard folder.directory, !folder.symlink, let identity = folder.identity,
+              lstat(folder.url.path, &info) == 0, info.st_mode & mode_t(S_IFMT) == mode_t(S_IFDIR),
+              FileIdentity(device: UInt64(info.st_dev), inode: UInt64(info.st_ino)) == identity else {
+            return .init(items: [], failures: ["This folder changed since the scan. Refresh it and try again."])
+        }
+        let evidence = CleanupEvidenceService.classify(folder.url, sourceCheck: true)
+        guard evidence.kind.supportsContentsReview else {
+            return .init(items: [], failures: ["Contents review is available for known caches, dependency folders, and build output. Browse this folder to select items individually."])
+        }
+        let contents = cacheCandidates(at: folder.url, xcodeContainers: false, token: token)
+        guard FileIdentity.read(folder.url) == identity else {
+            return .init(items: [], failures: ["This folder changed during review. Refresh it and try again."])
+        }
+        guard !contents.items.isEmpty || !contents.blocked.isEmpty else {
+            return .init(items: [], failures: ["There are no items to review in this folder."])
+        }
+        var result = prepare(contents.items, scopes: scopes, token: token, developerScopes: developerScopes, openFiles: openFiles)
+        result.blocked += contents.blocked
+        return result
+    }
+
     static func cacheCandidates(at root: URL, xcodeContainers: Bool, token: ScanCancellation) -> (items: [DiskItem], blocked: [ReviewBlockedItem]) {
         var candidates: [DiskItem] = [], blocked: [ReviewBlockedItem] = [], count = 0
         let deadline = Date().addingTimeInterval(15)

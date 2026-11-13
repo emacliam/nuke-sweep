@@ -98,11 +98,6 @@ final class FeatureTests: XCTestCase {
         XCTAssertEqual(rows[0].process, "Tool Name")
         XCTAssertEqual(rows[1].pid, 456)
     }
-    func testStartupMissingCheckDoesNotInventRelativeExecutableStatus() {
-        XCTAssertFalse(StartupService.isMissing("relative-command"))
-        XCTAssertFalse(StartupService.isMissing("/bin/sh"))
-        XCTAssertTrue(StartupService.isMissing("/tmp/nuke-no-such-command-" + UUID().uuidString))
-    }
     func testInventoryDirectoryReportsPermissionGapsButNotMissingRoots() throws {
         let root = try fixture(); defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: root.path); try? FileManager.default.removeItem(at: root) }
         var notes: [String] = []

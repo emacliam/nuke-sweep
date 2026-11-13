@@ -48,7 +48,7 @@ public struct SweepMark: View {
     public init(monochrome: Bool = false) { self.monochrome = monochrome }
     public var body: some View {
         ZStack {
-            SweepSymbol(orangePart: false).fill(monochrome ? Color.primary : Color(red: 38/255, green: 43/255, blue: 43/255))
+            SweepSymbol(orangePart: false).fill(Color.primary)
             SweepSymbol(orangePart: true).fill(monochrome ? Color.primary : Color(red: 194/255, green: 69/255, blue: 33/255))
         }
         .aspectRatio(1.2, contentMode: .fit)

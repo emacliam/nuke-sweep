@@ -2,11 +2,16 @@
 set -eu
 cd "${0:A:h:h}"
 
-APP="$PWD/dist/Nuke Sweep.app"
+APP="${NUKE_APP_PATH:-$PWD/dist/Nuke Sweep.app}"
 [[ -d "$APP" ]] || { echo "No app bundle at $APP. Run ./scripts/build-app.sh first." >&2; exit 1; }
 
 VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$APP/Contents/Info.plist")
-DMG="$PWD/dist/Nuke-Sweep-${VERSION}.dmg"
+DMG="${NUKE_DMG_PATH:-$PWD/dist/Nuke-Sweep-${VERSION}.dmg}"
+CHECKSUM="${DMG:r}.sha256"
+[[ ! -e "$DMG" && ! -e "$CHECKSUM" ]] || {
+  echo "Choose a new output path. A DMG or checksum already exists at $DMG." >&2
+  exit 1
+}
 IDENTITY="${NUKE_SIGN_IDENTITY:-}"
 PROFILE="${NUKE_NOTARY_PROFILE:-}"
 STAGE=$(mktemp -d "${TMPDIR:-/tmp}/nuke-dmg.XXXXXX")
@@ -19,7 +24,12 @@ if [[ -n "$PROFILE" ]]; then
     echo "Notarization requires a Developer ID Application identity, not '${IDENTITY:-ad-hoc}'." >&2
     exit 1
   fi
-  ZIP=$(mktemp -d "${TMPDIR:-/tmp}/nuke-notary.XXXXXX")/Nuke-Sweep.zip
+  SIGNER=$(codesign -dv --verbose=4 "$APP" 2>&1 | sed -n 's/^Authority=//p' | head -1)
+  [[ "$SIGNER" == "$IDENTITY" ]] || {
+    echo "The app signer does not match the requested Developer ID identity." >&2
+    exit 1
+  }
+  ZIP="$STAGE/Nuke-Sweep.zip"
   ditto -c -k --keepParent "$APP" "$ZIP"
   xcrun notarytool submit "$ZIP" --keychain-profile "$PROFILE" --wait
   xcrun stapler staple "$APP"
@@ -32,7 +42,6 @@ fi
 ditto "$APP" "$STAGE/Nuke Sweep.app"
 ln -s /Applications "$STAGE/Applications"
 
-rm -f "$DMG"
 diskutil image create from --format UDZO --volumeName "Nuke Sweep ${VERSION}" "$STAGE" "$DMG"
 hdiutil verify "$DMG" >/dev/null
 
@@ -53,4 +62,6 @@ if [[ -n "$PROFILE" ]]; then
   spctl -a -t open --context context:primary-signature -vv "$DMG"
 fi
 echo "Built $DMG"
-echo "SHA-256: $(shasum -a 256 "$DMG" | awk '{print $1}')"
+DIGEST=$(shasum -a 256 "$DMG" | awk '{print $1}')
+printf '%s  %s\n' "$DIGEST" "${DMG:t}" > "$CHECKSUM"
+echo "SHA-256: $DIGEST ($CHECKSUM)"

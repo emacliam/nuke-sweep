@@ -1,0 +1,78 @@
+/* Nuke Sweep -- Spanish.
+   A partial translation that proves the localization pipeline end to end: these
+   keys are rendered from the app bundle with no change to any call site. Keys
+   left untranslated fall back to the English source text, which is why a partial
+   catalogue is safe to ship. See docs/LOCALIZATION.md. */
+
+/* Navigation */
+"Cleanup" = "Limpieza";
+"Files" = "Archivos";
+"Apps" = "Aplicaciones";
+"Basket" = "Cesta";
+"History" = "Historial";
+"Settings" = "Ajustes";
+"Duplicates" = "Duplicados";
+"Growth" = "Crecimiento";
+"Watchlist" = "Seguimiento";
+"Browse" = "Explorar";
+
+/* Triage panel */
+"What matters here" = "Lo que importa aquí";
+"Add AI context" = "Añadir contexto de IA";
+"Show what would be sent" = "Ver lo que se enviaría";
+"Ask again" = "Preguntar de nuevo";
+"Asking…" = "Consultando…";
+"Show fewer" = "Mostrar menos";
+"Working out what deserves attention…" = "Calculando qué merece atención…";
+"Ranked by size, evidence, how long since anything changed, and whether something is using it. Nothing is selected." = "Ordenado por tamaño, evidencia, tiempo sin cambios y si algo lo está usando. No se selecciona nada.";
+"Local evidence already explains this shortlist." = "La evidencia local ya explica esta lista.";
+"AI assist is off. This shortlist was produced entirely on this Mac." = "El asistente de IA está desactivado. Esta lista se generó por completo en este Mac.";
+"What would be sent" = "Lo que se enviaría";
+"Metadata only" = "Solo metadatos";
+"Done" = "Hecho";
+
+/* Common actions */
+"Choose folder…" = "Elegir carpeta…";
+"Full scan" = "Análisis completo";
+"Refresh folder" = "Actualizar carpeta";
+"Scan again" = "Analizar de nuevo";
+"Add to basket" = "Añadir a la cesta";
+"Review selected…" = "Revisar selección…";
+"Storage map" = "Mapa de almacenamiento";
+"Volumes" = "Volúmenes";
+"Table" = "Tabla";
+"Tree" = "Árbol";
+"Largest first" = "Mayor primero";
+"On this Mac" = "En este Mac";
+
+/* Page headings, now translatable (titles are split from the stable raw values) */
+"Browse" = "Explorar";
+"Developer" = "Desarrollo";
+"Menu bar" = "Barra de menús";
+"Permissions & access" = "Permisos y acceso";
+"Local models" = "Modelos locales";
+"Devices" = "Dispositivos";
+"Applications" = "Aplicaciones";
+"Startup" = "Inicio";
+"Updates" = "Actualizaciones";
+"Overview" = "Resumen";
+"Processes" = "Procesos";
+"Widgets" = "Widgets";
+"Alerts" = "Avisos";
+"Trash" = "Papelera";
+"Projects" = "Proyectos";
+"Quick scan" = "Análisis rápido";
+
+/* Assessment states */
+"Ready for review" = "Listo para revisar";
+"Needs inspection" = "Requiere inspección";
+"Protected" = "Protegido";
+"Inspect only" = "Solo inspección";
+"Measurement needed" = "Falta medición";
+"Checking context" = "Comprobando contexto";
+
+/* Storage pressure */
+"Comfortable" = "Holgado";
+"Getting tight" = "Ajustado";
+"Low" = "Bajo";
+"Unavailable" = "No disponible";

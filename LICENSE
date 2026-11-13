@@ -1,0 +1,49 @@
+Copyright (c) 2026 Zyncraft Technologies. All rights reserved.
+
+Nuke Sweep is proprietary software. This repository is published so that the
+source can be read, inspected and audited — a cleanup utility asks for Full Disk
+Access, and that request deserves to be checkable. Publication is not a grant of
+an open-source licence.
+
+PERMITTED
+
+  * Reading, inspecting and auditing this source code.
+  * Building and running it locally for the purpose of evaluating or auditing it.
+  * Quoting excerpts in a security report, review or discussion of this software.
+
+NOT PERMITTED WITHOUT PRIOR WRITTEN PERMISSION FROM ZYNCRAFT TECHNOLOGIES
+
+  * Copying, modifying, merging, publishing or distributing this software or
+    substantial portions of it.
+  * Creating or distributing derivative works, including forks published for
+    redistribution rather than for a contribution back to this project.
+  * Commercial use of this software or its source.
+  * Removing or altering this notice, the copyright notices, or the product
+    identity, signing identity or branding.
+
+CONTRIBUTIONS
+
+By submitting a contribution (a pull request, patch or suggested change) you
+grant Zyncraft Technologies a perpetual, worldwide, irrevocable, royalty-free
+licence to use, modify, sublicense and distribute that contribution as part of
+this software.
+
+THIRD-PARTY COMPONENTS
+
+Instrument Sans, bundled under website/assets, is distributed under the SIL Open
+Font License; see website/assets/FONT-LICENSE.txt. That licence governs the font
+and is not affected by the terms above.
+
+NO WARRANTY
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN
+AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+This software deletes and moves files at a user's direction. Review what you
+select, keep backups, and read the warnings the application shows you.
+
+Contact: https://github.com/emacliam/nuke-sweep

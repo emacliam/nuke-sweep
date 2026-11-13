@@ -24,7 +24,10 @@ mkdir -p "$OUT"
 /usr/bin/spindump "$PID" 5 -o "$OUT/spindump.txt" 2>&1 || true
 /usr/bin/top -l 1 -pid "$PID" > "$OUT/top.txt" 2>&1 || true
 /usr/bin/vm_stat > "$OUT/vm_stat.txt" 2>&1 || true
-/usr/bin/log show --last 10m --predicate 'process == "Nuke"' --style compact > "$OUT/log.txt" 2>&1 || true
+# --info --debug is required: Logger .info and .debug entries are not persisted to
+# the default level, and those carry the scan/cleanup breadcrumbs worth having.
+/usr/bin/log show --last 10m --predicate 'process == "Nuke"' --style compact --info --debug > "$OUT/log.txt" 2>&1 || true
+/usr/bin/log show --last 10m --predicate 'subsystem == "com.zyncraft.nukesweep"' --style compact --info --debug > "$OUT/breadcrumbs.txt" 2>&1 || true
 /usr/sbin/system_profiler SPHardwareDataType > "$OUT/hardware.txt" 2>&1 || true
 
 echo "Wrote diagnostics to $OUT"
