@@ -1,0 +1,19 @@
+<?xml version="1.0" standalone="yes"?><!-- sparkle-sign-warning:
+IMPORTANT: This file was signed by Sparkle. Any modifications to this file requires re-signing this file with generate_appcast or sign_update! The signed signature will be embedded at the end of this file.
+--><rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
+    <channel>
+        <title>Nuke Sweep</title>
+        <item>
+            <title>0.9.1</title>
+            <pubDate>Fri, 13 Nov 2026 09:50:49 +0200</pubDate>
+            <sparkle:version>12</sparkle:version>
+            <sparkle:shortVersionString>0.9.1</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <enclosure url="https://sweep.zyncraft.com/downloads/Nuke-Sweep-0.9.1.dmg" length="4579599" type="application/octet-stream" sparkle:edSignature="J2Pzzv5mkzjjwr17gJ2Q3GutmSw4jrbMSdFQTbFiLPjINtxNc2U/bWqTHZ+ibc9bw5KdKrxfF2jWgIvSRjpuAw=="></enclosure>
+        </item>
+    </channel>
+</rss><!-- sparkle-signatures:
+edSignature: Y3WTfcum8leSmpYFZ5G9BP9sLltC9/3rSqznMiekjQ9wpJR1jkT+AJjO66EqFS40mCcuV93QvbewV3iUsV1mBg==
+length: 1100
+-->
