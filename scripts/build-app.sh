@@ -49,7 +49,16 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 PLIST
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${NUKE_VERSION:-0.9.0}" "$APP/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${NUKE_BUILD_NUMBER:-11}" "$APP/Contents/Info.plist"
+# Public verification key. The matching private signing key stays in Keychain.
+SPARKLE_PUBLIC_KEY="${NUKE_SPARKLE_PUBLIC_KEY:-AZnxvY+2gXA12ksjhELz5TqmfTBgT7I7f1y8anmlPjY=}"
+/usr/libexec/PlistBuddy -c "Add :SUPublicEDKey string $SPARKLE_PUBLIC_KEY" "$APP/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Add :SUFeedURL string https://sweep.zyncraft.com/updates/appcast.xml" "$APP/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Add :SURequireSignedFeed bool true" "$APP/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Add :SUVerifyUpdateBeforeExtraction bool true" "$APP/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Add :SUEnableAutomaticChecks bool false" "$APP/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Add :SUAllowsAutomaticUpdates bool false" "$APP/Contents/Info.plist"
 NUKE_APP_PATH="$APP" ./scripts/build-widgets.sh
+./scripts/embed-sparkle.sh "$APP" release
 SIGN="${NUKE_SIGN_IDENTITY:--}"
 if [[ "$SIGN" == "-" ]]; then
   codesign --force --sign - "$APP"

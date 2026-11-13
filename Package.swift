@@ -14,12 +14,18 @@ let package = Package(
     platforms: [.macOS(.v14)],
     products: [.executable(name: "Nuke", targets: ["Nuke"])],
     targets: [
+        .binaryTarget(
+            name: "Sparkle",
+            url: "https://github.com/sparkle-project/Sparkle/releases/download/2.10.1/Sparkle-for-Swift-Package-Manager.zip",
+            checksum: "4c2e48a3e50ebcc2c88a58a4c7264a1a99c3c31857ce754357afb9cdb323022a"
+        ),
         .target(name: "NukeMetrics", swiftSettings: [.swiftLanguageMode(.v6)]),
         .target(name: "NukeWidgetUI", dependencies: ["NukeMetrics"], swiftSettings: [.swiftLanguageMode(.v6)]),
         .executableTarget(
             name: "Nuke",
-            dependencies: ["NukeMetrics", "NukeWidgetUI"],
-            swiftSettings: [.swiftLanguageMode(.v6)]
+            dependencies: ["NukeMetrics", "NukeWidgetUI", "Sparkle"],
+            swiftSettings: [.swiftLanguageMode(.v6)],
+            linkerSettings: [.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"])]
         ),
         .testTarget(name: "NukeTests", dependencies: ["Nuke", "NukeMetrics", "NukeWidgetUI"], swiftSettings: [.swiftLanguageMode(.v5)])
     ]

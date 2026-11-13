@@ -101,3 +101,15 @@ To stage a new version separately, set `NUKE_APP_PATH`, `NUKE_VERSION`, and `NUK
 The production identifiers are `com.zyncraft.nukesweep` and `com.zyncraft.nukesweep.widgets`. On first launch the app copies missing Nuke preferences from the previous domain. Receipts and scan history stay in `~/Library/Application Support/Nuke`. Existing destination preferences take precedence. Development builds keep their own data.
 
 macOS may ask for folder access, Full Disk Access, notifications, or Keychain access again. Launch the new signed build once before adding its Storage widget. If an existing widget still points at the old extension, remove that widget and add Storage again from Edit Widgets. A signed extension and valid notarization ticket establish package integrity. They do not verify gallery discovery or live widget rendering.
+
+## Sparkle updates
+
+Sparkle starts in a production build when the bundle contains its Ed25519 public key and HTTPS feed URL. The Updates page offers a manual check and a preference for background checks. Installation is user initiated.
+
+1. Run SwiftPM resolution, then use `.build/artifacts/nuke/Sparkle/bin/generate_keys --account com.zyncraft.nukesweep -p` to retrieve the established public key. Keep the private key in Keychain and maintain a secure recovery backup.
+2. Check that the returned key matches the public key in `scripts/build-app.sh`. Build with a new `NUKE_VERSION` and an increased `NUKE_BUILD_NUMBER`. Sign and notarize the app and the DMG using the existing release scripts.
+3. Put the verified installer and optional matching release notes in a staging directory. Preserve any previous update archives and feed entries that should remain available. Run `./scripts/generate-appcast.sh staging-directory`.
+4. Publish the archive under `website/downloads/` and the generated feed under `website/updates/appcast.xml`. Publish generated delta archives alongside their full archives if the feed references them. Regenerate signatures after changing the feed or signed notes.
+5. On a test Mac, install the previous Sparkle-enabled build and check for updates from Settings. Verify the update installs, relaunches, and preserves existing preferences and history.
+
+The 0.9.0 release predates Sparkle. Its existing Updates page sends users to GitHub for the first Sparkle-enabled installer.

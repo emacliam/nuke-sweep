@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import Sparkle
 
 struct PublicRelease: Decodable, Sendable {
     let tag_name: String
@@ -49,17 +50,61 @@ struct PublicRelease: Decodable, Sendable {
         }
     }
 }
+@MainActor final class SparkleUpdates: ObservableObject {
+    static let shared = SparkleUpdates()
+    let controller: SPUStandardUpdaterController?
+    @Published private(set) var canCheck = false
+
+    private init() {
+        guard !AppEnvironment.isDevelopment,
+              Bundle.main.object(forInfoDictionaryKey: "SUPublicEDKey") is String,
+              Bundle.main.object(forInfoDictionaryKey: "SUFeedURL") is String else {
+            controller = nil
+            return
+        }
+        let controller = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
+        self.controller = controller
+        controller.updater.publisher(for: \.canCheckForUpdates).assign(to: &$canCheck)
+    }
+
+    var automaticallyChecks: Bool {
+        get { controller?.updater.automaticallyChecksForUpdates ?? false }
+        set { controller?.updater.automaticallyChecksForUpdates = newValue }
+    }
+}
+
 struct UpdatesView: View {
     @State private var checker = UpdateChecker()
+    @ObservedObject private var sparkle = SparkleUpdates.shared
+    @State private var automaticallyChecks = false
+
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             Text("Nuke Sweep \(UpdateChecker.installed)").font(.system(size: 18, weight: .semibold))
-            Text(checker.checking ? "Checking the public release…" : checker.note).font(.system(size: 12)).foregroundStyle(Theme.secondary)
-            HStack {
-                Button("Check for updates") { checker.check() }.buttonStyle(PrimaryButton()).disabled(checker.checking)
-                Button("Open releases") { if let url = checker.releaseURL ?? URL(string: UpdateChecker.releasesPage) { NSWorkspace.shared.open(url) } }.buttonStyle(QuietButton())
+            if let controller = sparkle.controller {
+                Toggle("Automatically check for updates", isOn: $automaticallyChecks)
+                    .onAppear { automaticallyChecks = sparkle.automaticallyChecks }
+                    .onChange(of: automaticallyChecks) { _, enabled in sparkle.automaticallyChecks = enabled }
+                HStack {
+                    Button("Check for updates") { controller.checkForUpdates(nil) }
+                        .buttonStyle(PrimaryButton()).disabled(!sparkle.canCheck)
+                    releasesButton
+                }
+                Notice(text: "Nuke Sweep checks its update feed and verifies the update signature before installation.", symbol: "info.circle")
+            } else {
+                Text(checker.checking ? "Checking the public release…" : checker.note).font(.system(size: 12)).foregroundStyle(Theme.secondary)
+                HStack {
+                    Button("Check for updates") { checker.check() }.buttonStyle(PrimaryButton()).disabled(checker.checking)
+                    releasesButton
+                }
+                Notice(text: "This check contacts GitHub. Downloads and installation remain under your control.", symbol: "info.circle")
             }
-            Notice(text: "Downloads and installation remain under your control. This check contacts GitHub; it does not upload scans or file paths.", symbol: "info.circle")
         }
+    }
+
+    private var releasesButton: some View {
+        Button("Open releases") {
+            if let url = checker.releaseURL ?? URL(string: UpdateChecker.releasesPage) { NSWorkspace.shared.open(url) }
+        }.buttonStyle(QuietButton())
     }
 }

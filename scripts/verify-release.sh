@@ -91,6 +91,10 @@ fi
 check "mounted app Gatekeeper assessment" spctl -a -vv "$APP"
 check "mounted app notarization ticket" xcrun stapler validate "$APP"
 check "mounted app architecture" lipo -archs "$APP/Contents/MacOS/Nuke"
+if /usr/libexec/PlistBuddy -c 'Print :SUFeedURL' "$APP/Contents/Info.plist" >/dev/null 2>&1; then
+  check "Sparkle framework signature" codesign --verify --deep --strict "$APP/Contents/Frameworks/Sparkle.framework"
+  check "Sparkle public key" /usr/libexec/PlistBuddy -c 'Print :SUPublicEDKey' "$APP/Contents/Info.plist"
+fi
 
 dmg_team=$(developer_id_team "$DMG") || dmg_team=""
 app_team=$(developer_id_team "$APP") || app_team=""

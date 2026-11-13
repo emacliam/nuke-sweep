@@ -99,6 +99,7 @@ import AppKit
         sleepObserver = NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { [weak self] _ in Task { @MainActor in self?.model?.sleep() } }
         wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in Task { @MainActor in self?.model?.wake() } }
         Log.lifecycle.info("Launched: version=\(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown", privacy: .public)")
+        _ = SparkleUpdates.shared
         UIResponsiveness.startIfRequested()
         HangWatchdog.startIfEnabled()
         if ProcessInfo.processInfo.arguments.contains("--simulate-hang") {

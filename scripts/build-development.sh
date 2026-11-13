@@ -18,6 +18,7 @@ manifest={'channel':'development','head':subprocess.check_output(['git','rev-par
 (root/'Contents/BuildManifest.json').unlink(missing_ok=True)
 (root/'Contents/Resources/BuildManifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
 PY
+NUKE_SIGN_IDENTITY=- ./scripts/embed-sparkle.sh "$APP" debug
 codesign --force --sign - "$APP"
 codesign --verify --strict "$APP"
 echo "Development app (isolated data and preferences): $APP"
