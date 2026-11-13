@@ -95,6 +95,8 @@ struct MonitorSettingsView: View {
     @Environment(AISettings.self) var ai
     @Environment(ScheduledScanStore.self) var scheduled
     @State private var diagnosticsNote = ""
+    @AppStorage(FailureReport.enabledKey) private var failureReports = false
+    @State private var failurePreview: FailureReport?
     var body: some View {
         @Bindable var monitor = monitor
         VStack(alignment: .leading, spacing: 22) {
@@ -106,6 +108,16 @@ struct MonitorSettingsView: View {
                         Text("Dark").tag("dark")
                     }.pickerStyle(.segmented).frame(maxWidth: 320)
                     Text("Applies to the main window and the menu-bar tool.").font(.system(size: 11)).foregroundStyle(Theme.secondary)
+                    Toggle("Offer to share failure reports", isOn: $failureReports)
+                        .onChange(of: failureReports) { _, enabled in
+                            if !enabled { model.latestHangReport = nil }
+                            HangWatchdog.startIfEnabled()
+                        }
+                    Text("Review a short report after a hang or failed cleanup, then choose where to share it.")
+                        .font(.system(size: 11)).foregroundStyle(Theme.secondary)
+                    if failureReports, let report = model.latestHangReport {
+                        Button("Review latest hang report…") { failurePreview = report }.buttonStyle(QuietButton())
+                    }
                     Toggle("Capture hang diagnostics", isOn: $hangDiagnostics)
                         .font(.system(size: 13, weight: .medium))
                         .onChange(of: hangDiagnostics) { _, enabled in HangWatchdog.setEnabled(enabled) }
@@ -144,6 +156,7 @@ struct MonitorSettingsView: View {
                 }
             }
         }.onAppear { settings.refresh() }
+            .sheet(item: $failurePreview) { FailureReportPreview(report: $0) }
     }
 
     private func exportDiagnostics() {

@@ -50,3 +50,39 @@ import Foundation
         return (try? FileManager.default.contentsOfDirectory(atPath: directory.path))?.filter { $0.hasPrefix("Hang-") }.count ?? 0
     }
 }
+
+struct FailureReport: Identifiable, Sendable {
+    enum Kind: String, Sendable {
+        case hang
+        case cleanupFailure = "cleanup_failure"
+    }
+
+    static let enabledKey = "nuke.failureReports"
+    static var isEnabled: Bool { UserDefaults.standard.bool(forKey: enabledKey) }
+
+    let id = UUID()
+    let kind: Kind
+    let json: String
+
+    init(kind: Kind, date: Date, failedItems: Int? = nil, totalItems: Int? = nil, stalledSeconds: Double? = nil) {
+        self.kind = kind
+        var fields: [String: Any] = [
+            "event": kind.rawValue,
+            "date": ISO8601DateFormatter().string(from: date),
+            "app_version": Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown",
+            "app_build": Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "unknown",
+            "macos": ProcessInfo.processInfo.operatingSystemVersionString
+        ]
+        fields["failed_items"] = failedItems
+        fields["total_items"] = totalItems
+        fields["stalled_seconds"] = stalledSeconds
+        let data = try? JSONSerialization.data(withJSONObject: fields, options: [.prettyPrinted, .sortedKeys])
+        json = data.flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
+    }
+
+    init?(receipt: CleanupReceipt) {
+        let failed = receipt.items.filter { !$0.success }.count
+        guard failed > 0 else { return nil }
+        self.init(kind: .cleanupFailure, date: receipt.date, failedItems: failed, totalItems: receipt.items.count)
+    }
+}

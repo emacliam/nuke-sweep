@@ -99,6 +99,10 @@ struct UpdatesView: View {
                 }
                 Notice(text: "This check contacts GitHub. Downloads and installation remain under your control.", symbol: "info.circle")
             }
+            if Bundle.main.object(forInfoDictionaryKey: "NukeLicensePublicKey") != nil {
+                Divider()
+                LicenseView()
+            }
         }
     }
 

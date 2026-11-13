@@ -3,6 +3,21 @@ import XCTest
 
 @MainActor
 final class DiagnosticsExportTests: XCTestCase {
+    func testFailureReportOmitsReceiptPathsAndErrorText() throws {
+        let item = ReceiptItem(originalPath: "/private/customer/file", trashPath: nil, size: 80,
+                               success: false, outcome: "Could not move customer file")
+        let receipt = CleanupReceipt(date: .now, title: "Cleanup", items: [item],
+                                     freeBefore: nil, freeAfter: nil, undo: "Restore instructions")
+        let report = try XCTUnwrap(FailureReport(receipt: receipt))
+        let fields = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(report.json.utf8)) as? [String: Any])
+        XCTAssertEqual(Set(fields.keys), ["event", "date", "app_version", "app_build", "macos", "failed_items", "total_items"])
+        XCTAssertEqual(fields["failed_items"] as? Int, 1)
+        XCTAssertFalse(report.json.contains("customer"))
+        let success = CleanupReceipt(date: .now, title: "Cleanup", items: [],
+                                     freeBefore: nil, freeAfter: nil, undo: "")
+        XCTAssertNil(FailureReport(receipt: success))
+    }
+
     func testProviderSummaryOmitsSecretsAndBaseURLs() {
         var provider = AIProviderConfig.make(.openAICompatible, name: "OpenRouter")
         provider.baseURL = "https://openrouter.ai/api/v1"

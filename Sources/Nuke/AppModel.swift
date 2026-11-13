@@ -37,6 +37,7 @@ import UserNotifications
     private var reviewToken = ScanCancellation()
     private var dockerStartTask: Task<Void, Never>?
     var finishedReceipt: CleanupReceipt?
+    var latestHangReport: FailureReport?
     var quick = QuickScanState()
     let ai = AISettings()
     /// Owns the ranked "what matters here" shortlist. Separate from AppModel so
@@ -461,6 +462,7 @@ import UserNotifications
     }
 
     func pruneDocker(_ kind: String, reviewedContext: String) {
+        guard requireCleanupAccess() else { return }
         guard !actionBusy, !dockerLoading, dockerReachable, !reviewedContext.isEmpty, reviewedContext == dockerContext else { return }
         let args: [String]
         switch kind {
@@ -481,6 +483,7 @@ import UserNotifications
         }
     }
     func deleteSimulator(_ device: SimulatorDevice) {
+        guard requireCleanupAccess() else { return }
         guard !actionBusy, !features.deviceLoading else { return }
         actionBusy = true; features.simulatorActionBusy = true; features.simulatorActionResult = nil
         Task {
@@ -490,6 +493,13 @@ import UserNotifications
             features.scanDevices()
         }
     }
+    func requireCleanupAccess() -> Bool {
+        guard !TrialAccess.status().permitsCleanup else { return true }
+        page = .updates
+        message = "Start a trial or import a licence to clean up. You can still inspect storage and restore eligible files."
+        return false
+    }
+
     func reviewTrash(_ items: [DiskItem], proofs: [DuplicateProof] = [], cacheContents: CacheRule? = nil, folderContents: DiskItem? = nil) {
         guard !actionBusy else { return }; actionBusy = true
         pendingTrash = []; pendingTrashSelection = []; duplicateProofs = []; pendingEvidence = [:]; pendingWarnings = []; pendingBlocked = []
@@ -528,6 +538,7 @@ import UserNotifications
 
     func cancelReview() { reviewToken.cancel(); reviewPreparing = false; actionBusy = false; pendingEvidence = [:]; pendingWarnings = []; pendingBlocked = [] }
     func trashReviewed() {
+        guard requireCleanupAccess() else { return }
         let items = selectedPendingTrash
         guard !actionBusy, !items.isEmpty else { return }
         showTrashReview = false
@@ -601,6 +612,7 @@ import UserNotifications
         }
     }
     func permanentlyDeleteTrash(_ entries: [TrashEntry], rootIdentity: FileIdentity) {
+        guard requireCleanupAccess() else { return }
         guard !actionBusy, !entries.isEmpty, let snapshot = trashSnapshot, snapshot.complete, snapshot.rootIdentity == rootIdentity,
               entries.allSatisfy({ entry in snapshot.entries.contains { $0.id == entry.id && $0.fingerprint == entry.fingerprint } }) else { return }
         actionBusy = true

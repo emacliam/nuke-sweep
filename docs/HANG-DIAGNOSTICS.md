@@ -43,3 +43,7 @@ It is off by default and does not use the network. The files may contain local p
 **Export diagnostics** writes a local JSON support bundle with app/system versions, counts, provider names/models (no keys or base URLs), schedule names/frequencies (no paths), and a hang-report count. It contains no file contents or absolute folder paths. Review the JSON before sharing.
 
 The setting is **not** a fix for the freeze; it makes the next occurrence diagnosable. The manual `scripts/capture-hang.sh` remains available for a hang that happens while the watchdog is off or for a longer sample.
+
+To share a small report, turn on **Offer to share failure reports** in Settings → General. After a hang, return there and choose **Review latest hang report**. After a cleanup with failed items, the result sheet offers **Review failure report**. The preview shows the exact text passed to the macOS share menu. You choose the destination.
+
+The report includes the event, time, app build and macOS version, plus hang duration or cleanup item counts. Stack samples and detailed receipt errors stay in the separate local diagnostics tools.

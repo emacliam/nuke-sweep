@@ -22,12 +22,15 @@ enum HangWatchdog {
 
     static func setEnabled(_ value: Bool) {
         UserDefaults.standard.set(value, forKey: "nuke.hangDiagnostics")
-        queue.async { value ? startOnQueue() : stopOnQueue() }
+        startIfEnabled()
     }
 
     static func startIfEnabled() {
-        guard AppEnvironment.isDevelopment || UserDefaults.standard.bool(forKey: "nuke.hangDiagnostics") else { return }
-        queue.async { startOnQueue() }
+        queue.async {
+            let shouldRun = AppEnvironment.isDevelopment || FailureReport.isEnabled
+                || UserDefaults.standard.bool(forKey: "nuke.hangDiagnostics")
+            shouldRun ? startOnQueue() : stopOnQueue()
+        }
     }
 
     static func openFolder() {
@@ -65,7 +68,15 @@ enum HangWatchdog {
                   Date().timeIntervalSince(lastReport) >= 30 else { return }
             lastReport = Date()
             Log.watchdog.error("Main thread stalled for \(Date().timeIntervalSince(stalledSince), format: .fixed(precision: 2), privacy: .public)s; capturing a sample")
-            capture()
+            if FailureReport.isEnabled {
+                let report = FailureReport(kind: .hang, date: lastReport, stalledSeconds: lastReport.timeIntervalSince(stalledSince))
+                Task { @MainActor in
+                    if FailureReport.isEnabled { AppDelegate.shared?.model?.latestHangReport = report }
+                }
+            }
+            if AppEnvironment.isDevelopment || UserDefaults.standard.bool(forKey: "nuke.hangDiagnostics") {
+                capture()
+            }
             pending = false
             return
         }

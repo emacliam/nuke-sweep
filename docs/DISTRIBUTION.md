@@ -113,3 +113,11 @@ Sparkle starts in a production build when the bundle contains its Ed25519 public
 5. On a test Mac, install the previous Sparkle-enabled build and check for updates from Settings. Verify the update installs, relaunches, and preserves existing preferences and history.
 
 The 0.9.0 release predates Sparkle. Its existing Updates page sends users to GitHub for the first Sparkle-enabled installer.
+
+## Offline licence files
+
+Build with `NUKE_LICENSE_PUBLIC_KEY` set to the base64 Ed25519 public key for licence issuance. Use a dedicated key, separate from the Sparkle key. The app exposes licence import in Settings → Updates when this key is configured. Verification and storage happen locally.
+
+Compile the issuer with `swiftc Sources/Nuke/OfflineLicense.swift scripts/issue-license.swift -o issue-license`. Supply the base64 private seed through stdin from secure storage. Run `issue-license public-key` to derive the matching public key, or `issue-license LICENCE_UUID [VALID_DAYS]` to write a signed licence to stdout. Omit the days for a perpetual licence. Keep the private seed out of the repository, app bundle, shell arguments and logs.
+
+In configured builds, users can start a 14-day trial in Settings → Updates. The trial start is stored in the login Keychain. When access expires, storage inspection and receipt restoration stay available. Cleanup requires a valid licence. Checkout fulfilment is pending.

@@ -69,6 +69,7 @@ extension AppModel {
     /// Runs after an automatic check. Returns nil when nothing was attempted.
     func runAutoClean(_ report: StorageTriage.Report) async -> AutoCleanOutcome? {
         guard AutoClean.enabled, FullCheckHistory.weeklyEnabled, fullCheck.automatic else { return nil }
+        guard TrialAccess.status().permitsCleanup else { return nil }
         // Never under a person's hands: if a review is open or anything else is
         // changing files, this run is skipped and the next check tries again.
         guard !actionBusy, !showTrashReview, pendingTrash.isEmpty, !reviewPreparing else { return nil }
@@ -91,6 +92,7 @@ extension AppModel {
             Log.cleanup.notice("Automatic cleanup: nothing passed review preparation (candidates=\(candidates.count, privacy: .public))")
             return nil
         }
+        guard TrialAccess.status().permitsCleanup else { return nil }
         let running = NSWorkspace.shared.runningApplications.compactMap { $0.bundleURL?.path }
         Log.cleanup.notice("Automatic cleanup executing: items=\(items.count, privacy: .public) idleDays=\(idleDays, privacy: .public)")
         let moved = await DiskWork.run("Automatic cleanup") {

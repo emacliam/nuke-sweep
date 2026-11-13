@@ -57,6 +57,9 @@ SPARKLE_PUBLIC_KEY="${NUKE_SPARKLE_PUBLIC_KEY:-AZnxvY+2gXA12ksjhELz5TqmfTBgT7I7f
 /usr/libexec/PlistBuddy -c "Add :SUVerifyUpdateBeforeExtraction bool true" "$APP/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Add :SUEnableAutomaticChecks bool false" "$APP/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Add :SUAllowsAutomaticUpdates bool false" "$APP/Contents/Info.plist"
+if [[ -n "${NUKE_LICENSE_PUBLIC_KEY:-}" ]]; then
+  /usr/libexec/PlistBuddy -c "Add :NukeLicensePublicKey string $NUKE_LICENSE_PUBLIC_KEY" "$APP/Contents/Info.plist"
+fi
 NUKE_APP_PATH="$APP" ./scripts/build-widgets.sh
 ./scripts/embed-sparkle.sh "$APP" release
 SIGN="${NUKE_SIGN_IDENTITY:--}"

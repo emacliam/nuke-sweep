@@ -5,6 +5,8 @@ struct ReceiptFinishView: View {
     @Environment(FeatureModel.self) var features
     @Environment(\.dismiss) private var dismiss
     let receipt: CleanupReceipt
+    @AppStorage(FailureReport.enabledKey) private var failureReports = false
+    @State private var failurePreview: FailureReport?
     @State private var restoreError: String?
     private var currentItems: [ReceiptItem] {
         features.receipts.first(where: { $0.id == receipt.id })?.items ?? receipt.items
@@ -24,6 +26,9 @@ struct ReceiptFinishView: View {
                 }
                 if failed > 0 { Text("\(failed) failed").foregroundStyle(Theme.error) }
             }.font(.system(size: 13, weight: .medium))
+            if failureReports, let report = FailureReport(receipt: receipt) {
+                Button("Review failure report…") { failurePreview = report }.buttonStyle(QuietButton())
+            }
             if let delta = receipt.observedFreeDelta {
                 Text("Change in available space: \(delta >= 0 ? "+" : "−")\(bytes(abs(delta))). This is the observed change across the volume.")
                     .font(.system(size: 12)).foregroundStyle(Theme.secondary)
@@ -59,5 +64,6 @@ struct ReceiptFinishView: View {
             Text(receipt.undo).font(.system(size: 12)).foregroundStyle(Theme.secondary)
             HStack { Button("View receipt history") { dismiss(); model.page = .history }.buttonStyle(QuietButton()); Spacer(); Button("Done") { dismiss() }.buttonStyle(PrimaryButton()).keyboardShortcut(.defaultAction) }
         }.padding(28).frame(width: 620)
+            .sheet(item: $failurePreview) { FailureReportPreview(report: $0) }
     }
 }
