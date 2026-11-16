@@ -8,6 +8,7 @@ struct ReceiptFinishView: View {
     @AppStorage(FailureReport.enabledKey) private var failureReports = false
     @State private var failurePreview: FailureReport?
     @State private var restoreError: String?
+    @State private var imagePreview = false
     private var currentItems: [ReceiptItem] {
         features.receipts.first(where: { $0.id == receipt.id })?.items ?? receipt.items
     }
@@ -62,8 +63,14 @@ struct ReceiptFinishView: View {
                 }
             }.frame(maxHeight: 250)
             Text(receipt.undo).font(.system(size: 12)).foregroundStyle(Theme.secondary)
-            HStack { Button("View receipt history") { dismiss(); model.page = .history }.buttonStyle(QuietButton()); Spacer(); Button("Done") { dismiss() }.buttonStyle(PrimaryButton()).keyboardShortcut(.defaultAction) }
+            HStack {
+                Button("View receipt history") { dismiss(); model.page = .history }.buttonStyle(QuietButton())
+                Button("Share result…") { imagePreview = true }.buttonStyle(QuietButton())
+                Spacer()
+                Button("Done") { dismiss() }.buttonStyle(PrimaryButton()).keyboardShortcut(.defaultAction)
+            }
         }.padding(28).frame(width: 620)
+            .sheet(isPresented: $imagePreview) { CleanupImagePreview(summary: .init(items: currentItems)) }
             .sheet(item: $failurePreview) { FailureReportPreview(report: $0) }
     }
 }

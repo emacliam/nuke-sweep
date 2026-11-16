@@ -29,8 +29,9 @@ enum DirectoryEntries {
 
 // lstat prevents following symlinks. Traversal stays on the selected volume.
 enum DiskScanner {
-    static func scan(_ root: URL, cancellation: ScanCancellation, limit: Int = 250_000, deadline: Date = Date().addingTimeInterval(60), excluding: (URL) -> Bool = { _ in false }, observing: (URL) -> Void = { _ in }) -> ScanResult {
-        if excluding(root) { return ScanResult(items: [], skipped: 0, visited: 0, limited: false) }
+    static func scan(_ root: URL, cancellation: ScanCancellation, limit: Int = 250_000, deadline: Date = Date().addingTimeInterval(60), excluding: (URL) -> Bool = { _ in false }, respectIgnored: Bool = true, observing: (URL) -> Void = { _ in }) -> ScanResult {
+        let ignored = respectIgnored ? IgnoredLocations.paths : []
+        if excluding(root) || IgnoredLocations.contains(root, in: ignored) { return ScanResult(items: [], skipped: 0, visited: 0, limited: false) }
         var visited = 0, skipped = 0, limited = false
         var categories: [String: Int64] = [:]
         var issues: [ScanAccessIssue] = []
@@ -40,7 +41,7 @@ enum DiskScanner {
         guard rootStat.st_mode & mode_t(S_IFMT) == mode_t(S_IFDIR) else { return ScanResult(items: [], skipped: 1, visited: 0, limited: false) }
         let device = rootStat.st_dev
         func measure(_ url: URL) -> DiskItem? {
-            if excluding(url) { return nil }
+            if excluding(url) || IgnoredLocations.contains(url, in: ignored) { return nil }
             if cancellation.cancelled || visited >= limit || Date() > deadline { limited = true; return nil }
             visited += 1
             observing(url)
@@ -179,6 +180,10 @@ enum CleanupSafety {
         let resolvedParent = item.url.deletingLastPathComponent().resolvingSymlinksInPath().standardizedFileURL
         let effectivePath = resolvedParent.appendingPathComponent(item.url.lastPathComponent).standardizedFileURL.path
         let checkedPaths = [path, effectivePath]
+        let ignored = IgnoredLocations.paths
+        guard !checkedPaths.contains(where: { IgnoredLocations.overlaps(URL(fileURLWithPath: $0), in: ignored) }) else {
+            throw SafetyError.developerScope("This item is ignored or contains an ignored location.")
+        }
         for candidate in Set(checkedPaths) {
             if let reason = DeveloperScope.cleanupBlock(for: candidate, in: developerScopes, resolvingRoots: true) {
                 throw SafetyError.developerScope(reason)

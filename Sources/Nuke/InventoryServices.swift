@@ -1,6 +1,7 @@
 import Foundation
 import AppKit
 import Darwin
+import CoreServices
 
 enum InventoryService {
     static func children(_ root: URL, notes: inout [String]) -> [URL] {
@@ -12,11 +13,12 @@ enum InventoryService {
         do { return try FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil) }
         catch { notes.append("Could not read \(root.path): \(error.localizedDescription). Coverage is partial."); return [] }
     }
-    static func measure(_ url: URL, token: ScanCancellation = ScanCancellation()) -> DiskItem? {
+    static func measure(_ url: URL, token: ScanCancellation = ScanCancellation(), limit: Int = 250_000, deadline: Date = Date().addingTimeInterval(60)) -> DiskItem? {
+        guard !IgnoredLocations.contains(url, in: IgnoredLocations.paths) else { return nil }
         var s = stat(); guard lstat(url.path, &s) == 0 else { return nil }
         let dir = s.st_mode & mode_t(S_IFMT) == mode_t(S_IFDIR)
         let link = s.st_mode & mode_t(S_IFMT) == mode_t(S_IFLNK)
-        let r = dir ? DiskScanner.scan(url, cancellation: token) : nil
+        let r = dir ? DiskScanner.scan(url, cancellation: token, limit: limit, deadline: deadline) : nil
         return DiskItem(url: url, size: r?.logical ?? Int64(s.st_size), allocated: r?.allocated ?? Int64(s.st_blocks) * 512, directory: dir, symlink: link, modified: Date(timeIntervalSince1970: Double(s.st_mtimespec.tv_sec)), accessed: Date(timeIntervalSince1970: Double(s.st_atimespec.tv_sec)), identity: FileIdentity(device: UInt64(s.st_dev), inode: UInt64(s.st_ino)), incomplete: r.map { $0.skipped > 0 || $0.limited } ?? false)
     }
     static func projects(_ root: URL, token: ScanCancellation = ScanCancellation()) -> [ProjectGroup] {
@@ -77,7 +79,9 @@ enum AppInventory {
                 if token.cancelled { break }
                 guard url.pathExtension == "app", (try? url.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) != true else { continue }
                 guard let b = Bundle(url: url), let id = b.bundleIdentifier else { continue }
-                found.append(InstalledApp(url: url, name: b.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? url.deletingPathExtension().lastPathComponent, bundleID: id, version: b.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "Unknown"))
+                found.append(InstalledApp(url: url, name: b.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? url.deletingPathExtension().lastPathComponent, bundleID: id, version: b.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "Unknown",
+                                          lastOpened: MDItemCreateWithURL(kCFAllocatorDefault, url as CFURL)
+                                              .flatMap { MDItemCopyAttribute($0, kMDItemLastUsedDate) as? Date }))
             }
         }
         return found.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
@@ -96,17 +100,21 @@ enum AppInventory {
         report.notes = ["No items are selected automatically. Only exact bundle-identifier paths are suggested; app-name folders and shared containers are not inferred. Application data may contain documents or account state."]
         return report
     }
-    static func leftovers(home: URL = FileManager.default.homeDirectoryForCurrentUser, installed: [InstalledApp], token: ScanCancellation = ScanCancellation()) -> InventoryReport {
+    static func leftovers(home: URL = FileManager.default.homeDirectoryForCurrentUser, installed: [InstalledApp], token: ScanCancellation = ScanCancellation(), reportOnly: Bool = false) -> InventoryReport {
         let ids = Set(installed.map(\.bundleID)), roots = ["Library/Caches", "Library/Preferences", "Library/Logs"]
         var report = InventoryReport()
+        let deadline = Date().addingTimeInterval(20)
         if installed.isEmpty { report.notes.append("No installed apps were available in the scanned roots. All ownership matches are uncertain.") }
         for relative in roots {
             let folder = home.appendingPathComponent(relative)
-            for url in InventoryService.children(folder, notes: &report.notes).prefix(1000) {
+            let children = InventoryService.children(folder, notes: &report.notes)
+            if children.count > 1_000 { report.notes.append("Only the first 1,000 entries in \(relative) were checked.") }
+            for url in children.prefix(1_000) {
                 if token.cancelled { report.notes.append("Inspection stopped; results are partial."); return report }
+                if Date() >= deadline { report.notes.append("Time limit reached; results are partial."); return report }
                 let id = url.pathExtension == "plist" ? url.deletingPathExtension().lastPathComponent : url.lastPathComponent
                 guard id.hasPrefix("com.") || id.hasPrefix("org.") || id.hasPrefix("io."), !id.hasPrefix("com.apple."), !ids.contains(id) else { continue }
-                if let item = InventoryService.measure(url, token: token) { report.entries.append(InventoryEntry(item: item, category: "Unmatched app identifier", owner: id, explanation: "No exact identifier in the scanned Applications folders. An app elsewhere, helper, or shared vendor service may still use this item. This is not proof of an orphan.")) }
+                if let item = InventoryService.measure(url, token: token, limit: 12_000, deadline: min(deadline, Date().addingTimeInterval(2))) { report.entries.append(InventoryEntry(item: item, category: "Unmatched app identifier", owner: id, explanation: "No exact identifier in the scanned Applications folders. An app elsewhere, helper, or shared vendor service may still use this item. This is not proof of an orphan.", removable: !reportOnly)) }
                 if report.entries.count >= 100 { report.notes.append("Stopped at 100 unmatched candidates; inspect remaining items in Finder."); return report }
             }
         }

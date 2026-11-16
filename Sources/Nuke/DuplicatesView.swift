@@ -9,6 +9,7 @@ struct DuplicatesView: View {
     @State private var selected = Set<String>()
     @State private var search = ""
     @State private var inspecting: DuplicateGroup?
+    @State private var similar = false
     private var groups: [DuplicateGroup] { features.duplicates?.groups ?? [] }
     private var visible: [DuplicateGroup] {
         guard !search.isEmpty else { return groups }
@@ -18,6 +19,17 @@ struct DuplicatesView: View {
         group.files.first { $0.id == (keepers[group.id] ?? group.files.first?.id) }
     }
     var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Picker("Comparison", selection: $similar) {
+                Text("Exact duplicates").tag(false)
+                Text("Similar media").tag(true)
+            }.pickerStyle(.segmented).frame(maxWidth: 310)
+            if similar { SimilarMediaView() }
+            else { exactDuplicates }
+        }
+    }
+
+    private var exactDuplicates: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Duplicates").font(.system(size: 23, weight: .semibold))
             HStack {

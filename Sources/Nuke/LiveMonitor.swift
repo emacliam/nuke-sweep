@@ -8,6 +8,8 @@ import WidgetKit
     var sample: MonitorSample?
     var monitorPaused = false
     var monitorInterval = UserDefaults.standard.object(forKey: "nuke.monitorInterval") as? Double ?? 5
+    private var dailyStorageReadings = StorageForecast.load()
+    private(set) var forecastDays: Int?
     var monitorHistory: [MonitorSample] = []
     var showStatusName = UserDefaults.standard.bool(forKey: "nuke.statusName")
     var statusBarMetric = UserDefaults.standard.string(forKey: "nuke.statusBarMetric") ?? "storage"
@@ -55,8 +57,23 @@ import WidgetKit
     /// Offered the low-storage moment before the plain alert is posted. Returns
     /// true when the receiver will post a fuller alert itself.
     var onLowStorage: ((Int64) -> Bool)?
+    private func recordStorageTrend(_ sample: MonitorSample) {
+        guard !ProcessInfo.processInfo.arguments.contains("--demo-fixtures"), sample.disk.error == nil,
+              sample.disk.totalDisk > 0, (0...sample.disk.totalDisk).contains(sample.disk.freeDisk) else { return }
+        let reading = StorageForecast.Reading(date: sample.date, free: sample.disk.freeDisk, capacity: sample.disk.totalDisk)
+        if let last = dailyStorageReadings.last, last.capacity != reading.capacity {
+            dailyStorageReadings.removeAll()
+        }
+        if dailyStorageReadings.last.map({ reading.date.timeIntervalSince($0.date) >= StorageForecast.day }) ?? true {
+            dailyStorageReadings = Array((dailyStorageReadings + [reading]).suffix(32))
+            StorageForecast.save(dailyStorageReadings)
+        }
+        forecastDays = StorageForecast.daysRemaining(in: dailyStorageReadings, current: reading)
+    }
+
     private func recordSample(cpu: Double?) {
         if let sample {
+            recordStorageTrend(sample)
             monitorHistory.append(sample)
             monitorHistory = Array(monitorHistory.filter { sample.date.timeIntervalSince($0.date) <= 600 }.suffix(121))
         }

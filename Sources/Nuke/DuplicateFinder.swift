@@ -103,6 +103,8 @@ enum DuplicateFinder {
     static func find(_ root: URL, token: ScanCancellation, limit: Int = 100_000, limits: DuplicateLimits? = nil, progress: ((DuplicateReport) -> Void)? = nil) -> DuplicateReport {
         var limits = limits ?? DuplicateLimits(); limits.entries = min(limit, limits.entries)
         let budget = DuplicateBudget(limits, token)
+        let ignored = IgnoredLocations.paths
+        if IgnoredLocations.contains(root, in: ignored) { return .init(groups: [], skipped: 0, limited: false, checked: 0) }
         var rootStat = stat()
         guard lstat(root.path, &rootStat) == 0, rootStat.st_mode & mode_t(S_IFMT) == mode_t(S_IFDIR) else { return .init(groups: [], skipped: 1, limited: false, checked: 0) }
         var buckets: [Int64: [DiskItem]] = [:], skipped = 0, visited = 0, limited = false
@@ -116,6 +118,7 @@ enum DuplicateFinder {
         guard let enumerator = FileManager.default.enumerator(at: root, includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey, .isUbiquitousItemKey, .ubiquitousItemDownloadingStatusKey], options: [.skipsPackageDescendants], errorHandler: { _, _ in skipped += 1; return true }) else { return .init(groups: [], skipped: 1, limited: false, checked: 0) }
         for case let url as URL in enumerator {
             guard (try? budget.check()) != nil, visited < limits.entries else { limited = true; break }
+            if IgnoredLocations.contains(url, in: ignored) { enumerator.skipDescendants(); continue }
             visited += 1; DiskWork.report(path: "Finding candidates · " + url.path, visited: visited)
             var info = stat()
             guard lstat(url.path, &info) == 0 else { skipped += 1; continue }

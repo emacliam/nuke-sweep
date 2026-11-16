@@ -7,6 +7,7 @@ struct MountedVolume: Identifiable, Equatable, Sendable {
     let free: Int64
     let removable: Bool
     let internalVolume: Bool
+    var network = false
 
     var id: String { url.path }
     var isRoot: Bool { url.standardizedFileURL.path == "/" }
@@ -22,7 +23,8 @@ enum MountedVolumeService {
             .volumeAvailableCapacityForImportantUsageKey,
             .volumeAvailableCapacityKey,
             .volumeIsRemovableKey,
-            .volumeIsInternalKey
+            .volumeIsInternalKey,
+            .volumeIsLocalKey
         ]
         let urls = FileManager.default.mountedVolumeURLs(includingResourceValuesForKeys: Array(keys), options: [.skipHiddenVolumes]) ?? []
         return urls.compactMap { url in
@@ -37,7 +39,8 @@ enum MountedVolumeService {
                 total: Int64(total),
                 free: max(0, free),
                 removable: values.volumeIsRemovable ?? false,
-                internalVolume: values.volumeIsInternal ?? (url.path == "/")
+                internalVolume: values.volumeIsInternal ?? (url.path == "/"),
+                network: values.volumeIsLocal == false
             )
         }.sorted { lhs, rhs in
             if lhs.isRoot != rhs.isRoot { return lhs.isRoot }

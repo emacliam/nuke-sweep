@@ -19,9 +19,6 @@
 /* Sources/Nuke/InsightViews.swift:210 */
 "1 GB+" = "1 GB+";
 
-/* Sources/Nuke/MonitorViews.swift:106 */
-"1-minute load" = "1-minute load";
-
 /* Sources/Nuke/StorageCharts.swift:258 */
 "10 minutes" = "10 minutes";
 
@@ -52,9 +49,6 @@
 /* Sources/Nuke/InsightViews.swift:77 */
 "7 days" = "7 days";
 
-/* Sources/Nuke/FindSpaceView.swift:152 */
-"A bounded measurement of application caches and Trash. Developer caches stay in their own tab." = "A bounded measurement of application caches and Trash. Developer caches stay in their own tab.";
-
 /* Sources/Nuke/CleanupEvidence.swift:125 */
 "A dependency or package store that can be recreated." = "A dependency or package store that can be recreated.";
 
@@ -69,12 +63,6 @@
 
 /* Sources/Nuke/CleanupEvidence.swift:76 */
 "A tool cache directory following the XDG convention." = "A tool cache directory following the XDG convention.";
-
-/* Sources/Nuke/MonitorViews.swift:113 */
-"ACTION" = "ACTION";
-
-/* Sources/Nuke/MonitorViews.swift:141 */
-"ADDRESS" = "ADDRESS";
 
 /* Sources/Nuke/TriageView.swift:103 */
 "AI assist is off. This shortlist was produced entirely on this Mac." = "AI assist is off. This shortlist was produced entirely on this Mac.";
@@ -115,9 +103,6 @@
 /* Sources/Nuke/AIAssistView.swift:88 */
 "Active AI provider" = "Active AI provider";
 
-/* Sources/Nuke/MonitorViews.swift:107 */
-"Active CPU cores" = "Active CPU cores";
-
 /* Sources/Nuke/MonitorViews.swift:109 */
 "Activity Monitor" = "Activity Monitor";
 
@@ -145,14 +130,8 @@
 /* Sources/Nuke/ContentView.swift:112 */
 "Add to basket" = "Add to basket";
 
-/* Sources/Nuke/WidgetsView.swift:18 */
-"Add to your desktop" = "Add to your desktop";
-
 /* Sources/Nuke/AIAssistView.swift:814 */
 "Advisory" = "Advisory";
-
-/* Sources/Nuke/AlertCenter.swift:105 */
-"Alerts use existing complete scans and your active watchlist; they do not start background folder scans. Growth needs at least 1 GB, or 100 MB and 20%. Delivery requires optional alerts and macOS permission." = "Alerts use existing complete scans and your active watchlist; they do not start background folder scans. Growth needs at least 1 GB, or 100 MB and 20%. Delivery requires optional alerts and macOS permission.";
 
 /* Sources/Nuke/InsightViews.swift:77 */
 "All scans" = "All scans";
@@ -190,14 +169,8 @@
 /* Sources/Nuke/AIAssistView.swift:176 */
 "Ask before sending to a cloud provider" = "Ask before sending to a cloud provider";
 
-/* Sources/Nuke/WidgetsView.swift:15 */
-"Available storage at a glance. The widget shows when it last refreshed." = "Available storage at a glance. The widget shows when it last refreshed.";
-
 /* Sources/Nuke/InsightViews.swift:92 */
 "BEFORE" = "BEFORE";
-
-/* Sources/Nuke/ContentView.swift:229 */
-"Back to \(parent == .developer ? " = "Back to \(parent == .developer ? ";
 
 /* Sources/Nuke/BackupCoverage.swift:52 */
 "Backup coverage could not be determined. Treat this as unknown rather than as backed up." = "Backup coverage could not be determined. Treat this as unknown rather than as backed up.";
@@ -253,9 +226,6 @@
 /* Sources/Nuke/StorageCharts.swift:263 */
 "CPU uses a 0–100% scale. Memory is active + wired + compressed VM in decimal GB, not memory pressure. Unknown readings and interruptions in sampling break the line. Session history is kept in memory only." = "CPU uses a 0–100% scale. Memory is active + wired + compressed VM in decimal GB, not memory pressure. Unknown readings and interruptions in sampling break the line. Session history is kept in memory only.";
 
-/* Sources/Nuke/MonitorViews.swift:125 */
-"CPU uses ps sampling semantics and may exceed 100% across cores. Memory is resident size, not unique memory; shared pages may be counted by multiple processes." = "CPU uses ps sampling semantics and may exceed 100% across cores. Memory is resident size, not unique memory; shared pages may be counted by multiple processes.";
-
 /* Sources/Nuke/AIAssistView.swift:311 */
 "Cancel" = "Cancel";
 
@@ -282,9 +252,6 @@
 
 /* Sources/Nuke/AIAssistView.swift:825 */
 "Caveats" = "Caveats";
-
-/* Sources/Nuke/MonitorViews.swift:184 */
-"Change folder…" = "Change folder…";
 
 /* Sources/Nuke/InsightViews.swift:77 */
 "Chart range" = "Chart range";
@@ -418,9 +385,6 @@
 /* Sources/Nuke/CleanupBasketView.swift:31 */
 "Continue browsing" = "Continue browsing";
 
-/* Sources/Nuke/WidgetsView.swift:19 */
-"Control-click the desktop, choose Edit Widgets, and search for Nuke Sweep. Choose Storage, then pick a size. Launch this Nuke Sweep build at least once after installation so macOS can discover its extension." = "Control-click the desktop, choose Edit Widgets, and search for Nuke Sweep. Choose Storage, then pick a size. Launch this Nuke Sweep build at least once after installation so macOS can discover its extension.";
-
 /* Sources/Nuke/AIAssistView.swift:357 */
 "Copy explanation" = "Copy explanation";
 
@@ -471,9 +435,6 @@
 
 /* Sources/Nuke/AIAssistView.swift:188 */
 "Detected models: " = "Detected models: ";
-
-/* Sources/Nuke/DeveloperView.swift:58 */
-"Devices & Xcode" = "Devices & Xcode";
 
 /* Sources/Nuke/DeveloperScopesView.swift:47 */
 "Dismiss scope message" = "Dismiss scope message";
@@ -553,9 +514,6 @@
 /* Sources/Nuke/MonitorViews.swift:257 */
 "Enabled" = "Enabled";
 
-/* Sources/Nuke/MenuMonitorView.swift:136 */
-"Enabling alerts asks macOS for notification permission. CPU alerts require three consecutive samples at or above 85% (duration depends on the sample interval). At most one alert is sent per hour. Nothing is automatically cleaned." = "Enabling alerts asks macOS for notification permission. CPU alerts require three consecutive samples at or above 85% (duration depends on the sample interval). At most one alert is sent per hour. Nothing is automatically cleaned.";
-
 /* Sources/Nuke/AIAssistView.swift:417 */
 "Endpoint: " = "Endpoint: ";
 
@@ -573,9 +531,6 @@
 
 /* Sources/Nuke/AIAssistView.swift:639 */
 "Exclusions are stored on saved scopes. Open this plan from a scope to apply them." = "Exclusions are stored on saved scopes. Open this plan from a scope to apply them.";
-
-/* Sources/Nuke/ManagementViews.swift:85 */
-"Executable missing" = "Executable missing";
 
 /* Sources/Nuke/DeveloperView.swift:92 */
 "Expand a location for its path, cleanup impact and review action. Nothing is selected automatically." = "Expand a location for its path, cleanup impact and review action. Nothing is selected automatically.";
@@ -673,9 +628,6 @@
 /* Sources/Nuke/AIAssistView.swift:38 */
 "Folder or file name, relative path, size, kind, evidence label and rebuild hint, Git ignore state, and the scope label/policy. Nothing else." = "Folder or file name, relative path, size, kind, evidence label and rebuild hint, Git ignore state, and the scope label/policy. Nothing else.";
 
-/* Sources/Nuke/MonitorViews.swift:171 */
-"Folder watch" = "Folder watch";
-
 /* Sources/Nuke/InsightViews.swift:81 */
 "Folders / files" = "Folders / files";
 
@@ -757,9 +709,6 @@
 /* Sources/Nuke/CandidateAssessment.swift:38 */
 "Identity and contents are rechecked during review" = "Identity and contents are rechecked during review";
 
-/* Sources/Nuke/MonitorViews.swift:75 */
-"Images, containers and build cache in the selected context" = "Images, containers and build cache in the selected context";
-
 /* Sources/Nuke/DeveloperScopesView.swift:33 */
 "Import scopes…" = "Import scopes…";
 
@@ -787,20 +736,8 @@
 /* Sources/Nuke/InsightViews.swift:347 */
 "Inspect devices & archives" = "Inspect devices & archives";
 
-/* Sources/Nuke/InsightViews.swift:380 */
-"Inspect devices and archives" = "Inspect devices and archives";
-
-/* Sources/Nuke/ManagementViews.swift:51 */
-"Inspect installed applications" = "Inspect installed applications";
-
 /* Sources/Nuke/ManagementViews.swift:13 */
 "Inspect installed apps" = "Inspect installed apps";
-
-/* Sources/Nuke/InsightViews.swift:327 */
-"Inspect known locations" = "Inspect known locations";
-
-/* Sources/Nuke/DeveloperView.swift:63 */
-"Inspect local models" = "Inspect local models";
 
 /* Sources/Nuke/InsightViews.swift:301 */
 "Inspect models" = "Inspect models";
@@ -816,12 +753,6 @@
 
 /* Sources/Nuke/DuplicatesView.swift:35 */
 "Inspect selected group…" = "Inspect selected group…";
-
-/* Sources/Nuke/ManagementViews.swift:79 */
-"Inspect startup components" = "Inspect startup components";
-
-/* Sources/Nuke/ManagementViews.swift:103 */
-"Inspect startup items" = "Inspect startup items";
 
 /* Sources/Nuke/InsightViews.swift:13 */
 "Inspection completed " = "Inspection completed ";
@@ -876,12 +807,6 @@
 
 /* Sources/Nuke/InsightViews.swift:14 */
 "Listed sizes: " = "Listed sizes: ";
-
-/* Sources/Nuke/MonitorViews.swift:128 */
-"Listening TCP ports" = "Listening TCP ports";
-
-/* Sources/Nuke/ManagementViews.swift:52 */
-"Lists bundles and their identifier-based candidate files" = "Lists bundles and their identifier-based candidate files";
 
 /* Sources/Nuke/CandidateAssessment.swift:52 */
 "Local context has not been inspected yet." = "Local context has not been inspected yet.";
@@ -952,9 +877,6 @@
 /* Sources/Nuke/CandidateAssessment.swift:21 */
 "Measurement needed" = "Measurement needed";
 
-/* Sources/Nuke/InsightViews.swift:381 */
-"Measures the known locations without selecting anything" = "Measures the known locations without selecting anything";
-
 /* Sources/Nuke/DeveloperScopesView.swift:170 */
 "Measuring this scope…" = "Measuring this scope…";
 
@@ -981,9 +903,6 @@
 
 /* Sources/Nuke/MenuMonitorView.swift:37 */
 "Monitor & alert settings" = "Monitor & alert settings";
-
-/* Sources/Nuke/DeveloperView.swift:65 */
-"More" = "More";
 
 /* Sources/Nuke/MonitorViews.swift:425 */
 "Move to Trash" = "Move to Trash";
@@ -1129,17 +1048,11 @@
 /* Sources/Nuke/ManagementViews.swift:254 */
 "Observed " = "Observed ";
 
-/* Sources/Nuke/ReceiptFinishView.swift:14 */
-"Observed available-space change: \(after >= before ? " = "Observed available-space change: \(after >= before ? ";
-
 /* Sources/Nuke/MonitorViews.swift:456 */
 "Observed volume change after cleanup; other activity can affect it." = "Observed volume change after cleanup; other activity can affect it.";
 
 /* Sources/Nuke/MenuMonitorView.swift:105 */
 "Off by default. Writes a local sample and metadata if the main thread stalls for two seconds. No upload." = "Off by default. Writes a local sample and metadata if the main thread stalls for two seconds. No upload.";
-
-/* Sources/Nuke/InsightViews.swift:328 */
-"Ollama, Hugging Face and other common model stores" = "Ollama, Hugging Face and other common model stores";
 
 /* Sources/Nuke/InsightViews.swift:298 */
 "Ollama, Hugging Face, LM Studio, and your chosen folders" = "Ollama, Hugging Face, LM Studio, and your chosen folders";
@@ -1161,9 +1074,6 @@
 
 /* Sources/Nuke/AIAssistView.swift:307 */
 "Open AI settings" = "Open AI settings";
-
-/* Sources/Nuke/FindSpaceView.swift:183 */
-"Open Developer" = "Open Developer";
 
 /* Sources/Nuke/InsightViews.swift:237 */
 "Open Docker management" = "Open Docker management";
@@ -1207,23 +1117,11 @@
 /* Sources/Nuke/AlertCenter.swift:117 */
 "Opens Settings; delivery still needs macOS permission" = "Opens Settings; delivery still needs macOS permission";
 
-/* Sources/Nuke/MenuMonitorView.swift:133 */
-"Optional storage and sustained-CPU alerts" = "Optional storage and sustained-CPU alerts";
-
 /* Sources/Nuke/InsightViews.swift:24 */
 "Ownership & cleanup details" = "Ownership & cleanup details";
 
 /* Sources/Nuke/MonitorViews.swift:141 */
 "PID" = "PID";
-
-/* Sources/Nuke/MonitorViews.swift:117 */
-"PID \(row.pid)" = "PID \(row.pid)";
-
-/* Sources/Nuke/MonitorViews.swift:141 */
-"PORT" = "PORT";
-
-/* Sources/Nuke/MonitorViews.swift:113 */
-"PROCESS" = "PROCESS";
 
 /* Sources/Nuke/DuplicatesView.swift:147 */
 "Page \(page + 1) of \(pages)" = "Page \(page + 1) of \(pages)";
@@ -1243,9 +1141,6 @@
 /* Sources/Nuke/TrashCleanupView.swift:87 */
 "Permanently delete \(plan.entries.count) items" = "Permanently delete \(plan.entries.count) items";
 
-/* Sources/Nuke/MonitorViews.swift:108 */
-"Physical memory" = "Physical memory";
-
 /* Sources/Nuke/AIAssistView.swift:113 */
 "Plan AI provider" = "Plan AI provider";
 
@@ -1257,12 +1152,6 @@
 
 /* Sources/Nuke/CleanupEvidence.swift:75 */
 "Playground simulator devices created by Xcode." = "Playground simulator devices created by Xcode.";
-
-/* Sources/Nuke/MonitorViews.swift:151 */
-"Port \(port.port), process \(port.process), PID \(port.pid), address \(port.address)" = "Port \(port.port), process \(port.process), PID \(port.pid), address \(port.address)";
-
-/* Sources/Nuke/MonitorViews.swift:156 */
-"Port ownership is process-level. It is not proof that a project is active, and Nuke Sweep never stops a process from this list." = "Port ownership is process-level. It is not proof that a project is active, and Nuke Sweep never stops a process from this list.";
 
 /* Sources/Nuke/ManagementViews.swift:37 */
 "Possible leftovers" = "Possible leftovers";
@@ -1333,29 +1222,17 @@
 /* Sources/Nuke/MenuMonitorView.swift:37 */
 "Quit Nuke Sweep" = "Quit Nuke Sweep";
 
-/* Sources/Nuke/MonitorViews.swift:119 */
-"Quit…" = "Quit…";
-
 /* Sources/Nuke/MonitorViews.swift:55 */
 "RECLAIMABLE" = "RECLAIMABLE";
 
 /* Sources/Nuke/TriageView.swift:53 */
 "Ranked by size, evidence, how long since anything changed, and whether something is using it. Nothing is selected." = "Ranked by size, evidence, how long since anything changed, and whether something is using it. Nothing is selected.";
 
-/* Sources/Nuke/MonitorViews.swift:74 */
-"Read Docker disk usage" = "Read Docker disk usage";
-
 /* Sources/Nuke/DuplicatesView.swift:30 */
 "Read \(bytes(report.bytesRead)) of file data" = "Read \(bytes(report.bytesRead)) of file data";
 
-/* Sources/Nuke/MonitorViews.swift:129 */
-"Read-only · lsof" = "Read-only · lsof";
-
 /* Sources/Nuke/MenuMonitorView.swift:33 */
 "Readings are the last measurements; sampling is suspended." = "Readings are the last measurements; sampling is suspended.";
-
-/* Sources/Nuke/ManagementViews.swift:104 */
-"Reads launch agents and daemons; changes nothing" = "Reads launch agents and daemons; changes nothing";
 
 /* Sources/Nuke/CandidateAssessment.swift:25 */
 "Ready for review" = "Ready for review";
@@ -1371,9 +1248,6 @@
 
 /* Sources/Nuke/MenuCPUChart.swift:27 */
 "Recent CPU" = "Recent CPU";
-
-/* Sources/Nuke/MenuCPUChart.swift:51 */
-"Recent CPU history, alert threshold at 85 percent" = "Recent CPU history, alert threshold at 85 percent";
 
 /* Sources/Nuke/MenuMonitorView.swift:130 */
 "Recent resource history" = "Recent resource history";
@@ -1401,12 +1275,6 @@
 
 /* Sources/Nuke/PermissionAccess.swift:169 */
 "Refresh permission status" = "Refresh permission status";
-
-/* Sources/Nuke/MonitorViews.swift:133 */
-"Refresh ports" = "Refresh ports";
-
-/* Sources/Nuke/MonitorViews.swift:109 */
-"Refresh processes" = "Refresh processes";
 
 /* Sources/Nuke/FindSpaceView.swift:223 */
 "Refresh storage reading" = "Refresh storage reading";
@@ -1441,20 +1309,11 @@
 /* Sources/Nuke/CleanupBasketView.swift:24 */
 "Remove selected" = "Remove selected";
 
-/* Sources/Nuke/MonitorViews.swift:188 */
-"Remove watch" = "Remove watch";
-
 /* Sources/Nuke/AIAssistView.swift:549 */
 "Replace selection" = "Replace selection";
 
 /* Sources/Nuke/AIAssistView.swift:40 */
 "Request log" = "Request log";
-
-/* Sources/Nuke/MonitorViews.swift:161 */
-"Request quit" = "Request quit";
-
-/* Sources/Nuke/WidgetsView.swift:21 */
-"Request widget refresh" = "Request widget refresh";
 
 /* Sources/Nuke/FindSpaceView.swift:81 */
 "Resolve access and retry" = "Resolve access and retry";
@@ -1492,14 +1351,8 @@
 /* Sources/Nuke/DuplicatesView.swift:141 */
 "Reveal" = "Reveal";
 
-/* Sources/Nuke/WidgetsView.swift:22 */
-"Reveal Nuke Sweep app" = "Reveal Nuke Sweep app";
-
 /* Sources/Nuke/InsightViews.swift:285 */
 "Reveal \(group.root.lastPathComponent) in Finder" = "Reveal \(group.root.lastPathComponent) in Finder";
-
-/* Sources/Nuke/ManagementViews.swift:90 */
-"Reveal component" = "Reveal component";
 
 /* Sources/Nuke/ContentView.swift:557 */
 "Reveal in Finder" = "Reveal in Finder";
@@ -1551,9 +1404,6 @@
 
 /* Sources/Nuke/DuplicatesView.swift:69 */
 "Review other copies…" = "Review other copies…";
-
-/* Sources/Nuke/ManagementViews.swift:91 */
-"Review plist removal…" = "Review plist removal…";
 
 /* Sources/Nuke/AIAssistView.swift:607 */
 "Review required" = "Review required";
@@ -1684,9 +1534,6 @@
 /* Sources/Nuke/TriageView.swift:95 */
 "Sends the shortlist metadata shown above to \(ai.providerName(for: .explain)). No file contents leave this Mac." = "Sends the shortlist metadata shown above to \(ai.providerName(for: .explain)). No file contents leave this Mac.";
 
-/* Sources/Nuke/ContentView.swift:418 */
-"Set up a watch" = "Set up a watch";
-
 /* Sources/Nuke/NukeApp.swift:37 */
 "Settings" = "Settings";
 
@@ -1726,9 +1573,6 @@
 /* Sources/Nuke/AlertCenter.swift:131 */
 "Snoozed until " = "Snoozed until ";
 
-/* Sources/Nuke/MonitorViews.swift:111 */
-"Sort by" = "Sort by";
-
 /* Sources/Nuke/CleanupEvidence.swift:112 */
 "Source-control metadata, credentials, or a personal data store." = "Source-control metadata, credentials, or a personal data store.";
 
@@ -1737,9 +1581,6 @@
 
 /* Sources/Nuke/StorageCharts.swift:448 */
 "Start here" = "Start here";
-
-/* Sources/Nuke/FindSpaceView.swift:151 */
-"Start with common build-up" = "Start with common build-up";
 
 /* Sources/Nuke/DeveloperScopesView.swift:30 */
 "Start with exclusions for a common project type" = "Start with exclusions for a common project type";
@@ -1809,9 +1650,6 @@
 
 /* Sources/Nuke/ContentView.swift:347 */
 "Table" = "Table";
-
-/* Sources/Nuke/ContentView.swift:351 */
-"Table lists one level; Tree expands folders in place. Typing a search returns to Table." = "Table lists one level; Tree expands folders in place. Typing a search returns to Table.";
 
 /* Sources/Nuke/ContentView.swift:583 */
 "Tasks · \(activity.jobs.count)" = "Tasks · \(activity.jobs.count)";
@@ -1897,9 +1735,6 @@
 /* Sources/Nuke/ContentView.swift:469 */
 "Totals may be incomplete." = "Totals may be incomplete.";
 
-/* Sources/Nuke/ItemDetailsView.swift:52 */
-"Tracking and live contents are verified when you prepare a review." = "Tracking and live contents are verified when you prepare a review.";
-
 /* Sources/Nuke/PermissionAccess.swift:160 */
 "Trash, some app data, and backups can require Full Disk Access. Nuke Sweep cannot grant it or reliably report one global permission status. Full Disk Access does not override filesystem ownership or make a read-only volume writable. A partial scan is not an empty folder. If a scan reports denied access, open Settings, add this Nuke Sweep build, then retry the scan. macOS may require quitting and reopening Nuke Sweep." = "Trash, some app data, and backups can require Full Disk Access. Nuke Sweep cannot grant it or reliably report one global permission status. Full Disk Access does not override filesystem ownership or make a read-only volume writable. A partial scan is not an empty folder. If a scan reports denied access, open Settings, add this Nuke Sweep build, then retry the scan. macOS may require quitting and reopening Nuke Sweep.";
 
@@ -1930,9 +1765,6 @@
 /* Sources/Nuke/FolderTreeView.swift:235 */
 "Undo AI plan" = "Undo AI plan";
 
-/* Sources/Nuke/MonitorViews.swift:162 */
-"Unsaved work may be lost. Nuke Sweep requests a normal app quit, or sends SIGTERM to a background process. The process identity is checked again first." = "Unsaved work may be lost. Nuke Sweep requests a normal app quit, or sends SIGTERM to a background process. The process identity is checked again first.";
-
 /* Sources/Nuke/StorageCharts.swift:147 */
 "Up to 24 largest items, with the remainder grouped. Zero-byte items stay in the list below. Review remeasures the chosen item and verifies access. Partial measurements remain partial; area does not mean reclaimable space." = "Up to 24 largest items, with the remainder grouped. Zero-byte items stay in the list below. Review remeasures the chosen item and verifies access. Partial measurements remain partial; area does not mean reclaimable space.";
 
@@ -1944,9 +1776,6 @@
 
 /* Sources/Nuke/AIAssistView.swift:144 */
 "Use HTTPS, or HTTP only for 127.0.0.1, localhost or ::1. No query, fragment or credentials." = "Use HTTPS, or HTTP only for 127.0.0.1, localhost or ::1. No query, fragment or credentials.";
-
-/* Sources/Nuke/FolderTreeView.swift:284 */
-"Use up and down arrows to move, Space to select, left and right arrows to collapse or expand." = "Use up and down arrows to move, Space to select, left and right arrows to collapse or expand.";
 
 /* Sources/Nuke/MenuMonitorView.swift:34 */
 "VM memory is active + wired + compressed, not memory pressure." = "VM memory is active + wired + compressed, not memory pressure.";
@@ -1965,9 +1794,6 @@
 
 /* Sources/Nuke/StorageCharts.swift:259 */
 "Waiting for a second sample. Enable the menu-bar monitor to collect readings at the selected interval." = "Waiting for a second sample. Enable the menu-bar monitor to collect readings at the selected interval.";
-
-/* Sources/Nuke/ContentView.swift:417 */
-"Watch a folder and see how its size changes while you work." = "Watch a folder and see how its size changes while you work.";
 
 /* Sources/Nuke/AIAssistView.swift:37 */
 "What AI receives" = "What AI receives";
@@ -2044,14 +1870,8 @@
 /* Sources/Nuke/CleanupBasketView.swift:27 */
 "\(model.cleanupBasket.items.count) items" = "\(model.cleanupBasket.items.count) items";
 
-/* Sources/Nuke/MonitorViews.swift:111 */
-"\(model.processes.count) processes · snapshot on refresh" = "\(model.processes.count) processes · snapshot on refresh";
-
 /* Sources/Nuke/ContentView.swift:110 */
 "\(model.quickSelectedItems.count) selected · \(bytes(model.quickSelectedItems.reduce(0) { $0 + $1.size }))" = "\(model.quickSelectedItems.count) selected · \(bytes(model.quickSelectedItems.reduce(0) { $0 + $1.size }))";
-
-/* Sources/Nuke/MonitorViews.swift:107 */
-"\(model.resources.processors)" = "\(model.resources.processors)";
 
 /* Sources/Nuke/TrashCleanupView.swift:49 */
 "\(model.trashSelected.count) selected" = "\(model.trashSelected.count) selected";
@@ -2062,20 +1882,11 @@
 /* Sources/Nuke/TrashCleanupView.swift:75 */
 "\(plan.entries.count) reviewed items · \(bytes(plan.entries.reduce(0) { $0 + $1.item.size })) logical size" = "\(plan.entries.count) reviewed items · \(bytes(plan.entries.reduce(0) { $0 + $1.item.size })) logical size";
 
-/* Sources/Nuke/MonitorViews.swift:148 */
-"\(port.pid)" = "\(port.pid)";
-
 /* Sources/Nuke/MonitorViews.swift:144 */
 "\(port.port)" = "\(port.port)";
 
 /* Sources/Nuke/ManagementViews.swift:205 */
 "\(receipt.items.count)" = "\(receipt.items.count)";
-
-/* Sources/Nuke/ReceiptFinishView.swift:13 */
-"\(receipt.items.filter { !$0.success }.count) failed" = "\(receipt.items.filter { !$0.success }.count) failed";
-
-/* Sources/Nuke/ReceiptFinishView.swift:13 */
-"\(receipt.items.filter(\.success).count) succeeded" = "\(receipt.items.filter(\.success).count) succeeded";
 
 /* Sources/Nuke/AIAssistView.swift:51 */
 "\(record.milliseconds) ms" = "\(record.milliseconds) ms";
@@ -2088,9 +1899,6 @@
 
 /* Sources/Nuke/DuplicatesView.swift:66 */
 "\(selected.count) groups selected · keepers are retained" = "\(selected.count) groups selected · keepers are retained";
-
-/* Sources/Nuke/MonitorViews.swift:331 */
-"\(selected.count) of \(model.pendingTrash.count) selected · \(bytes(selected.reduce(0) { $0 + $1.size })) logical size" = "\(selected.count) of \(model.pendingTrash.count) selected · \(bytes(selected.reduce(0) { $0 + $1.size })) logical size";
 
 /* Sources/Nuke/InsightViews.swift:35 */
 "\(selected.count) selected · no automatic selections" = "\(selected.count) selected · no automatic selections";

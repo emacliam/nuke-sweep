@@ -1,7 +1,7 @@
 import SwiftUI
 import UserNotifications
 
-enum AlertRoute: Equatable { case storage(URL), growth(String), findSpace, history }
+enum AlertRoute: Equatable { case storage(URL), growth(String), findSpace, history, monthlyReport }
 struct NukeAlert: Identifiable, Codable {
     let id: UUID
     let key: String
@@ -9,6 +9,7 @@ struct NukeAlert: Identifiable, Codable {
     let title: String
     let detail: String
     let root: URL?
+    var receiptID: UUID? = nil
 }
 @MainActor final class AlertCenter: NSObject, ObservableObject, UNUserNotificationCenterDelegate {
     static let shared = AlertCenter()
@@ -16,8 +17,15 @@ struct NukeAlert: Identifiable, Codable {
     @Published private(set) var ignored = Set<String>()
     @Published private(set) var snoozed: [String: Date] = [:]
     @Published var note = ""
-    weak var model: AppModel? { didSet { if let pending { self.pending = nil; review(pending) } } }
+    weak var model: AppModel? {
+        didSet {
+            guard model != nil else { return }
+            if let pending { self.pending = nil; review(pending) }
+            if let pendingUndo { self.pendingUndo = nil; undo(pendingUndo) }
+        }
+    }
     private var pending: NukeAlert?
+    private var pendingUndo: NukeAlert?
     private var lastSent: [String: Date] = [:]
     override init() {
         super.init()
@@ -28,11 +36,15 @@ struct NukeAlert: Identifiable, Codable {
     }
     func registerActions() {
         let actions = [UNNotificationAction(identifier: "review", title: "Review", options: .foreground), UNNotificationAction(identifier: "ignore", title: "Ignore", options: []), UNNotificationAction(identifier: "later", title: "Remind in an hour", options: [])]
-        UNUserNotificationCenter.current().setNotificationCategories([UNNotificationCategory(identifier: "nuke.alert", actions: actions, intentIdentifiers: [], options: [])])
+        let undo = UNNotificationAction(identifier: "undo-cleanup", title: "Put everything back", options: .foreground)
+        UNUserNotificationCenter.current().setNotificationCategories([
+            UNNotificationCategory(identifier: "nuke.alert", actions: actions, intentIdentifiers: [], options: []),
+            UNNotificationCategory(identifier: "nuke.cleanup", actions: [undo] + actions, intentIdentifiers: [], options: [])
+        ])
     }
-    @discardableResult func post(key: String, title: String, detail: String, root: URL? = nil, enabled: Bool) -> Bool {
+    @discardableResult func post(key: String, title: String, detail: String, root: URL? = nil, receiptID: UUID? = nil, enabled: Bool) -> Bool {
         guard enabled, !ignored.contains(key), (snoozed[key] ?? .distantPast) <= Date(), Date().timeIntervalSince(lastSent[key] ?? .distantPast) >= 3600 else { return false }
-        let alert = NukeAlert(id: UUID(), key: key, date: Date(), title: title, detail: detail, root: root)
+        let alert = NukeAlert(id: UUID(), key: key, date: Date(), title: title, detail: detail, root: root, receiptID: receiptID)
         lastSent[key] = alert.date; records.insert(alert, at: 0); records = Array(records.prefix(100)); persist()
         Task { do { try await UNUserNotificationCenter.current().add(request(alert)) } catch { note = "Notification could not be delivered: " + error.localizedDescription } }
         return true
@@ -50,6 +62,14 @@ struct NukeAlert: Identifiable, Codable {
         case .findSpace: model.showMainWindow(.findSpace)
         // An automatic cleanup is answered by its receipt, which is where undo lives.
         case .history: model.showMainWindow(.history)
+        case .monthlyReport:
+            let calendar = Calendar.current
+            let sentMonth = calendar.dateInterval(of: .month, for: alert.date)?.start ?? alert.date
+            let currentMonth = calendar.dateInterval(of: .month, for: .now)?.start ?? .now
+            let monthsSince = calendar.dateComponents([.month], from: sentMonth, to: currentMonth).month ?? 0
+            model.monthlyReportMonthOffset = min(11, max(1, monthsSince + 1))
+            model.showMainWindow(.history)
+            model.showMonthlyReport = true
         }
     }
     nonisolated static func route(_ alert: NukeAlert, scanRoots: [String]) -> AlertRoute {
@@ -57,12 +77,20 @@ struct NukeAlert: Identifiable, Codable {
             if let saved = scanRoots.first(where: { URL(fileURLWithPath: $0).standardizedFileURL == root.standardizedFileURL }) { return .growth(saved) }
             return .storage(root)
         }
+        if alert.key == MonthlyReport.notificationKey { return .monthlyReport }
         if alert.key == "autoclean" { return .history }
         // Older records can carry keys this build no longer raises; they open
         // the check, which is the answer to every remaining alert.
         return .findSpace
 
     }
+    func undo(_ alert: NukeAlert) {
+        guard let receiptID = alert.receiptID else { return }
+        guard let model else { pendingUndo = alert; return }
+        model.showMainWindow(.history)
+        model.undoAutomaticCleanup(receiptID)
+    }
+
     func ignore(_ alert: NukeAlert) { ignored.insert(alert.key); persist(); UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: ["remind-" + alert.key]) }
     func unignore(_ key: String) { ignored.remove(key); persist() }
     func later(_ alert: NukeAlert) {
@@ -75,7 +103,7 @@ struct NukeAlert: Identifiable, Codable {
     private func request(_ alert: NukeAlert, reminder: Bool = false) -> UNNotificationRequest {
         let content = UNMutableNotificationContent(); content.title = (reminder ? "Reminder: " : "Nuke Sweep: ") + alert.title
         content.body = alert.detail + (reminder ? " Measured " + alert.date.formatted() + "." : "")
-        content.categoryIdentifier = "nuke.alert"; content.userInfo = ["alertID": alert.id.uuidString]
+        content.categoryIdentifier = alert.receiptID == nil ? "nuke.alert" : "nuke.cleanup"; content.userInfo = ["alertID": alert.id.uuidString]
         return UNNotificationRequest(identifier: reminder ? "remind-" + alert.key : alert.id.uuidString, content: content, trigger: reminder ? UNTimeIntervalNotificationTrigger(timeInterval: 3600, repeats: false) : nil)
     }
     private func persist() {
@@ -94,7 +122,7 @@ struct NukeAlert: Identifiable, Codable {
         nonisolated(unsafe) let finish = completionHandler
         MainActor.assumeIsolated {
             if let record = self.records.first(where: { $0.id.uuidString == id }) {
-                switch action { case "ignore": self.ignore(record); case "later": self.later(record); default: self.review(record) }
+                switch action { case "ignore": self.ignore(record); case "later": self.later(record); case "undo-cleanup": self.undo(record); default: self.review(record) }
             }
             finish()
         }
@@ -130,6 +158,10 @@ struct AlertsView: View {
                     if let root = alert.root { Text(root.path).font(.system(size: 10)).textSelection(.enabled) }
                     HStack {
                         Button("Review") { alerts.review(alert) }.buttonStyle(QuietButton())
+                        if alert.receiptID != nil {
+                            Button("Put everything back") { alerts.undo(alert) }
+                                .buttonStyle(QuietButton()).disabled(model.actionBusy)
+                        }
                         Button(alerts.ignored.contains(alert.key) ? "Unignore" : "Ignore") { if alerts.ignored.contains(alert.key) { alerts.unignore(alert.key) } else { alerts.ignore(alert) } }.buttonStyle(QuietButton())
                         Button("Remind in an hour") { alerts.later(alert) }.buttonStyle(QuietButton())
                         if let until = alerts.snoozed[alert.key], until > Date() { Text("Snoozed until " + until.formatted(date: .omitted, time: .shortened)).font(.system(size: 10)).foregroundStyle(Theme.secondary) }

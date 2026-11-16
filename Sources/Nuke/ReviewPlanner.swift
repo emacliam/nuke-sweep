@@ -73,7 +73,7 @@ enum ReviewPlanner {
                 if original.directory && !original.symlink {
                     var metadata: URL?, protected: URL?, sourceCount = 0, buildCount = 0
                     let rootComponents = original.url.standardizedFileURL.pathComponents.count
-                    let scan = DiskScanner.scan(original.url, cancellation: token, deadline: deadline, observing: { child in
+                    let scan = DiskScanner.scan(original.url, cancellation: token, deadline: deadline, respectIgnored: false, observing: { child in
                         seal.observe(child)
                         let name = child.lastPathComponent
                         if [".git", ".hg", ".svn"].contains(name.lowercased()) { protected = child }

@@ -27,7 +27,7 @@ enum ReviewSeal {
     static func capture(_ item: DiskItem, token: ScanCancellation = ScanCancellation(), deadline: Date = Date().addingTimeInterval(45)) throws -> String {
         var builder = Builder(); builder.observe(item.url)
         if item.directory && !item.symlink {
-            let scan = DiskScanner.scan(item.url, cancellation: token, deadline: deadline, observing: { builder.observe($0) })
+            let scan = DiskScanner.scan(item.url, cancellation: token, deadline: deadline, respectIgnored: false, observing: { builder.observe($0) })
             guard !token.cancelled, !scan.limited, scan.skipped == 0 else { throw Failure.incomplete }
         }
         guard !token.cancelled, Date() <= deadline else { throw Failure.incomplete }

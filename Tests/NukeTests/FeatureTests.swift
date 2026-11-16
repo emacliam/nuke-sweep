@@ -114,6 +114,20 @@ final class FeatureTests: XCTestCase {
         XCTAssertTrue(report.entries.isEmpty)
         XCTAssertFalse(report.notes.isEmpty)
     }
+    func testLeftoverReportExcludesInstalledAppsAndDisablesRemoval() throws {
+        let root = try fixture()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let caches = root.appendingPathComponent("Library/Caches")
+        try FileManager.default.createDirectory(at: caches, withIntermediateDirectories: true)
+        for id in ["com.example.installed", "com.example.unmatched"] {
+            try Data([1, 2, 3]).write(to: caches.appendingPathComponent(id))
+        }
+        let app = InstalledApp(url: root.appendingPathComponent("Installed.app"), name: "Installed",
+                               bundleID: "com.example.installed", version: "1")
+        let report = AppInventory.leftovers(home: root, installed: [app], reportOnly: true)
+        XCTAssertEqual(report.entries.map(\.owner), ["com.example.unmatched"])
+        XCTAssertEqual(report.entries.map(\.removable), [false])
+    }
     func testDeviceInspectionHonorsPreCancelledTraversal() throws {
         let root = try fixture(); defer { try? FileManager.default.removeItem(at: root) }
         let token = ScanCancellation(); token.cancel()

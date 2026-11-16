@@ -1,13 +1,31 @@
 import SwiftUI
 import AppKit
 
-@main struct NukeApp: App {
+@main enum NukeEntryPoint {
+    @MainActor static func main() {
+        let arguments = Array(CommandLine.arguments.dropFirst())
+        let invokedAsCLI = URL(fileURLWithPath: CommandLine.arguments[0]).lastPathComponent == "nuke"
+        if invokedAsCLI || arguments.first.map(NukeCommandLine.commands.contains) == true {
+            Task { exit(await NukeCommandLine.run(arguments.isEmpty ? ["--help"] : arguments)) }
+            // Keep AppKit and the disk scheduler's main-actor callbacks on the
+            // process's main thread during a headless invocation.
+            CFRunLoopRun()
+            exit(1)
+        }
+        NukeApp.main()
+    }
+}
+
+struct NukeApp: App {
     @State private var model: AppModel
     @AppStorage("nuke.appearance") private var appearance = "system"
     @NSApplicationDelegateAdaptor(AppDelegate.self) var delegate
     init() {
         AppEnvironment.migrateProductionPreferences()
-        _model = State(initialValue: AppModel())
+        let model = AppModel()
+        _model = State(initialValue: model)
+        NukeShortcuts.model = model
+        NukeShortcuts.updateAppShortcutParameters()
     }
 
     var body: some Scene {

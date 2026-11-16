@@ -7,6 +7,7 @@ import UniformTypeIdentifiers
 @Observable @MainActor final class FeatureModel {
     var scans: [StoredScan] = []
     var receipts: [CleanupReceipt] = []
+    private(set) var observedFreed: Int64 = 0
     var projects: [ProjectGroup] = []
     var projectDocker: [ProjectDockerObject] = []
     var projectContext = ""
@@ -62,10 +63,17 @@ import UniformTypeIdentifiers
     func loadHistory() {
         guard !historyStarted else { return }; historyStarted = true; historyLoading = true
         Task {
-            let stored = await DiskWork.run { (LocalStore.load([StoredScan].self, name: "scans.json") ?? [], LocalStore.load([CleanupReceipt].self, name: "receipts.json") ?? []) }
+            let stored = await DiskWork.run { (LocalStore.load([StoredScan].self, name: "scans.json") ?? [], LocalStore.load(CleanupHistory.self, name: "receipts.json") ?? CleanupHistory()) }
             let existingScans = Set(scans.map(\.id)), existingReceipts = Set(receipts.map(\.id))
             scans = Array((scans + stored.0.filter { !existingScans.contains($0.id) }).sorted { $0.date > $1.date }.prefix(200))
-            receipts = Array((receipts + stored.1.filter { !existingReceipts.contains($0.id) }).sorted { $0.date > $1.date }.prefix(200)); historyLoading = false
+            var history = stored.1
+            let storedIDs = Set(history.receipts.map(\.id))
+            for receipt in receipts where !storedIDs.contains(receipt.id) { history.addCredit(for: receipt) }
+            observedFreed = history.observedFreed
+            let hasNewReceipts = !receipts.isEmpty
+            receipts = Array((receipts + history.receipts.filter { !existingReceipts.contains($0.id) }).sorted { $0.date > $1.date }.prefix(200))
+            historyLoading = false
+            if hasNewReceipts { saveReceipts() }
         }
     }
     let monitor = LiveMonitor()
@@ -81,18 +89,35 @@ import UniformTypeIdentifiers
         scans = Array(scans.prefix(200))
         FilePersistence.save(scans, name: "scans.json") { [weak self] message in Task { @MainActor in self?.error = "Could not save scan history: " + message } }
     }
-    func markRestored(_ id: UUID) {
-        guard let receipt = receipts.firstIndex(where: { $0.items.contains(where: { $0.id == id }) }),
-              let item = receipts[receipt].items.firstIndex(where: { $0.id == id }) else { return }
-        receipts[receipt].items[item].restoredAt = Date()
-        FilePersistence.save(receipts, name: "receipts.json") { [weak self] message in
-            Task { @MainActor in self?.error = "The item was restored, but its receipt could not be updated. " + message }
+    func markRestored(_ id: UUID) { markRestored([id]) }
+
+    func markRestored(_ ids: Set<UUID>) {
+        guard !ids.isEmpty else { return }
+        let date = Date()
+        for receipt in receipts.indices {
+            for item in receipts[receipt].items.indices where ids.contains(receipts[receipt].items[item].id) {
+                receipts[receipt].items[item].restoredAt = date
+            }
         }
+        saveReceipts()
     }
     func receipt(_ receipt: CleanupReceipt) {
+        guard !receipts.contains(where: { $0.id == receipt.id }) else { return }
         onReceipt?(receipt)
-        receipts.insert(receipt, at: 0); receipts = Array(receipts.prefix(200))
-        FilePersistence.save(receipts, name: "receipts.json") { [weak self] message in Task { @MainActor in self?.error = "Cleanup finished, but its receipt could not be saved: " + message } }
+        var history = CleanupHistory(observedFreed: observedFreed)
+        history.addCredit(for: receipt)
+        observedFreed = history.observedFreed
+        receipts.insert(receipt, at: 0)
+        if !historyLoading {
+            receipts = Array(receipts.prefix(200))
+            saveReceipts()
+        }
+    }
+
+    private func saveReceipts() {
+        FilePersistence.save(CleanupHistory(receipts: receipts, observedFreed: observedFreed), name: "receipts.json") { [weak self] message in
+            Task { @MainActor in self?.error = "Could not save cleanup history: " + message }
+        }
     }
     func invalidateStorageInventories() {
         if aiScanned || aiLoading { dirtyStoragePages.insert(.ai) }

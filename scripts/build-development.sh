@@ -3,7 +3,7 @@ set -eu
 cd "${0:A:h:h}"
 export CLANG_MODULE_CACHE_PATH="$PWD/.build/ModuleCache"
 export SWIFTPM_MODULECACHE_OVERRIDE="$PWD/.build/ModuleCache"
-swift build --disable-sandbox --scratch-path .build
+swift build --build-system swiftbuild --disable-sandbox --scratch-path .build
 APP="$PWD/dist/Nuke Sweep Development.app"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp .build/debug/Nuke "$APP/Contents/MacOS/Nuke"
@@ -19,6 +19,7 @@ manifest={'channel':'development','head':subprocess.check_output(['git','rev-par
 (root/'Contents/Resources/BuildManifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
 PY
 NUKE_SIGN_IDENTITY=- ./scripts/embed-sparkle.sh "$APP" debug
+/bin/zsh ./scripts/embed-app-intents.sh "$APP" Debug
 codesign --force --sign - "$APP"
 codesign --verify --strict "$APP"
 echo "Development app (isolated data and preferences): $APP"

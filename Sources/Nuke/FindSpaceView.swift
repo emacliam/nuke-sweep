@@ -69,6 +69,21 @@ struct FindSpaceView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             CleanupStorageSummary()
+            LocalSnapshotsView()
+            LargeAppDataView()
+            VolumeCheckView()
+            AppLeftoversReportView()
+            if features.monitor.monitorEnabled, !features.monitor.monitorPaused,
+               let days = features.monitor.forecastDays {
+                Text("At this rate, your disk could be full in about \(days) days.")
+                    .font(.system(size: 12)).foregroundStyle(Theme.secondary)
+                    .help("Estimate from recent daily free-space readings on this Mac.")
+            }
+            if features.observedFreed > 0 {
+                Text(FreedSpaceLabel.text(features.observedFreed))
+                    .font(.system(size: 11)).foregroundStyle(Theme.secondary)
+                    .help("Observed gains after permanent Trash cleanup, capped by the size of successfully deleted files. Other disk activity can affect the estimate.")
+            }
             if let receipt = features.receipts.first { LastCleanupNote(receipt: receipt) }
             // Capture runs put the personal list first so it is inside the frame.
             let personalFirst = ProcessInfo.processInfo.arguments.contains("--capture-personal")

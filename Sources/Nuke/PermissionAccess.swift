@@ -166,6 +166,7 @@ struct PermissionsView: View {
                     Spacer(); Button("Forget") { access.forget(grant) }.buttonStyle(QuietButton())
                 }; Divider()
             }
+            IgnoredLocationsView()
             SectionTitle(title: "Protected folders", detail: "Full Disk Access is controlled by macOS")
             Text("Trash, some app data, and backups can require Full Disk Access. Nuke Sweep cannot grant it or reliably report one global permission status. Full Disk Access does not override filesystem ownership or make a read-only volume writable. A partial scan is not an empty folder. If a scan reports denied access, open Settings, add this Nuke Sweep build, then retry the scan. macOS may require quitting and reopening Nuke Sweep.").font(.system(size: 12)).foregroundStyle(Theme.secondary).frame(maxWidth: 720, alignment: .leading).fixedSize(horizontal: false, vertical: true)
             HStack { Button("Open Full Disk Access settings") { PermissionSettings.openPrivacy() }.buttonStyle(QuietButton()); Button("Reveal this Nuke Sweep build") { model.reveal(Bundle.main.bundleURL) }.buttonStyle(QuietButton()) }

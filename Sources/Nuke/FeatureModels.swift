@@ -80,6 +80,7 @@ struct InstalledApp: Identifiable, Sendable {
     let name: String
     let bundleID: String
     let version: String
+    var lastOpened: Date? = nil
 }
 struct DuplicateGroup: Identifiable, Sendable {
     var id: String { digest }
@@ -150,5 +151,43 @@ enum LocalStore {
         let data = try JSONEncoder().encode(value)
         try data.write(to: root.appendingPathComponent(name), options: .atomic)
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: root.appendingPathComponent(name).path)
+    }
+}
+
+/// Keeps the running total alongside the receipt list so trimming history and
+/// updating the total happen in the same atomic write.
+struct CleanupHistory: Codable, Sendable {
+    var receipts: [CleanupReceipt]
+    var observedFreed: Int64
+
+    init(receipts: [CleanupReceipt] = [], observedFreed: Int64 = 0) {
+        self.receipts = receipts
+        self.observedFreed = observedFreed
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if let legacy = try? container.decode([CleanupReceipt].self) {
+            self.init(receipts: legacy)
+            for receipt in legacy { addCredit(for: receipt) }
+        } else {
+            let values = try decoder.container(keyedBy: CodingKeys.self)
+            self.init(receipts: try values.decode([CleanupReceipt].self, forKey: .receipts),
+                      observedFreed: max(0, try values.decode(Int64.self, forKey: .observedFreed)))
+        }
+    }
+
+    mutating func addCredit(for receipt: CleanupReceipt) {
+        let credit = Self.credit(for: receipt)
+        observedFreed += min(credit, Int64.max - observedFreed)
+    }
+
+    static func credit(for receipt: CleanupReceipt) -> Int64 {
+        // Trash moves may precede a later permanent cleanup of the same files.
+        // Credit only successful permanent Trash removals with measured sizes.
+        guard receipt.title == "Permanent Trash cleanup", let delta = receipt.observedFreeDelta, delta > 0 else { return 0 }
+        return receipt.items.filter(\.success).reduce(into: Int64.zero) { sum, item in
+            sum += min(max(0, item.size), delta - sum)
+        }
     }
 }

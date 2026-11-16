@@ -335,7 +335,9 @@ struct DevicesView: View {
     @State private var deleting: SimulatorDevice?
     @State private var confirmation = ""
     @State private var unavailableOnly = false
-    @State private var showingSimulators = true
+    @State private var outdatedOnly = false
+    private enum DeviceTab: Hashable { case devices, runtimes, archives }
+    @State private var tab: DeviceTab = .devices
     private var simulatorRows: [SimulatorDevice] {
         features.simulators.devices.filter { !unavailableOnly || !$0.available }.sorted { ($0.logicalBytes ?? -1) > ($1.logicalBytes ?? -1) }
     }
@@ -343,11 +345,12 @@ struct DevicesView: View {
         VStack(alignment: .leading, spacing: 22) {
             HStack { Text("Preserve recovery data you still need.").font(.system(size: 12)).foregroundStyle(Theme.secondary); Spacer(); Button("Open Xcode") { NSWorkspace.shared.open(URL(fileURLWithPath: "/Applications/Xcode.app")) }.buttonStyle(QuietButton()); Button("Inspect devices & archives") { features.scanDevices() }.buttonStyle(PrimaryButton()).disabled(features.deviceLoading) }
             if features.deviceLoading { BusyLine(text: "Reading emulator inventory and measuring device data… you can stop between file operations; an active tool call may take up to 20 seconds.") }
-            Picker("Device storage", selection: $showingSimulators) {
-                Text("Simulator devices").tag(true)
-                Text("Archives & backups").tag(false)
-            }.pickerStyle(.segmented).frame(maxWidth: 380)
-            if showingSimulators {
+            Picker("Device storage", selection: $tab) {
+                Text("Simulator devices").tag(DeviceTab.devices)
+                Text("Runtimes").tag(DeviceTab.runtimes)
+                Text("Archives & backups").tag(DeviceTab.archives)
+            }.pickerStyle(.segmented).frame(maxWidth: 490)
+            if tab == .devices {
                 if simulatorRows.isEmpty && features.simulators.devices.isEmpty && !features.deviceLoading {
                     EmptyPanel(symbol: "iphone", title: "No simulator devices listed",
                                detail: "Inspect devices to check which simulators are installed and how much space they use.")
@@ -366,6 +369,10 @@ struct DevicesView: View {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(device.name).font(.system(size: 13, weight: .semibold))
                             Text("\(device.runtime) · \(device.state)" + (device.available ? "" : " · unavailable")).font(.system(size: 11)).foregroundStyle(Theme.secondary)
+                            if !device.available, device.canDelete {
+                                Text("xcrun simctl delete \(device.id)")
+                                    .font(.system(size: 10, design: .monospaced)).textSelection(.enabled)
+                            }
                         }
                         Spacer()
                         Text(device.logicalBytes.map { bytes($0) + (device.partialMeasurement ? "+ · partial" : " logical") } ?? "Size unavailable").font(.system(size: 11)).foregroundStyle(Theme.secondary)
@@ -373,6 +380,8 @@ struct DevicesView: View {
                     }.padding(12).background(Theme.rail, in: RoundedRectangle(cornerRadius: 8))
                 }
                 if !features.simulators.note.isEmpty { Notice.measured(features.simulators.note, symbol: "iphone") }
+            } else if tab == .runtimes {
+                runtimeList
             } else {
                 InventoryList(entries: features.devices.entries, measured: features.deviceMeasured)
                 ForEach(features.devices.notes, id: \.self) { Notice.measured($0, symbol: "info.circle") }
@@ -400,6 +409,48 @@ struct DevicesView: View {
             }.padding(24).frame(width: 470)
         }
     }
+    private var runtimeList: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Installed runtime images, oldest recorded use first. Runtimes are shared by simulator devices.")
+                .font(.system(size: 12)).foregroundStyle(Theme.secondary)
+            if let note = features.simulators.runtimeNote { Notice.measured(note, symbol: "info.circle") }
+            else if features.simulators.runtimes.isEmpty && !features.deviceLoading {
+                Text("Inspect devices to list installed runtime images.").foregroundStyle(Theme.secondary)
+            }
+            if let outdated = features.simulators.outdatedRuntimeIDs {
+                Toggle("Outdated only", isOn: $outdatedOnly).toggleStyle(.checkbox)
+                if outdatedOnly && outdated.isEmpty { Text("Xcode reported no outdated runtime images.") }
+            }
+            ForEach(features.simulators.runtimes.filter { runtime in
+                !outdatedOnly || features.simulators.outdatedRuntimeIDs?.contains(runtime.id.uppercased()) != false
+            }) { runtime in
+                VStack(alignment: .leading, spacing: 5) {
+                    HStack {
+                        Text(runtime.name).fontWeight(.semibold)
+                        if features.simulators.outdatedRuntimeIDs?.contains(runtime.id.uppercased()) == true {
+                            Text("Outdated").foregroundStyle(Theme.warning)
+                        }
+                        if let build = runtime.build { Text(build).foregroundStyle(Theme.secondary) }
+                        Spacer()
+                        Text(runtime.sizeBytes.map(bytes) ?? "Size unavailable").monospacedDigit()
+                    }
+                    if let date = runtime.lastUsedAt {
+                        Text("Last used: \(date.formatted(date: .abbreviated, time: .omitted))")
+                    } else { Text("Last used: Unknown") }
+                    if let state = runtime.state { Text(state).foregroundStyle(Theme.secondary) }
+                    if let command = runtime.removalCommand {
+                        Text(verbatim: command + " --dry-run").textSelection(.enabled)
+                            .font(.system(size: 10, design: .monospaced))
+                        Text(verbatim: command).textSelection(.enabled)
+                            .font(.system(size: 10, design: .monospaced))
+                        Text("Preview first. Removing the runtime can stop simulators using it and make them unavailable.")
+                            .foregroundStyle(Theme.secondary)
+                    }
+                }.font(.system(size: 12)).padding(12).background(Theme.rail, in: RoundedRectangle(cornerRadius: 8))
+            }
+        }
+    }
+
 }
 /// Takes `LocalizedStringKey` rather than `String` so a literal written at a call
 /// site is a translation key, the same way SwiftUI's own `Text` behaves. Use the

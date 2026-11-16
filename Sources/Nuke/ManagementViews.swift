@@ -6,8 +6,17 @@ struct ApplicationsView: View {
     @Environment(FeatureModel.self) var features
     @State private var query = ""
     @State private var chosenID: String?
+    @State private var olderAppsOnly = false
     @FocusState private var filterFocused: Bool
-    var filtered: [InstalledApp] { features.apps.filter { query.isEmpty || $0.name.localizedCaseInsensitiveContains(query) || $0.bundleID.localizedCaseInsensitiveContains(query) } }
+    var filtered: [InstalledApp] {
+        let cutoff = Calendar.current.date(byAdding: .year, value: -1, to: .now) ?? .distantPast
+        let matching = features.apps.filter { app in
+            (!olderAppsOnly || app.lastOpened.map { $0 <= cutoff } == true)
+                && (query.isEmpty || app.name.localizedCaseInsensitiveContains(query)
+                    || app.bundleID.localizedCaseInsensitiveContains(query))
+        }
+        return olderAppsOnly ? matching.sorted { ($0.lastOpened ?? .distantFuture) < ($1.lastOpened ?? .distantFuture) } : matching
+    }
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
             HStack { Button("Inspect installed apps") { features.scanApps() }.buttonStyle(PrimaryButton()).disabled(features.appLoading); Button("Find possible leftovers") { features.findLeftovers() }.buttonStyle(QuietButton()).disabled(features.appLoading); Spacer(); Text("/Applications + ~/Applications").font(.system(size: 10)).foregroundStyle(Theme.secondary) }
@@ -18,11 +27,14 @@ struct ApplicationsView: View {
                     VStack(alignment: .leading, spacing: 12) {
                         TextField("Filter apps", text: $query).textFieldStyle(.roundedBorder).focused($filterFocused)
                             .onChange(of: model.focusFilterRequest) { _, _ in filterFocused = true }
+                        Toggle("Last opened over a year ago", isOn: $olderAppsOnly)
+                            .font(.system(size: 11))
+                            .help("Uses macOS Spotlight metadata. Apps with unknown last-opened dates are omitted.")
                         Table(filtered) {
                             TableColumn("Application") { app in AppChoiceRow(app: app, chosenID: $chosenID).disabled(features.appLoading) }
                         }.tableStyle(.inset(alternatesRowBackgrounds: false))
                             .frame(minHeight: 180, maxHeight: .infinity)
-                            .overlay { if filtered.isEmpty { Text(query.isEmpty ? "No applications inspected." : "No apps match this filter.").font(.system(size: 11)).foregroundStyle(Theme.secondary) } }
+                            .overlay { if filtered.isEmpty { Text("No apps match this filter.").font(.system(size: 11)).foregroundStyle(Theme.secondary) } }
                             .onChange(of: chosenID) { _, id in if let app = features.apps.first(where: { $0.id == id }), !features.appLoading { features.inspectApp(app) } }
                         Text("\(filtered.count) apps").font(.system(size: 10)).foregroundStyle(Theme.secondary)
                     }.padding(12).frame(minWidth: 190, idealWidth: 220, maxWidth: 250).background(Theme.rail, in: RoundedRectangle(cornerRadius: 9))
@@ -30,6 +42,12 @@ struct ApplicationsView: View {
                     VStack(alignment: .leading, spacing: 14) {
                         if let app = features.selectedApp {
                             SectionTitle.measured(title: app.name, detail: app.version)
+                            if let date = app.lastOpened {
+                                Text("Last opened: \(date.formatted(date: .abbreviated, time: .omitted))")
+                                    .font(.system(size: 11)).foregroundStyle(Theme.secondary)
+                            } else {
+                                Text("Last opened: Unknown").font(.system(size: 11)).foregroundStyle(Theme.secondary)
+                            }
                             Text(app.bundleID).font(.system(size: 10, design: .monospaced)).foregroundStyle(Theme.secondary).textSelection(.enabled)
                             InventoryList(entries: features.appReport.entries, measured: features.appMeasured)
                             ForEach(features.appReport.notes, id: \.self) { Notice.measured($0, symbol: "info.circle") }
@@ -59,7 +77,19 @@ private struct AppChoiceRow: View {
     @Binding var chosenID: String?
     var body: some View {
         Button { chosenID = app.id } label: {
-            HStack { Text(app.name).lineLimit(1); Spacer(minLength: 4); if chosenID == app.id { Image(systemName: "checkmark").font(.system(size: 10, weight: .semibold)).foregroundStyle(Theme.orange) } }
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(app.name).lineLimit(1)
+                    if let date = app.lastOpened {
+                        Text(date.formatted(date: .abbreviated, time: .omitted))
+                            .font(.system(size: 10)).foregroundStyle(Theme.secondary)
+                    }
+                }
+                Spacer(minLength: 4)
+                if chosenID == app.id {
+                    Image(systemName: "checkmark").font(.system(size: 10, weight: .semibold)).foregroundStyle(Theme.orange)
+                }
+            }
                 .font(.system(size: 12)).foregroundStyle(Theme.ink)
                 .padding(.horizontal, 7).padding(.vertical, 5).frame(maxWidth: .infinity, alignment: .leading)
                 .background(chosenID == app.id ? Theme.orange.opacity(0.08) : .clear, in: RoundedRectangle(cornerRadius: 4))
@@ -102,21 +132,17 @@ struct ReceiptsView: View {
     private var failedItems: Int { receipts.reduce(0) { $0 + $1.items.filter { !$0.success }.count } }
     private var lastObserved: Int64? { receipts.first?.observedFreeDelta }
 
-    /// Sum of the space actually observed to come back, across every kept receipt.
-    ///
-    /// Only gains count: a receipt whose observed delta is negative means other
-    /// activity consumed space during the cleanup, which is not a loss this app
-    /// caused and must not be subtracted from the user's total. Receipts are
-    /// capped at the most recent 200, so this is "to date" within what is kept,
-    /// which is what the label says.
     private var lifetimeReclaimed: String {
-        let gained = receipts.compactMap(\.observedFreeDelta).filter { $0 > 0 }.reduce(0, +)
-        return gained > 0 ? bytes(gained) : "—"
+        features.observedFreed > 0 ? bytes(features.observedFreed) : "—"
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            SectionTitle(title: "Cleanup receipts", detail: "Local receipts · most recent 200")
+            HStack {
+                SectionTitle(title: "Cleanup receipts", detail: "Local receipts · most recent 200")
+                Spacer()
+                Button("Monthly report…") { model.monthlyReportMonthOffset = 0; model.showMonthlyReport = true }.buttonStyle(QuietButton())
+            }
             if !receipts.isEmpty {
                 HStack(spacing: 10) {
                     HStack(spacing: 7) {

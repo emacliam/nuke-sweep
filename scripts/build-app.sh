@@ -3,10 +3,11 @@ set -eu
 cd "${0:A:h:h}"
 export CLANG_MODULE_CACHE_PATH="$PWD/.build/ModuleCache"
 export SWIFTPM_MODULECACHE_OVERRIDE="$PWD/.build/ModuleCache"
-swift build -c release --disable-sandbox --scratch-path .build
+swift build -c release --build-system swiftbuild --disable-sandbox --scratch-path .build
 APP="${NUKE_APP_PATH:-$PWD/dist/Nuke Sweep.app}"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp .build/release/Nuke "$APP/Contents/MacOS/Nuke"
+cp Resources/PrivacyInfo.xcprivacy "$APP/Contents/Resources/"
 # Localization: .lproj directories go into the app bundle's Resources, where
 # Bundle.main finds them. SwiftUI's Text/Button/Label take a LocalizedStringKey,
 # so every literal in a view localizes from here with no call-site change.
@@ -62,6 +63,7 @@ if [[ -n "${NUKE_LICENSE_PUBLIC_KEY:-}" ]]; then
 fi
 NUKE_APP_PATH="$APP" ./scripts/build-widgets.sh
 ./scripts/embed-sparkle.sh "$APP" release
+/bin/zsh ./scripts/embed-app-intents.sh "$APP" Release
 SIGN="${NUKE_SIGN_IDENTITY:--}"
 if [[ "$SIGN" == "-" ]]; then
   codesign --force --sign - "$APP"

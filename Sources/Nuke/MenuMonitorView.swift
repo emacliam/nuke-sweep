@@ -29,23 +29,69 @@ struct MonitorPopover: View {
             if !monitor.monitorHistory.isEmpty {
                 MenuCPUChart(interval: monitor.monitorInterval, samples: Array(monitor.monitorHistory.suffix(25)))
             }
+            if model.features.observedFreed > 0 {
+                Text(FreedSpaceLabel.text(model.features.observedFreed))
+                    .font(.system(size: 11)).foregroundStyle(Theme.secondary)
+                    .help("Observed gains after permanent Trash cleanup, capped by the size of successfully deleted files. Other disk activity can affect the estimate.")
+            }
             if let receipt = model.features.receipts.first { LastCleanupNote(receipt: receipt, compact: true) }
             if monitor.monitorPaused || monitor.sleeping { Text("Readings are the last measurements; sampling is suspended.").font(.system(size: 10)).foregroundStyle(Theme.secondary).fixedSize(horizontal: false, vertical: true) }
             Text("VM memory is active + wired + compressed, not memory pressure.").font(.system(size: 10)).foregroundStyle(Theme.secondary).fixedSize(horizontal: false, vertical: true)
             Divider()
-            // The menu-bar item earns its place as the way into a cleanup, so its
-            // primary action starts one rather than opening a page to start from.
-            HStack(spacing: 8) {
-                Button("Check this Mac") { model.showMainWindow(.findSpace); model.startFullCheck() }
-                    .buttonStyle(PrimaryButton()).disabled(model.fullCheck.running || model.actionBusy)
-                Button("Developer caches") { model.showMainWindow(.developer) }.buttonStyle(QuietButton())
-                Spacer()
-            }
+            quickCheck
             HStack { Button("Open Nuke Sweep") { model.showMainWindow() }; Spacer(); Button { model.showMainWindow(.monitor) } label: { Image(systemName: "gearshape") }.accessibilityLabel("Monitor & alert settings"); Button { NSApp.terminate(nil) } label: { Image(systemName: "power") }.accessibilityLabel("Quit Nuke Sweep") }.buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(Theme.secondary)
         }.padding(20).frame(width: 330).background(Theme.paper).foregroundStyle(Theme.ink)
             .preferredColorScheme(appearance == "dark" ? .dark : appearance == "light" ? .light : nil)
             .onAppear { if !monitor.monitorPaused { monitor.refreshMonitor() } }
     }
+
+    @ViewBuilder private var quickCheck: some View {
+        if model.fullCheck.running {
+            HStack(spacing: 8) {
+                BusyLine(text: "Checking this Mac…")
+                Spacer()
+                Button("Stop") { model.stopFullCheck() }.buttonStyle(QuietButton())
+            }
+        } else if model.fullCheckResultIsCurrent, let report = model.triage.report {
+            VStack(alignment: .leading, spacing: 8) {
+                let personalBytes = model.personal.report?.totalBytes ?? 0
+                if report.totals.candidateBytes > 0 {
+                    Text(String(format: String(localized: "Last check found %@ to review"), bytes(report.totals.candidateBytes)))
+                        .font(.system(size: 13, weight: .semibold))
+                } else if personalBytes > 0 {
+                    Text(String(format: String(localized: "Last check found %@ in personal files"), bytes(personalBytes)))
+                        .font(.system(size: 13, weight: .semibold))
+                } else {
+                    Text("No cleanup candidates found").font(.system(size: 13, weight: .semibold))
+                }
+                if let outcome = model.fullCheck.autoCleaned, outcome.movedCount > 0 {
+                    Text(String(format: String(localized: "After this measurement, automatic cleanup moved %@ to Trash."), bytes(outcome.movedBytes)))
+                        .font(.system(size: 11)).foregroundStyle(Theme.secondary)
+                }
+                if model.fullCheck.gaps > 0 || model.fullCheck.projectsSkipped || model.diskAccess == .missing {
+                    Text("Some locations could not be checked in full.")
+                        .font(.system(size: 11)).foregroundStyle(Theme.secondary)
+                }
+                HStack(spacing: 8) {
+                    Button("Review") { model.showMainWindow(.findSpace) }.buttonStyle(PrimaryButton())
+                    Button("Check again") { model.startFullCheck() }
+                        .buttonStyle(QuietButton()).disabled(!model.canStartFullCheck)
+                }
+            }
+        } else {
+            VStack(alignment: .leading, spacing: 8) {
+                if model.fullCheck.stopped {
+                    Text("Check stopped").font(.system(size: 11)).foregroundStyle(Theme.secondary)
+                }
+                HStack(spacing: 8) {
+                    Button("Check this Mac") { model.startFullCheck() }
+                        .buttonStyle(PrimaryButton()).disabled(!model.canStartFullCheck)
+                    Button("Developer caches") { model.showMainWindow(.developer) }.buttonStyle(QuietButton())
+                }
+            }
+        }
+    }
+
     private func storageSection(_ sample: MonitorSample) -> some View {
         let pressure = StoragePressure.evaluate(free: sample.disk.freeDisk, total: sample.disk.totalDisk, thresholdGB: monitor.lowSpaceGB)
         let free: String = sample.disk.totalDisk > 0 ? bytes(sample.disk.freeDisk) : String(localized: "Unavailable")

@@ -34,8 +34,15 @@ import Foundation
 
     /// Ranks a measured set. Classification touches the filesystem, so the work
     /// goes to the interactive disk lane rather than blocking the main actor.
-    func refresh(items: [DiskItem], rootName: String, signals: StorageTriage.Signals = StorageTriage.Signals()) {
-        guard !items.isEmpty else { clear(); return }
+    func refresh(items: [DiskItem], rootName: String, signals: StorageTriage.Signals = StorageTriage.Signals(), keepEmptyResult: Bool = false) {
+        if items.isEmpty {
+            clear()
+            if keepEmptyResult {
+                self.rootName = rootName
+                report = StorageTriage.rank([])
+            }
+            return
+        }
         let id = UUID(); generation = id
         self.rootName = rootName
         computing = true

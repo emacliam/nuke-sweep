@@ -38,6 +38,8 @@ import UserNotifications
     private var dockerStartTask: Task<Void, Never>?
     var finishedReceipt: CleanupReceipt?
     var latestHangReport: FailureReport?
+    var showMonthlyReport = false
+    var monthlyReportMonthOffset = 0
     var quick = QuickScanState()
     let ai = AISettings()
     /// Owns the ranked "what matters here" shortlist. Separate from AppModel so
@@ -51,6 +53,7 @@ import UserNotifications
     var fullCheckWeekly = FullCheckHistory.weeklyEnabled
     /// Mirror the automatic-cleanup preferences for the same reason.
     var autoCleanEnabled = AutoClean.enabled
+    var autoCleanDryRun = AutoClean.dryRun
     var autoCleanIdleDays = AutoClean.idleDays
     /// Whether Full Disk Access appears granted. See `DiskAccessProbe`.
     var diskAccess = DiskAccessProbe.Status.unknown
@@ -265,9 +268,9 @@ import UserNotifications
         LatencyBench.startIfRequested(model: self)
         // The weekly check: once shortly after launch, then on a slow timer so a
         // menu-bar session that stays open for days still gets its turn.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 60) { [weak self] in self?.runWeeklyCheckIfDue() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 60) { [weak self] in self?.runWeeklyCheckIfDue(); self?.postMonthlyReportIfDue() }
         weeklyCheckTimer = Timer.scheduledTimer(withTimeInterval: 3 * 3_600, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.runWeeklyCheckIfDue() }
+            Task { @MainActor in self?.runWeeklyCheckIfDue(); self?.postMonthlyReportIfDue() }
         }
         weeklyCheckTimer?.tolerance = 600
         features.monitor.onLowStorage = { [weak self] free in self?.handleLowStorage(free: free) ?? false }
@@ -558,6 +561,43 @@ import UserNotifications
             personalFilesMoved(receipt.items.filter(\.success).map(\.originalPath))
             record("File cleanup", detail: detail); actionBusy = false; pendingTrash = []; pendingTrashSelection = []; pendingEvidence = [:]; pendingWarnings = []; pendingBlocked = []; duplicateProofs = []
 
+        }
+    }
+
+    func undoAutomaticCleanup(_ receiptID: UUID) {
+        Task {
+            features.loadHistory()
+            while features.historyLoading {
+                try? await Task.sleep(for: .milliseconds(100))
+            }
+            guard !actionBusy else {
+                message = "Wait for the current cleanup or restore to finish, then try again."
+                return
+            }
+            guard let receipt = features.receipts.first(where: { $0.id == receiptID && $0.title == "Automatic cleanup" }) else {
+                message = "This automatic cleanup receipt is no longer available."
+                return
+            }
+            let remaining = receipt.items.filter { $0.success && $0.restoredAt == nil }
+            guard !remaining.isEmpty else {
+                message = "Everything from this cleanup has already been restored."
+                return
+            }
+            let eligible = remaining.filter { $0.restoreEvidence != nil }
+            actionBusy = true
+            defer { actionBusy = false }
+            let restored = await DiskWork.run("Restoring automatic cleanup") {
+                eligible.compactMap { item -> UUID? in
+                    do { try ReceiptRestore.restore(item); return item.id }
+                    catch { return nil }
+                }
+            }
+            features.markRestored(Set(restored))
+            if !restored.isEmpty { refreshAfterMutation() }
+            let skipped = remaining.count - restored.count
+            let result = "Restored " + String(restored.count) + " of " + String(remaining.count) + " items."
+            message = skipped > 0 ? result + " Open the receipt in History to review the remaining items." : result
+            record("Automatic cleanup restore", detail: result)
         }
     }
 

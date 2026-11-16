@@ -39,6 +39,10 @@ struct ItemDetailsView: View {
                         .buttonStyle(QuietButton())
                 }
                 Divider()
+                Button("Ignore this location") {
+                    IgnoredLocations.add(item.url)
+                    model.refreshAfterMutation()
+                }.buttonStyle(QuietButton())
                 Button("Reveal in Finder") { model.reveal(item.url) }.buttonStyle(QuietButton())
                 if item.directory && !item.symlink {
                     Button("Browse this folder") { model.browseTree(item.url) }.buttonStyle(QuietButton()).disabled(model.scanning)

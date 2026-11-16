@@ -18,9 +18,10 @@ struct TrashService: Sendable {
     let root: URL
     static let current = TrashService(root: FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".Trash"))
     enum Failure: LocalizedError {
-        case inaccessible, changed, outsideRoot, tooLarge, cancelled
+        case inaccessible, changed, outsideRoot, tooLarge, cancelled, ignored
         var errorDescription: String? {
             switch self {
+            case .ignored: return "This item contains an ignored location."
             case .cancelled: return "Trash inspection stopped. Scan again before cleanup."
             case .inaccessible: return "Nuke Sweep could not read Trash completely. Check macOS Privacy & Security → Full Disk Access, then scan again. No cleanup is available for an incomplete scan."
             case .changed: return "Trash or one of its items changed after the scan. Scan again before permanently deleting it."
@@ -75,6 +76,7 @@ struct TrashService: Sendable {
     }
 
     func validate(_ entry: TrashEntry, rootIdentity expected: FileIdentity) throws {
+        guard !IgnoredLocations.overlaps(entry.item.url, in: IgnoredLocations.paths) else { throw Failure.ignored }
         guard !entry.fingerprint.isEmpty else { throw Failure.inaccessible }
         guard try rootIdentity() == expected else { throw Failure.changed }
         let parent = entry.item.url.deletingLastPathComponent().standardizedFileURL

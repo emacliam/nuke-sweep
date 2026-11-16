@@ -53,6 +53,8 @@ struct DeveloperView: View {
                 Button(model.cacheScanning ? "Scanning…" : model.cacheOutcome == "Not scanned" ? "Scan developer caches" : "Scan again") { model.scanCaches() }.buttonStyle(PrimaryButton()).disabled(model.cacheScanning)
             }
             if measuredTotal > 0 { DeveloperTotals(bytes: measuredTotal, locations: measuredCount, reclaimable: quickReclaimTotal) }
+            HomebrewCleanupView()
+            ToolchainInventoryView()
             TriagePanel(store: model.triage)
             VStack(spacing: 0) {
                 // Largest first, like every other surface. Unmeasured and

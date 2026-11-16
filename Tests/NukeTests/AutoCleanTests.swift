@@ -105,6 +105,17 @@ final class AutoCleanTests: XCTestCase {
         XCTAssertEqual(AutoClean.withoutWarned([pip, npm], warnings: []).count, 2)
     }
 
+    func testReportOnlyIsDefaultUntilExplicitlyDisabled() {
+        let defaults = UserDefaults.standard
+        let key = "nuke.autoClean.dryRun"
+        let saved = defaults.object(forKey: key)
+        defer { defaults.set(saved, forKey: key) }
+        defaults.removeObject(forKey: key)
+        XCTAssertTrue(AutoClean.dryRun)
+        AutoClean.dryRun = false
+        XCTAssertFalse(AutoClean.dryRun)
+    }
+
     func testItIsOffAndNinetyDaysUntilSomeoneChoosesOtherwise() {
         let defaults = UserDefaults.standard
         let savedEnabled = defaults.object(forKey: "nuke.autoClean.enabled"), savedDays = defaults.object(forKey: "nuke.autoClean.idleDays")

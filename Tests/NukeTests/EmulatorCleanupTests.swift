@@ -6,6 +6,22 @@ final class EmulatorCleanupTests: XCTestCase {
     func json(_ state: String) -> String {
         "{\"devices\":{\"com.apple.CoreSimulator.SimRuntime.iOS-18-0\":[{\"udid\":\"\(id)\",\"name\":\"Test phone\",\"state\":\"\(state)\",\"isAvailable\":false}]}}"
     }
+    func testRuntimeInventoryOnlyOffersCommandsForDeletableUUIDs() throws {
+        let id = "4B539264-A677-42C5-B3B7-5DED42E35F58"
+        let json = """
+        {
+          "one": {"identifier":"\(id)","version":"26.5","lastUsedAt":"2026-11-11T18:18:04Z","deletable":true},
+          "two": {"identifier":"all","version":"17.0","deletable":true},
+          "three": {"identifier":"5A151310-D165-461E-93A6-F9555692958B","version":"17.1","deletable":false}
+        }
+        """
+        let runtimes = try XCTUnwrap(EmulatorCleanup.decodeRuntimes(json))
+        XCTAssertEqual(runtimes.first?.id, id)
+        XCTAssertEqual(EmulatorCleanup.outdatedRuntimeIDs("Would delete D: \(id) iOS (26.5)"), [id])
+        XCTAssertTrue(EmulatorCleanup.outdatedRuntimeIDs("Kept \(id)").isEmpty)
+        XCTAssertEqual(runtimes.compactMap(\.removalCommand), ["xcrun simctl runtime delete " + id])
+    }
+
     func testFirstLaunchRequirementNeverInvokesSimctl() {
         var calls = 0
         let inventory = EmulatorCleanup.simulators { _, _ in calls += 1; return .init(output: "Setup required", status: 1) }

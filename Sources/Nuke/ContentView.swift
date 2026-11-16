@@ -1,4 +1,5 @@
 import SwiftUI
+import QuickLook
 import NukeWidgetUI
 import AppKit
 
@@ -55,6 +56,8 @@ struct ContentView: View {
     @Environment(AppModel.self) var model
     @Environment(FeatureModel.self) var features
     @FocusState private var searchFocused: Bool
+    @State private var showOnboarding = false
+    @AppStorage("nuke.onboardingComplete") private var onboardingComplete = false
     var body: some View {
         @Bindable var model = model
         @Bindable var features = features
@@ -120,9 +123,21 @@ struct ContentView: View {
         .sheet(isPresented: $model.showTrashReview) { TrashReview() }
         .sheet(isPresented: $model.showCleanupBasket, onDismiss: { model.reviewBasketIfRequested() }) { CleanupBasketView() }
         .sheet(isPresented: $features.showUse) { FileUseView() }
+        .sheet(isPresented: $showOnboarding) {
+            OnboardingView {
+                onboardingComplete = true
+                showOnboarding = false
+            }
+            .interactiveDismissDisabled()
+        }
         .task {
             model.openMainWindow = { openWindow(id: "main") }
             model.startServices()
+            let arguments = ProcessInfo.processInfo.arguments
+            if !onboardingComplete, FullCheckHistory.last == nil,
+               !["--demo-fixtures", "--capture", "--capture-fresh", "--measure-ui"].contains(where: arguments.contains) {
+                showOnboarding = true
+            }
             if ProcessInfo.processInfo.arguments.contains("--capture"),
                let index = ProcessInfo.processInfo.arguments.firstIndex(of: "--capture-page"),
                index + 1 < ProcessInfo.processInfo.arguments.count,
@@ -130,6 +145,7 @@ struct ContentView: View {
                 model.page = page
             }
         }
+        .sheet(isPresented: $model.showMonthlyReport) { MonthlyReportView(monthOffset: model.monthlyReportMonthOffset) }
         .sheet(item: $model.finishedReceipt) { ReceiptFinishView(receipt: $0) }
         .onOpenURL { url in
             guard url.scheme?.lowercased() == AppEnvironment.urlScheme else { return }
@@ -445,6 +461,7 @@ struct StorageView: View {
     @State private var tree = FolderTreeStore()
     @State private var treeSelection: [String: DiskItem] = [:]
     @State private var volumes: [MountedVolume] = []
+    @State private var previewURL: URL?
     @State private var inspectedID: String?
     @State private var inspectedItem: DiskItem?
     private var useTree: Bool { prefersTree && model.search.isEmpty }
@@ -592,6 +609,9 @@ struct StorageView: View {
             TableColumn("Logical size") { item in Text(bytes(item.size) + (item.incomplete ? "+" : "")).monospacedDigit().font(.system(size: 11)) }.width(110)
             TableColumn("Actions") { item in
                 Menu {
+                    if !item.directory && !item.symlink {
+                        Button("Quick Look") { previewURL = item.url }
+                    }
                     Button("Check running use") { features.inspectUse(item.url) }.disabled(features.useLoading)
                     Button("Reveal in Finder") { model.reveal(item.url) }
                     Divider()
@@ -604,6 +624,13 @@ struct StorageView: View {
                 .accessibilityLabel("Actions for \(item.name)")
             }.width(64)
         }.frame(minHeight: 120, maxHeight: .infinity)
+            .onKeyPress(.space) {
+                guard let id = inspectedID, let item = model.visibleItems.first(where: { $0.id == id }),
+                      !item.directory, !item.symlink else { return .ignored }
+                previewURL = item.url
+                return .handled
+            }
+            .quickLookPreview($previewURL)
             .overlay { if model.visibleItems.isEmpty { Text(model.search.isEmpty ? "No items measured in this folder." : "No items match this filter.").font(.system(size: 12)).foregroundStyle(Theme.secondary) } }
     }
 }

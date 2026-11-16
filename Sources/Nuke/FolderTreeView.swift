@@ -1,4 +1,5 @@
 import SwiftUI
+import QuickLook
 import AppKit
 
 /// Keeps a tree selection unambiguous: an ancestor and its descendants are never
@@ -222,6 +223,7 @@ struct FolderTreeView: View {
     @State private var explainTarget: AIExplainTarget?
     @State private var showPlan = false
     @State private var planUndoSelection: [String: DiskItem]?
+    @State private var previewURL: URL?
     @State private var focusedRowID: String?
     @FocusState private var treeFocused: Bool
     @State private var outline = FolderOutline()
@@ -229,7 +231,7 @@ struct FolderTreeView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 10) {
-                Text(hint + " Use up/down arrows, Space to select, left/right to collapse or expand.").font(.system(size: 10)).foregroundStyle(Theme.secondary).lineLimit(2)
+                Text(hint + " Use up/down arrows, Space for Quick Look, Shift-Space to select, left/right to collapse or expand.").font(.system(size: 10)).foregroundStyle(Theme.secondary).lineLimit(2)
                 Spacer()
                 if let planUndoSelection {
                     Button { selection = planUndoSelection; self.planUndoSelection = nil } label: { Label("Undo AI plan", systemImage: "arrow.uturn.backward") }
@@ -280,12 +282,21 @@ struct FolderTreeView: View {
                 .focused($treeFocused)
                 .onKeyPress(.downArrow) { moveFocus(1); return .handled }
                 .onKeyPress(.upArrow) { moveFocus(-1); return .handled }
-                .onKeyPress(.space) { toggleFocusedSelection(); return .handled }
+                .onKeyPress(.space, phases: .down) { press in
+                    if press.modifiers.contains(.shift) {
+                        toggleFocusedSelection()
+                        return .handled
+                    }
+                    guard let item = outline[focusedRowID]?.item, !item.directory, !item.symlink else { return .ignored }
+                    previewURL = item.url
+                    return .handled
+                }
+                .quickLookPreview($previewURL)
                 .onKeyPress(.rightArrow) { expandFocused(); return .handled }
                 .onKeyPress(.leftArrow) { collapseFocused(); return .handled }
                 .onKeyPress(.return) { activateFocused(); return .handled }
                 .accessibilityLabel("File tree")
-                .accessibilityHint("Use up and down arrows to move, Space to select, left and right arrows to collapse or expand.")
+                .accessibilityHint("Use up and down arrows to move, Space for Quick Look, Shift-Space to select, left and right arrows to collapse or expand.")
             }
         }
         .frame(maxHeight: .infinity)

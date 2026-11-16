@@ -57,10 +57,16 @@ final class IncrementalScanner: @unchecked Sendable {
     private var changes: RecursiveChanges?
     private let invalidation = NSLock()
     private var invalid = true
+    private var previousIgnored = Set<String>()
     func invalidate() { invalidation.lock(); invalid = true; invalidation.unlock() }
     /// Called only on DiskWork's serial queue. Cache summaries are bounded to 500 branches and 60 seconds.
     func scan(_ input: URL, token: ScanCancellation, force: Bool = false) -> ScanOutput {
         let now = Date()
+        let ignored = IgnoredLocations.paths
+        if ignored != previousIgnored { branches = [:]; previousIgnored = ignored }
+        if IgnoredLocations.contains(input, in: ignored) || IgnoredLocations.contains(input.resolvingSymlinksInPath(), in: ignored) {
+            return .init(result: ScanResult(items: [], skipped: 0, visited: 0, limited: false), date: now, reused: 0)
+        }
         guard !token.cancelled else { return .init(result: ScanResult(items: [], skipped: 0, visited: 0, limited: true), date: now, reused: 0) }
         guard let original = BranchStamp.read(input), original.mode & UInt16(S_IFMT) == UInt16(S_IFDIR) else {
             branches = [:]; changes = nil; root = nil; rootID = nil
@@ -79,6 +85,7 @@ final class IncrementalScanner: @unchecked Sendable {
         do {
             let complete = try DirectoryEntries.visit(root, shouldContinue: { !token.cancelled && !result.limited && result.visited < 250_000 && result.items.count < 10_000 && Date() <= deadline }) { rawChild in
                 let child = rawChild.standardizedFileURL
+                guard !IgnoredLocations.contains(child, in: ignored) else { return }
                 guard let stamp = BranchStamp.read(child) else { result.skipped += 1; return }
                 let changed = dirty.paths.contains { $0 == root.path || $0 == child.path || $0.hasPrefix(child.path + "/") || child.path.hasPrefix($0 + "/") }
                 if !full, !changed, let old = branches[child.path], old.stamp == stamp, now.timeIntervalSince(old.date) < 60, !old.item.incomplete {

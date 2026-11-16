@@ -46,9 +46,7 @@
 "On this Mac" = "En este Mac";
 
 /* Page headings, now translatable (titles are split from the stable raw values) */
-"Browse" = "Explorar";
 "Developer" = "Desarrollo";
-"Menu bar" = "Barra de menús";
 "Permissions & access" = "Permisos y acceso";
 "Local models" = "Modelos locales";
 "Devices" = "Dispositivos";
@@ -61,7 +59,6 @@
 "Alerts" = "Avisos";
 "Trash" = "Papelera";
 "Projects" = "Proyectos";
-"Quick scan" = "Análisis rápido";
 
 /* Assessment states */
 "Ready for review" = "Listo para revisar";
@@ -76,3 +73,45 @@
 "Getting tight" = "Ajustado";
 "Low" = "Bajo";
 "Unavailable" = "No disponible";
+
+/* First-run setup and Full Disk Access */
+"Step %lld of 3" = "Paso %lld de 3";
+"Find space on your Mac" = "Libera espacio en tu Mac";
+"Nuke Sweep finds caches, project build output, and large personal files. See what takes up space and review items before moving them to Trash." = "Nuke Sweep encuentra cachés, archivos generados al compilar proyectos y archivos personales grandes. Descubre qué ocupa espacio y revisa los elementos antes de moverlos a la Papelera.";
+"Full Disk Access" = "Acceso total al disco";
+"Full Disk Access appears to be enabled." = "El acceso total al disco parece estar activado.";
+"You can continue with a more limited scan." = "Puedes continuar con un análisis más limitado.";
+"Run your first check" = "Haz tu primer análisis";
+"Your results will appear in Cleanup. You can stop the scan at any time and review what it found before choosing what to move." = "Los resultados aparecerán en Limpieza. Puedes detener el análisis en cualquier momento y revisar los resultados antes de elegir qué mover.";
+"Back" = "Atrás";
+"Continue" = "Continuar";
+"Skip setup" = "Omitir configuración";
+"Finish without checking" = "Terminar sin analizar";
+"One thing first: Nuke Sweep cannot see everything yet" = "Nuke Sweep aún no puede acceder a todos los archivos";
+"macOS keeps Trash and some application data private until you allow it. The check works without it, but its total will be too small." = "macOS protege la Papelera y algunos datos de las aplicaciones hasta que das permiso. Puedes analizar el Mac sin ese acceso, pero el total será inferior al real.";
+"Open Full Disk Access in System Settings." = "Abre Acceso total al disco en Ajustes del Sistema.";
+"Switch on Nuke Sweep. If it is not listed, press + and choose it." = "Activa Nuke Sweep. Si no aparece en la lista, pulsa + y selecciónalo.";
+"Come back here. macOS may ask to quit and reopen Nuke Sweep." = "Vuelve aquí. Es posible que macOS te pida cerrar y volver a abrir Nuke Sweep.";
+"Open Full Disk Access settings" = "Abrir ajustes de acceso total al disco";
+"Show Nuke Sweep in Finder" = "Mostrar Nuke Sweep en el Finder";
+"Useful for step 2 if the app is not in the list" = "Útil en el paso 2 si la aplicación no aparece en la lista";
+"Reading is all this allows. It does not let Nuke Sweep remove anything without a review." = "El permiso permite leer los archivos. Para moverlos, sigue siendo necesario revisarlos.";
+"These figures are a lower bound: macOS kept Trash and some application data private." = "Estas cifras son un mínimo. macOS protegió la Papelera y algunos datos de las aplicaciones.";
+"Allow Full Disk Access…" = "Permitir acceso total al disco…";
+"Opens System Settings. Switch on Nuke Sweep there, then check again. Reading is all this allows." = "Abre Ajustes del Sistema. Activa Nuke Sweep y repite el análisis. El permiso permite leer los archivos.";
+
+/* Menu-bar check */
+"Check this Mac" = "Analizar este Mac";
+"Checking this Mac…" = "Analizando este Mac…";
+"Check again" = "Volver a analizar";
+"Check stopped" = "Análisis detenido";
+"Stop" = "Detener";
+"Review" = "Revisar";
+"Developer caches" = "Cachés de desarrollo";
+"Last check found %@ to review" = "El último análisis encontró %@ para revisar";
+"Last check found %@ in personal files" = "El último análisis encontró %@ en archivos personales";
+"No cleanup candidates found" = "No se encontraron elementos para limpiar";
+"After this measurement, automatic cleanup moved %@ to Trash." = "Después de medir el espacio, la limpieza automática movió %@ a la Papelera.";
+"Some locations could not be checked in full." = "No se pudieron analizar por completo algunas ubicaciones.";
+"Open Nuke Sweep" = "Abrir Nuke Sweep";
+"Quit Nuke Sweep" = "Salir de Nuke Sweep";

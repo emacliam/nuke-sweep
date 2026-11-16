@@ -10,25 +10,62 @@ struct SimulatorDevice: Identifiable, Sendable {
     var partialMeasurement = false
     var canDelete: Bool { UUID(uuidString: id) != nil && state == "Shutdown" }
 }
+struct SimulatorRuntime: Decodable, Identifiable, Sendable {
+    let identifier: String
+    let runtimeIdentifier: String?
+    let platformIdentifier: String?
+    let version: String
+    let build: String?
+    let sizeBytes: Int64?
+    let lastUsedAt: Date?
+    let state: String?
+    let deletable: Bool?
+    var id: String { identifier }
+    var name: String {
+        runtimeIdentifier?.replacingOccurrences(of: "com.apple.CoreSimulator.SimRuntime.", with: "") ?? version
+    }
+    var removalCommand: String? {
+        guard deletable == true, UUID(uuidString: id) != nil else { return nil }
+        return "xcrun simctl runtime delete " + id
+    }
+}
+
 struct SimulatorInventory: Sendable {
     var devices: [SimulatorDevice] = []
     var note = ""
+    var runtimes: [SimulatorRuntime] = []
+    var runtimeNote: String? = nil
+    var outdatedRuntimeIDs: Set<String>? = nil
 }
 struct SimulatorDeletion: Sendable { let success: Bool; let message: String }
 enum EmulatorCleanup {
     typealias Runner = (String, [String]) -> CommandResult
     static func run(_ path: String, _ args: [String]) -> CommandResult { CommandRunner.run(path, args, timeout: 20) }
-    static func simulators(runner: Runner = run) -> SimulatorInventory {
+    static func simulators(runner: Runner = run, includeRuntimes: Bool = false) -> SimulatorInventory {
         // simctl's Xcode wrapper can install components. Never invoke it until first launch is complete.
         guard runner("/usr/bin/xcodebuild", ["-checkFirstLaunchStatus"]).status == 0 else {
             return .init(note: "Simulator inspection needs Xcode setup. Open Xcode and finish installing its components, then inspect again.")
         }
         let response = runner("/usr/bin/xcrun", ["simctl", "list", "devices", "--json"])
         guard response.status == 0 else { return .init(note: "Simulator inventory unavailable. Open Xcode → Window → Devices and Simulators to check its setup.") }
-        return decode(response.output)
+        var inventory = decode(response.output)
+        if includeRuntimes {
+            let response = runner("/usr/bin/xcrun", ["simctl", "runtime", "list", "--json"])
+            if response.status == 0, let runtimes = decodeRuntimes(response.output) {
+                inventory.runtimes = runtimes
+                let preview = runner("/usr/bin/xcrun", ["simctl", "runtime", "delete", "--outdated", "--dry-run"])
+                if preview.status == 0 {
+                    inventory.outdatedRuntimeIDs = outdatedRuntimeIDs(preview.output)
+                }
+            } else {
+                inventory.runtimeNote = "Runtime disk image inventory unavailable. Check installed components in Xcode Settings."
+            }
+        }
+        return inventory
     }
     static func measuredSimulators(token: ScanCancellation, home: URL = FileManager.default.homeDirectoryForCurrentUser) -> SimulatorInventory {
-        var inventory = simulators()
+        guard !token.cancelled else { return .init(note: "Inspection stopped.") }
+        var inventory = simulators(includeRuntimes: true)
         let deadline = Date().addingTimeInterval(15)
         for index in inventory.devices.indices.prefix(100) {
             guard !token.cancelled, Date() < deadline else { inventory.note += " Device size measurement stopped; some sizes are unknown."; break }
@@ -41,6 +78,21 @@ enum EmulatorCleanup {
         }
         inventory.note += " Sizes cover default device folders only; logical bytes are not guaranteed reclaimed space."
         return inventory
+    }
+    static func outdatedRuntimeIDs(_ preview: String) -> Set<String> {
+        Set(preview.split(whereSeparator: \.isNewline).flatMap { line -> [String] in
+            guard line.hasPrefix("Would delete ") else { return [] }
+            return line.split(whereSeparator: \.isWhitespace).compactMap { UUID(uuidString: String($0))?.uuidString }
+        })
+    }
+    static func decodeRuntimes(_ json: String) -> [SimulatorRuntime]? {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return (try? decoder.decode([String: SimulatorRuntime].self, from: Data(json.utf8)))?.values.sorted {
+            let a = $0.lastUsedAt ?? .distantFuture
+            let b = $1.lastUsedAt ?? .distantFuture
+            return a == b ? ($0.name, $0.id) < ($1.name, $1.id) : a < b
+        }
     }
     static func decode(_ json: String) -> SimulatorInventory {
         struct Device: Decodable { let udid: String; let name: String; let state: String; let isAvailable: Bool? }

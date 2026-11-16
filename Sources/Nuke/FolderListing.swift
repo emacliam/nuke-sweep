@@ -6,11 +6,13 @@ enum FolderListing {
     static func inspect(_ root: URL, token: ScanCancellation, excluding: @Sendable (URL) -> Bool = { _ in false }, limit: Int = 10_000, budget: TimeInterval = 2) -> ScanResult {
         var result = ScanResult(items: [], skipped: 0, visited: 0, limited: false)
         let deadline = Date().addingTimeInterval(budget)
+        let ignored = IgnoredLocations.paths
+        if IgnoredLocations.contains(root, in: ignored) { return result }
         var rootInfo = stat()
         guard !token.cancelled, lstat(root.path, &rootInfo) == 0, rootInfo.st_mode & mode_t(S_IFMT) == mode_t(S_IFDIR) else { result.skipped = 1; return result }
         do {
             let complete = try DirectoryEntries.visit(root, shouldContinue: { !token.cancelled && result.visited < limit && Date() < deadline }) { child in
-                guard !excluding(child) else { return }
+                guard !excluding(child), !IgnoredLocations.contains(child, in: ignored) else { return }
                 result.visited += 1
                 var info = stat()
                 guard lstat(child.path, &info) == 0 else { result.skipped += 1; return }

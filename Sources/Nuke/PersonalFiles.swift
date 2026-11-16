@@ -455,7 +455,11 @@ enum PersonalFiles {
             }
             return true
         }
-        func isExcluded(_ path: String) -> Bool { excluded.contains { path == $0 || path.hasPrefix($0 + "/") } }
+        let ignored = IgnoredLocations.paths
+        func isExcluded(_ path: String) -> Bool {
+            IgnoredLocations.contains(URL(fileURLWithPath: path), in: ignored)
+                || excluded.contains { path == $0 || path.hasPrefix($0 + "/") }
+        }
         func measured(_ entry: Entry, limit: Int = 150_000, seconds: TimeInterval = 12) -> DiskItem {
             let scan = DiskScanner.scan(entry.url, cancellation: token, limit: limit, deadline: min(deadline, Date().addingTimeInterval(seconds)))
             return DiskItem(url: entry.url, size: scan.logical, allocated: scan.allocated, directory: true, symlink: false,
@@ -649,7 +653,7 @@ enum PersonalFiles {
             return DiskItem(url: url, size: scan.logical, allocated: scan.allocated, directory: true, symlink: false, modified: modified, accessed: accessed, identity: identity, incomplete: scan.limited || scan.skipped > 0)
         }
         func add(_ item: DiskItem?, _ category: Category, _ reason: String, redundant: Bool, minimum: Int64 = 1_000_000) {
-            guard let item, item.size >= minimum else { return }
+            guard let item, item.size >= minimum, !IgnoredLocations.contains(item.url, in: IgnoredLocations.paths) else { return }
             report.findings.append(Finding(item: item, category: category, reason: reason, redundant: redundant))
         }
         let day = DateFormatter()

@@ -80,11 +80,25 @@ struct DockerView: View {
                 Text(review ?? "").font(.headline)
                 Text("Context: \(reviewedContext)").font(.system(size: 12, design: .monospaced))
                 Text(explanation(review ?? "")).font(.system(size: 13))
+                if let row = model.docker.first(where: { $0.type.caseInsensitiveCompare(usageType(review)) == .orderedSame }) {
+                    Text("Docker disk usage reports \(row.reclaimable) reclaimable for \(row.type.lowercased()).")
+                        .font(.system(size: 12)).foregroundStyle(Theme.secondary)
+                }
+                Text("Docker does not provide a prune dry run. The disk usage figure covers the category and cannot predict exactly what this command will remove.")
+                    .font(.system(size: 12)).foregroundStyle(Theme.secondary)
                 Notice(text: "This permanently removes eligible Docker objects. The command may include objects created after the last usage refresh. Stopped containers can contain data in their writable layers.", symbol: "exclamationmark.triangle")
                 HStack { Button("Cancel") { review = nil }.keyboardShortcut(.cancelAction); Spacer(); Button("Run cleanup") { let kind = review ?? ""; review = nil; model.pruneDocker(kind, reviewedContext: reviewedContext) }.buttonStyle(PrimaryButton()).disabled(!model.dockerReachable || model.dockerLoading) }
             }.padding(30).frame(width: 520)
         }
     }
+    private func usageType(_ kind: String?) -> String {
+        switch kind {
+        case "Build cache": return "Build Cache"
+        case "Dangling images": return "Images"
+        default: return "Containers"
+        }
+    }
+
     func explanation(_ kind: String) -> String {
         switch kind { case "Build cache": return "Remove unused builder cache. Future builds may take longer."; case "Dangling images": return "Remove dangling images unused by containers. Named images are not selected by this action."; default: return "Remove all stopped containers, including their writable layers." }
     }
@@ -340,6 +354,12 @@ struct TrashReview: View {
     }
 }
 /// Compact "last sweep" evidence shared by Cleanup and the menu-bar popover.
+enum FreedSpaceLabel {
+    static func text(_ total: Int64) -> String {
+        String(format: String(localized: "Estimated space freed so far: %@."), bytes(total))
+    }
+}
+
 struct LastCleanupNote: View {
     @Environment(AppModel.self) var model
     let receipt: CleanupReceipt

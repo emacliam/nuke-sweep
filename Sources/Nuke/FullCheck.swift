@@ -30,6 +30,7 @@ struct FullCheckState: Equatable {
     var growers: [FullCheckGrower] = []
     /// What the automatic cleanup moved, when it is switched on and found work.
     var autoCleaned: AutoCleanOutcome?
+    var autoCleanPreview: [DiskItem]?
     /// Locations macOS would not let the check read completely.
     var gaps = 0
 }
@@ -128,9 +129,13 @@ extension AppModel {
         fullCheck.finished != nil && !fullCheck.running && triage.rootName == Self.fullCheckRootName
     }
 
+    var canStartFullCheck: Bool {
+        !fullCheck.running && !actionBusy && !quick.busy && !cacheScanning && !features.projectLoading && !personal.running
+    }
+
     @discardableResult
-    func startFullCheck(automatic: Bool = false, lowStorageFree: Int64? = nil) -> Bool {
-        guard !fullCheck.running, !actionBusy, !quick.busy, !cacheScanning, !features.projectLoading, !personal.running else { return false }
+    func startFullCheck(automatic: Bool = false, lowStorageFree: Int64? = nil, recordHistory: Bool = true) -> Bool {
+        guard canStartFullCheck else { return false }
         fullCheck = FullCheckState(running: true, started: Date(), automatic: automatic, previous: FullCheckHistory.last, lowStorageFree: lowStorageFree)
         Log.scan.notice("Full check starting: automatic=\(automatic, privacy: .public)")
         quickSelected = []
@@ -148,7 +153,7 @@ extension AppModel {
             guard fullCheck.running else { return }
             if let root {
                 fullCheck.projectsRoot = root
-                FolderAccess.shared.remember(root)
+                if recordHistory { FolderAccess.shared.remember(root) }
                 features.scanProjects(rootOverride: root)
             } else {
                 fullCheck.projectsSkipped = true
@@ -162,7 +167,7 @@ extension AppModel {
             }
             guard fullCheck.running else { return }
             let items = fullCheckItems()
-            triage.refresh(items: items, rootName: Self.fullCheckRootName, signals: triageSignals())
+            triage.refresh(items: items, rootName: Self.fullCheckRootName, signals: triageSignals(), keepEmptyResult: true)
             // Ranking is part of the check: the result is only an answer once the
             // totals exist, so the run stays "running" until they do.
             while fullCheck.running, triage.computing { try? await Task.sleep(for: .milliseconds(150)) }
@@ -171,6 +176,7 @@ extension AppModel {
             fullCheck.finished = Date()
             Log.scan.notice("Full check finished: items=\(items.count, privacy: .public) projectsSkipped=\(self.fullCheck.projectsSkipped, privacy: .public)")
             fullCheck.gaps = fullCheckGaps()
+            guard recordHistory else { return }
             guard let report = triage.report else { postPlainLowStorageAlertIfNeeded(); return }
             let totals = report.totals
             let measuredProjects = !fullCheck.projectsSkipped
@@ -206,11 +212,13 @@ extension AppModel {
                 AlertCenter.shared.post(
                     key: "fullcheck",
                     title: String(format: String(localized: "%@ can be cleared"), bytes(remaining)),
-                    detail: [change, grew ?? "", String(localized: "It comes back by itself. Review it when you are ready.")].filter { !$0.isEmpty }.joined(separator: " "),
+                    detail: [change, grew ?? "", String(localized: "It comes back by itself. Review it when you are ready."), features.observedFreed > 0 ? FreedSpaceLabel.text(features.observedFreed) : ""].filter { !$0.isEmpty }.joined(separator: " "),
                     enabled: true
                 )
             }
+            MonthlyCheckArchive.append(record, previous: previous)
             FullCheckHistory.last = record
+            postMonthlyReportIfDue()
         }
         return true
     }
@@ -383,7 +391,7 @@ struct FullCheckCard: View {
             VStack(alignment: .leading, spacing: 9) {
                 promise("arrow.uturn.backward.circle", "Nothing is deleted. Reviewed items move to Trash, with a receipt and a way back.")
                 promise("exclamationmark.shield", "Anything with no copy anywhere else is held back and named, not offered.")
-                if model.autoCleanEnabled {
+                if model.autoCleanEnabled && !model.autoCleanDryRun {
                     promise("checkmark.shield", "Nothing is selected for you, apart from the automatic cleanup you switched on. Every item is rechecked at the moment it moves.")
                 } else {
                     promise("checkmark.shield", "Nothing is selected for you. Every item is rechecked at the moment it moves.")
@@ -393,7 +401,7 @@ struct FullCheckCard: View {
             HStack {
                 Spacer()
                 Button(model.diskAccess == .missing ? "Check without it" : "Check this Mac") { model.startFullCheck() }
-                    .buttonStyle(PrimaryButton()).disabled(model.actionBusy || model.quick.busy || model.cacheScanning || features.projectLoading || model.personal.running)
+                    .buttonStyle(PrimaryButton()).disabled(!model.canStartFullCheck)
             }
         }
     }
@@ -439,7 +447,7 @@ struct FullCheckCard: View {
                 Text(totals.candidateBytes > 0 ? "Here is what you can clear" : (model.personal.report?.totalBytes ?? 0) > 0 ? "Nothing rebuilds itself here, but your own files are worth a look" : "Nothing worth clearing was found")
                     .font(.system(size: 17, weight: .semibold))
                 Spacer()
-                Button("Check again") { model.startFullCheck() }.buttonStyle(QuietButton())
+                Button("Check again") { model.startFullCheck() }.buttonStyle(QuietButton()).disabled(!model.canStartFullCheck)
             }
             if totals.candidateBytes > 0 {
                 HStack(alignment: .top, spacing: 26) {
@@ -455,6 +463,15 @@ struct FullCheckCard: View {
                 }
                 if !model.fullCheck.growers.isEmpty, let previous = model.fullCheck.previous {
                     growth(model.fullCheck.growers, since: previous.date)
+                }
+                if let items = model.fullCheck.autoCleanPreview {
+                    DisclosureGroup("Automatic cleanup preview · \(items.count) locations · \(bytes(items.reduce(0) { $0 + $1.size }))") {
+                        Text("These locations passed review. Files were left in place.")
+                            .foregroundStyle(Theme.secondary)
+                        ForEach(items) { item in
+                            Text(verbatim: item.url.path).textSelection(.enabled)
+                        }
+                    }.font(.system(size: 11))
                 }
                 if let cleaned = model.fullCheck.autoCleaned, cleaned.movedCount > 0 {
                     HStack(spacing: 8) {
@@ -544,7 +561,7 @@ struct FullCheckCard: View {
         let wouldMove = AutoClean.eligible(report, idleDays: model.autoCleanIdleDays)
         VStack(alignment: .leading, spacing: 5) {
             HStack(spacing: 6) {
-                Toggle("After each weekly check, move to Trash what rebuilds itself and has been untouched for", isOn: Binding(
+                Toggle("After each weekly check, review rebuildable files untouched for", isOn: Binding(
                     get: { model.autoCleanEnabled },
                     set: { model.setAutoClean($0) }
                 ))
@@ -556,6 +573,14 @@ struct FullCheckCard: View {
                     ForEach(AutoClean.idleChoices, id: \.self) { days in Text("\(days) days").tag(days) }
                 }
                 .labelsHidden().pickerStyle(.menu).controlSize(.small).fixedSize()
+            }
+            if model.autoCleanEnabled {
+                Toggle("Report only", isOn: Binding(
+                    get: { model.autoCleanDryRun },
+                    set: { model.autoCleanDryRun = $0; AutoClean.dryRun = $0 }
+                )).toggleStyle(.checkbox).font(.system(size: 11))
+                Text("Keep this on for your first few weekly checks. Turning it off lets automatic cleanup move eligible files to Trash.")
+                    .font(.system(size: 10)).foregroundStyle(Theme.secondary)
             }
             Group {
                 if wouldMove.isEmpty {

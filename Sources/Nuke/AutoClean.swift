@@ -22,6 +22,7 @@ import AppKit
 ///   permanently deleted and Trash is never emptied.
 enum AutoClean {
     private static let enabledKey = "nuke.autoClean.enabled"
+    private static let dryRunKey = "nuke.autoClean.dryRun"
     private static let idleKey = "nuke.autoClean.idleDays"
     static let idleChoices = [30, 90, 180]
     static let defaultIdleDays = 90
@@ -29,6 +30,10 @@ enum AutoClean {
     static var enabled: Bool {
         get { UserDefaults.standard.bool(forKey: enabledKey) }
         set { UserDefaults.standard.set(newValue, forKey: enabledKey) }
+    }
+    static var dryRun: Bool {
+        get { UserDefaults.standard.object(forKey: dryRunKey) as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: dryRunKey) }
     }
     static var idleDays: Int {
         get {
@@ -69,13 +74,16 @@ extension AppModel {
     /// Runs after an automatic check. Returns nil when nothing was attempted.
     func runAutoClean(_ report: StorageTriage.Report) async -> AutoCleanOutcome? {
         guard AutoClean.enabled, FullCheckHistory.weeklyEnabled, fullCheck.automatic else { return nil }
-        guard TrialAccess.status().permitsCleanup else { return nil }
         // Never under a person's hands: if a review is open or anything else is
         // changing files, this run is skipped and the next check tries again.
         guard !actionBusy, !showTrashReview, pendingTrash.isEmpty, !reviewPreparing else { return nil }
         let idleDays = AutoClean.idleDays
+        let startedInDryRun = AutoClean.dryRun
         let candidates = AutoClean.eligible(report, idleDays: idleDays)
-        guard !candidates.isEmpty else { return nil }
+        if candidates.isEmpty {
+            if startedInDryRun { recordAutoCleanPreview([]) }
+            return nil
+        }
         actionBusy = true
         defer { actionBusy = false }
         let scopes = FolderAccess.shared.cleanupScopes
@@ -88,16 +96,21 @@ extension AppModel {
         // was asked for, and carries no open-file warning goes any further.
         let asked = Set(candidates.map(\.id))
         let items = AutoClean.withoutWarned(preparation.items.filter { asked.contains($0.id) }, warnings: preparation.warnings)
-        guard !items.isEmpty else {
-            Log.cleanup.notice("Automatic cleanup: nothing passed review preparation (candidates=\(candidates.count, privacy: .public))")
+        guard AutoClean.enabled, FullCheckHistory.weeklyEnabled, AutoClean.idleDays == idleDays else { return nil }
+        if startedInDryRun || AutoClean.dryRun {
+            recordAutoCleanPreview(items)
             return nil
         }
+        guard !items.isEmpty else { return nil }
         guard TrialAccess.status().permitsCleanup else { return nil }
         let running = NSWorkspace.shared.runningApplications.compactMap { $0.bundleURL?.path }
         Log.cleanup.notice("Automatic cleanup executing: items=\(items.count, privacy: .public) idleDays=\(idleDays, privacy: .public)")
-        let moved = await DiskWork.run("Automatic cleanup") {
-            ReceiptService.moveToTrash(items, proofs: [], runningAppPaths: running, allowedRoots: scopes, developerScopes: developerScopes)
+        let moved = await DiskWork.run("Automatic cleanup") { () -> CleanupReceipt? in
+            guard AutoClean.enabled, FullCheckHistory.weeklyEnabled,
+                  !AutoClean.dryRun, AutoClean.idleDays == idleDays else { return nil }
+            return ReceiptService.moveToTrash(items, proofs: [], runningAppPaths: running, allowedRoots: scopes, developerScopes: developerScopes)
         }
+        guard let moved else { return nil }
         let receipt = CleanupReceipt(
             date: moved.date,
             title: "Automatic cleanup",
@@ -122,9 +135,24 @@ extension AppModel {
             key: "autoclean",
             title: String(format: String(localized: "Moved %@ to Trash automatically"), bytes(outcome.movedBytes)),
             detail: String(format: String(localized: "%lld locations that rebuild themselves and were untouched for %lld days. The receipt in Nuke Sweep can put each one back. Space returns when Trash is emptied."), outcome.movedCount, idleDays),
+            receiptID: receipt.id,
             enabled: true
         )
         return outcome
+    }
+
+    private func recordAutoCleanPreview(_ items: [DiskItem]) {
+        let size = items.reduce(0) { $0 + $1.size }
+        let detail = String(format: String(localized: "%lld locations passed review. Files were left in place."), items.count)
+        fullCheck.autoCleanPreview = items
+        let paths = items.map { $0.url.path + " · " + bytes($0.size) }
+        record("Automatic cleanup preview", detail: ([detail] + paths).joined(separator: "\n"))
+        AlertCenter.shared.post(
+            key: "autoclean-preview",
+            title: String(format: String(localized: "Cleanup preview: %@ could move to Trash"), bytes(size)),
+            detail: detail,
+            enabled: true
+        )
     }
 
     func setAutoClean(_ enabled: Bool) {
