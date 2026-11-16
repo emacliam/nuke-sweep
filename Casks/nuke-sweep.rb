@@ -9,7 +9,7 @@ cask "nuke-sweep" do
 
   auto_updates true
   depends_on arch: :arm64
-  depends_on macos: ">= :sonoma"
+  depends_on macos: :sonoma
 
   app "Nuke Sweep.app"
   binary "#{appdir}/Nuke Sweep.app/Contents/MacOS/Nuke", target: "nuke"
