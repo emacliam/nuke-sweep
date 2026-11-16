@@ -259,9 +259,9 @@ Each group displays count and extra logical bytes, a native “Keep this copy”
 
 The native AppKit status item retains the template asterisk and 11-point monospaced-digit reading. A persisted native toggle optionally adds Nuke’s name; Icon only provides the smallest active footprint. Paused and Sleeping states remain explicit, with accessible naming and help. `StatusBarController` owns a transient hosted popover, while `LiveMonitor` owns asynchronous live sampling and history. While the popover is shown, local and global mouse-down monitors dismiss it on left, right, or other outside clicks; local events continue to their intended control. Clicks within the popover stay interactive, and its own status button retains native toggle behavior. App resignation also dismisses it. Closing removes the event monitors and observer. Manual checks in the final normal signed app observed: Refresh inside preserves the popover; clicking Nuke’s File menu dismisses it and opens that menu; clicking Finder’s File menu dismisses it; Escape dismisses it.
 
-The 330-point popover uses 20-point padding and the incumbent paper/ink palette. Its header pairs Nuke’s mark/name with Live, Paused, or Sleeping text and accessible pause/resume and refresh icons; refresh is disabled while paused or sleeping. Available storage becomes the primary 29-point measurement, with capacity context and a native rust used-capacity bar. An 18-point CPU/VM pair is separated by a thin rule. Updated time and interval precede recent CPU history, retained-reading caveats, and the VM definition. A compact last-sweep line appears when a receipt exists. Find space uses the ink primary action beside Processes and Scopes; a compact footer exposes Open Nuke, settings, and Quit with accessible icon labels.
+The 330-point popover uses 20-point padding and the incumbent paper/ink palette. Its header pairs Nuke’s mark/name with Live, Paused, or Sleeping text and accessible pause/resume and refresh icons; refresh is disabled while paused or sleeping. Available storage becomes the primary 29-point measurement, with capacity context and a native rust used-capacity bar. An 18-point CPU/VM pair is separated by a thin rule. Updated time and interval precede recent CPU history, retained-reading caveats, and the VM definition. A compact last-sweep line appears when a receipt exists. Check this Mac starts the scan beside the Developer caches shortcut. The scan shows a Stop button while running and a Review button when results are ready. The footer exposes Open Nuke Sweep, settings, and Quit with accessible labels.
 
-Settings use existing grouped surfaces with native toggles and a storage-threshold stepper. Alerts are optional, initially off, require macOS notification permission, and are disabled when monitoring is off. Visible status explains permission denial or scheduling failure. Sustained CPU means three samples at or above 85%; alerts are limited to one per hour. Closing the window keeps enabled monitoring running; Quit stops it. Monitoring never initiates cleanup. The popover shows Updated time, a recent CPU chart of up to 25 samples, and Pause/Resume. Paused readings are explicitly identified as the last measurements. Settings also expose optional SMAppService launch-at-login registration with actual enabled, approval-required, off, unavailable, or unknown status and errors; enabling it is a user choice.
+Settings use existing grouped surfaces with native toggles and a storage-threshold stepper. Alerts are optional, initially off, require macOS notification permission, and are disabled when monitoring is off. Visible status explains permission denial or scheduling failure. Closing the window keeps enabled monitoring running. Quit stops it. Low storage can trigger a check, and automatic cleanup requires the opt-in described below. The popover shows Updated time, a recent CPU chart of up to 25 samples, and Pause/Resume. Paused readings are explicitly identified as the last measurements. Settings also expose optional SMAppService launch-at-login registration with actual enabled, approval-required, off, unavailable, or unknown status and errors; enabling it is a user choice.
 
 ### Desktop Widgets
 
@@ -286,6 +286,24 @@ Protected-folder guidance states that Full Disk Access is controlled by macOS an
 ### Docker Availability and Local Metadata
 
 Docker shows engine checking, reachable, or unverified/unavailable status with measured time or an explicit stale last-successful timestamp. Offline cleanup remains unavailable. A separate Local Docker disk section labels read-only VM file metadata as independent of the engine: logical/allocated file observations are not a remote context’s engine usage. Missing metadata means unavailable, elsewhere, or inaccessible rather than zero Docker storage. Copy explains that Nuke never directly removes the VM disk and inspection does not start an engine.
+
+### Check This Mac
+
+Cleanup starts with one storage check across application caches, Trash, developer caches, project build output, and a bounded search for personal files. The first-run setup introduces the check, explains optional Full Disk Access, and offers to start the scan. The running view names each stage and keeps Stop available. The menu-bar popover can start and stop the same check and show its result. Review opens the Cleanup page.
+
+The result separates items open to review, rebuildable items, items held back, and personal files. When locations are skipped or measured in part, the result explains the coverage gap. Sizes describe what was measured. Moving files to Trash and recovering disk space are separate events. The review action prepares rebuildable items for confirmation. Personal files have a separate selection and review.
+
+### Automatic Cleanup
+
+Weekly checks are opt-in. Once enabled, the user can also opt in to automatic cleanup for rebuildable caches, dependency folders, and build output that have been idle for 30, 90, or 180 days. Automatic checks can also run when storage is low. Dry run starts enabled and shows which locations passed review and how much they represent. Files stay in place during dry runs.
+
+When dry run is off, eligible items go through review preparation and are checked again when moved. Open files, incomplete measurements, and items with unknown last-use dates stay out of automatic cleanup. Successful moves go to Trash and appear in History with a receipt. The notification offers **Put everything back**, and History records the outcome of each move.
+
+### Personal Files
+
+The Personal Files panel groups findings such as old installers, repeat downloads, large recordings, and device backups. Each group shows its total size and recovery context. Expanded rows give the reason the file appeared, its measured size, and Quick Look and Finder actions where available. The panel identifies unreadable locations, time or size limits, and synced or cloud-only files left out of the results.
+
+Selection starts empty. Incomplete files cannot be selected, and Personal Files findings stay outside automatic cleanup. The footer shows the selected count and size and opens the standard Trash review. Users confirm the move there and can use the receipt to restore eligible files.
 
 ### Find Space and Cached Estimates
 

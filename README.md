@@ -35,6 +35,24 @@ Apple notarization checks malware and signing requirements; it is not a review o
 
 If upgrading from Nuke, quit the older app and keep only the version you intend to use in Applications. The display name changed; bundle identifiers, saved preferences, URL scheme, widget kinds, and the local data folder are retained so your settings and history continue to work.
 
+### Command line
+
+From a build that includes the command-line tool, link the installed app’s executable into a directory on your `PATH`:
+
+```sh
+mkdir -p "$HOME/.local/bin"
+ln -s "/Applications/Nuke Sweep.app/Contents/MacOS/Nuke" "$HOME/.local/bin/nuke"
+export PATH="$HOME/.local/bin:$PATH"
+nuke check --json
+nuke clean --review
+```
+
+`check --json` prints byte counts and scan coverage. `clean --review` rechecks rebuildable items and shows which paths qualify for cleanup. Both commands leave files in place. Confirm any cleanup in Nuke Sweep. macOS permissions can limit what a terminal scan can see.
+
+### Shortcuts and Siri
+
+In a build that includes App Shortcuts, open **Shortcuts** and search for **Nuke Sweep**. **Check This Mac** opens Cleanup and starts a scan. **How Much Can I Clear?** reads the dated estimate for rebuildable items from your last completed check. You can also ask Siri “Check this Mac with Nuke Sweep” or “How much space can I clear with Nuke Sweep?”
+
 ### Folder access
 
 macOS may deny access to protected folders. Select a narrower readable folder or use **Settings → Permissions & access**. When you need protected locations, open **System Settings → Privacy & Security → Full Disk Access**, add the installed Nuke Sweep app, then quit and reopen it. The app cannot grant itself access.
@@ -81,7 +99,7 @@ For the Storage widget, launch the installed app once, then Control-click the de
 - Nothing is selected or cleaned automatically unless you switch on the automatic cleanup.
 - The check also lists your own surplus files, in eighteen groups: installers for apps already installed, device firmware, unfinished downloads, repeat downloads confirmed byte for byte, archives already unpacked, Mail attachment copies, video-editing render files, logs, old downloads, screen and meeting recordings, old screenshots, large video and audio, disk images and virtual machines, device backups, Xcode archives, phone app packages, and very large files untouched for six months. Each is listed with the reason it was listed. None of these is ever ticked for you or touched by the automatic cleanup, and they are kept out of the "comes back by itself" figure. Photo libraries, mail, messages, cloud-synced folders and cloud-only placeholders are not searched.
 - Build and dependency folders in projects outside your chosen code folder (a checkout on the Desktop or in Downloads) are measured and ranked with the rest. The automatic cleanup leaves them alone, because their repository state is not checked.
-- The automatic cleanup is off by default and offered only alongside the weekly check. It moves to Trash only caches, dependency folders and build output that were neither read nor written for the number of days you choose (30, 90 or 180), that nothing is using, and that do not sit beside uncommitted work. Each run passes the same checks as a reviewed cleanup, leaves a receipt that can put items back, and never empties Trash. Before you switch it on, the app shows what it would move right now.
+- The automatic cleanup is off by default and offered only alongside the weekly check. It moves to Trash only caches, dependency folders and build output that were neither read nor written for the number of days you choose (30, 90 or 180), that nothing is using, and that do not sit beside uncommitted work. Each run passes the same checks as a reviewed cleanup, leaves a receipt that can put items back, and never empties Trash. Report only is the default. It lists eligible locations after scheduled checks and leaves files in place until you explicitly turn it off.
 - Normal file cleanup moves reviewed items to **macOS Trash**. Restore with Finder’s Put Back when available, or move the item back to its original location.
 - Source-control metadata, credential stores, personal data stores, and source-looking project roots are protected by cleanup guards.
 - The review rechecks identities and measurements. Unknown ownership and permission gaps remain explicit.
@@ -118,7 +136,7 @@ Expected: `accepted`, `source=Notarized Developer ID`.
 
 ## Build from source
 
-Requires macOS 14+, Xcode with a compatible Swift 6 toolchain, and Python 3 for ICNS packaging. There are no third-party Swift dependencies.
+The app runs on macOS 14 and later. Packaging requires Xcode with SwiftPM’s Swift Build backend and the App Intents metadata processor, plus Python 3 for icon packaging. The build bundles Sparkle for signed updates.
 
 ```sh
 git clone https://github.com/emacliam/nuke-sweep.git
