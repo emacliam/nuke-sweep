@@ -51,34 +51,37 @@ enum CodeFolderDetection {
     /// screen.
     static func detect(home: URL = FileManager.default.homeDirectoryForCurrentUser, limit: Int = 200, deep: Bool = false) -> [Candidate] {
         let manager = FileManager.default
+        let ignored = IgnoredLocations.paths
         var found: [Candidate] = []
         if deep {
             let documents = home.appendingPathComponent("Documents")
             let children = (try? manager.contentsOfDirectory(at: documents, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles, .skipsPackageDescendants])) ?? []
             for child in children.prefix(60) {
-                guard (try? child.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true,
+                guard !IgnoredLocations.contains(child, in: ignored),
+                      (try? child.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true,
                       child.resolvingSymlinksInPath().path.hasPrefix(home.path) else { continue }
                 // Two or more projects, so a single stray repository in Documents
                 // is not mistaken for where someone keeps their code.
-                let count = projectCount(in: child, limit: limit, manager: manager)
+                let count = projectCount(in: child, limit: limit, manager: manager, ignored: ignored)
                 if count >= 2 { found.append(Candidate(url: child, projectCount: count)) }
             }
         }
         for name in candidates {
             let root = home.appendingPathComponent(name)
             var isDirectory: ObjCBool = false
-            guard manager.fileExists(atPath: root.path, isDirectory: &isDirectory), isDirectory.boolValue else { continue }
+            guard !IgnoredLocations.contains(root, in: ignored),
+                  manager.fileExists(atPath: root.path, isDirectory: &isDirectory), isDirectory.boolValue else { continue }
             // A symlinked candidate could point anywhere; only suggest real
             // directories inside the home folder.
             guard root.resolvingSymlinksInPath().path.hasPrefix(home.path) else { continue }
-            let count = projectCount(in: root, limit: limit, manager: manager)
+            let count = projectCount(in: root, limit: limit, manager: manager, ignored: ignored)
             guard count > 0 else { continue }
             found.append(Candidate(url: root, projectCount: count))
         }
         return found.sorted { $0.projectCount == $1.projectCount ? $0.name < $1.name : $0.projectCount > $1.projectCount }
     }
 
-    private static func projectCount(in root: URL, limit: Int, manager: FileManager) -> Int {
+    private static func projectCount(in root: URL, limit: Int, manager: FileManager, ignored: Set<String>) -> Int {
         guard let children = try? manager.contentsOfDirectory(
             at: root,
             includingPropertiesForKeys: [.isDirectoryKey],
@@ -86,7 +89,8 @@ enum CodeFolderDetection {
         ) else { return 0 }
         var count = 0
         for child in children.prefix(limit) {
-            guard (try? child.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true else { continue }
+            guard !IgnoredLocations.contains(child, in: ignored),
+                  (try? child.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true else { continue }
             if looksLikeProject(child, manager: manager) { count += 1 }
         }
         return count

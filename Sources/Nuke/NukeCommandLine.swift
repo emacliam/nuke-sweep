@@ -12,6 +12,7 @@ import Foundation
         let personalFilesLimited: Bool
         let personalUnreadableLocations: Int
         let projectsMeasured: Bool
+        let projectsPartial: Bool
     }
 
     private static let usage = """
@@ -82,7 +83,8 @@ import Foundation
             partiallyMeasuredLocations: model.fullCheck.gaps,
             personalFilesLimited: model.personal.report?.limited ?? false,
             personalUnreadableLocations: model.personal.report?.unreadable.count ?? 0,
-            projectsMeasured: !model.fullCheck.projectsSkipped
+            projectsMeasured: !model.fullCheck.projectsSkipped,
+            projectsPartial: model.fullCheck.projectsPartial
         )
         if arguments.contains("--json") {
             do {
@@ -100,6 +102,7 @@ import Foundation
                 print("Some locations could only be measured in part.")
             }
             if !result.projectsMeasured { print("Project build output was not measured.") }
+            if result.projectsPartial { print("Project build output was only partially measured.") }
         }
         return 0
     }

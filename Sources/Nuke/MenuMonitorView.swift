@@ -68,7 +68,9 @@ struct MonitorPopover: View {
                     Text(String(format: String(localized: "After this measurement, automatic cleanup moved %@ to Trash."), bytes(outcome.movedBytes)))
                         .font(.system(size: 11)).foregroundStyle(Theme.secondary)
                 }
-                if model.fullCheck.gaps > 0 || model.fullCheck.projectsSkipped || model.diskAccess == .missing {
+                if model.fullCheck.gaps > 0 || model.fullCheck.projectsSkipped || model.fullCheck.projectsPartial
+                    || model.personal.report?.limited == true || model.personal.report?.unreadable.isEmpty == false
+                    || model.diskAccess == .missing {
                     Text("Some locations could not be checked in full.")
                         .font(.system(size: 11)).foregroundStyle(Theme.secondary)
                 }

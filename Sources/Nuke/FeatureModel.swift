@@ -13,6 +13,7 @@ import UniformTypeIdentifiers
     var projectContext = ""
     var projectNote = ""
     var projectDiscoveryNote = ""
+    private(set) var projectDiscoveryPartial = false
     var projectRoot: URL?
     var projectLoading = false
     var projectMeasured: Date?
@@ -154,10 +155,16 @@ import UniformTypeIdentifiers
         }
         projectToken = ScanCancellation(); let token = projectToken
         projectRoot = root; projectLoading = true; projects = []; projectNote = ""; projectDiscoveryNote = ""
+        projectDiscoveryPartial = false
         let generation = storageGeneration
         Task {
             let measured = await DiskWork.run("Inspecting projects", cancellation: token) { ProjectDiscovery.scan(root, token: token) }
-            guard generation == storageGeneration else { return }; projects = measured.projects; projectDiscoveryNote = measured.note; projectMeasured = Date(); projectLoading = false
+            guard generation == storageGeneration, projectToken === token else { return }
+            projects = measured.projects
+            projectDiscoveryNote = measured.note
+            projectDiscoveryPartial = measured.limited || measured.skipped > 0 || token.cancelled
+            projectMeasured = Date()
+            projectLoading = false
             if token.cancelled { projectNote = "Stopped — partial project inventory."; projectMeasured = Date(); projectLoading = false; return }
             let docker = await Task.detached(priority: .utility) { ProjectDockerService.inspect() }.value
             guard generation == storageGeneration, projectToken === token else { return }

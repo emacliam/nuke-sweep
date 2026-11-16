@@ -14,6 +14,8 @@ enum ProjectDiscovery {
     static let artifactNames: Set<String> = ["node_modules", ".next", ".nuxt", ".svelte-kit", ".turbo", "dist", "build", "target", ".build", "DerivedData", ".venv", "venv", ".pytest_cache", ".mypy_cache", "__pycache__", "Pods", "coverage", ".dart_tool", ".expo", ".angular", ".parcel-cache", "bin", "obj"]
     static func scan(_ root: URL, token: ScanCancellation, maxDirectories: Int = 10_000, maxDepth: Int = 12, budget: TimeInterval = 90) -> ProjectDiscoveryReport {
         var report = ProjectDiscoveryReport(), namesVisited = 0, measuredEntries = 0
+        let ignored = IgnoredLocations.paths
+        guard !IgnoredLocations.contains(root, in: ignored) else { return report }
         let deadline = Date().addingTimeInterval(budget)
         var rootInfo = stat()
         guard lstat(root.path, &rootInfo) == 0, rootInfo.st_mode & mode_t(S_IFMT) == mode_t(S_IFDIR) else { report.skipped = 1; return report }
@@ -27,6 +29,7 @@ enum ProjectDiscovery {
             do {
                 let complete = try DirectoryEntries.visit(directory, shouldContinue: withinBudget) { child in
                     namesVisited += 1
+                    guard !IgnoredLocations.contains(child, in: ignored) else { return }
                     let name = child.lastPathComponent
                     var info = stat()
                     guard lstat(child.path, &info) == 0 else { report.skipped += 1; return }

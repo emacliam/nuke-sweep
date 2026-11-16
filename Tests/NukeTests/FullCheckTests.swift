@@ -32,6 +32,15 @@ final class FullCheckTests: XCTestCase {
         XCTAssertTrue(FullCheckHistory.merge([item("/tmp/f/empty", size: 0)]).isEmpty)
     }
 
+    @MainActor func testCacheScanLimitCountsAsPartialEvenWithoutAccessErrors() {
+        let model = AppModel(restoring: false)
+        let rule = CacheRule.all[0]
+        let partial = DiskItem(url: rule.url, size: 1, allocated: 1, directory: true,
+                               symlink: false, modified: nil, identity: nil, incomplete: true)
+        model.caches = [CacheMeasurement(rule: rule, item: partial, skipped: 0)]
+        XCTAssertEqual(model.fullCheckGaps(), 1)
+    }
+
     func testWeeklyCheckIsOffUnlessSwitchedOn() {
         XCTAssertFalse(FullCheckHistory.isDue(last: nil, enabled: false))
         XCTAssertFalse(FullCheckHistory.isDue(last: record(daysAgo: 30, regenerable: 1), enabled: false))
@@ -54,6 +63,23 @@ final class FullCheckTests: XCTestCase {
         let before = record(daysAgo: 7, regenerable: 10_000_000_000)
         XCTAssertTrue(FullCheckHistory.shouldNotify(previous: before, current: record(daysAgo: 0, regenerable: 14_000_000_000)))
         XCTAssertFalse(FullCheckHistory.shouldNotify(previous: before, current: record(daysAgo: 0, regenerable: 2_000_000_000)))
+    }
+
+    func testPartialChecksAndChangedProjectRootsDoNotReportGrowth() {
+        var before = record(daysAgo: 7, regenerable: 1_000_000_000)
+        var after = record(daysAgo: 0, regenerable: 8_000_000_000)
+        before.projectPath = "/tmp/first"
+        after.projectPath = "/tmp/second"
+        XCTAssertFalse(FullCheckHistory.shouldNotify(previous: before, current: after))
+        XCTAssertNil(FullCheckHistory.change(previous: before, current: after))
+
+        after.projectPath = before.projectPath
+        after.partial = true
+        XCTAssertFalse(FullCheckHistory.shouldNotify(previous: before, current: after))
+        XCTAssertNil(FullCheckHistory.change(previous: before, current: after))
+
+        after.partial = false
+        XCTAssertTrue(FullCheckHistory.shouldNotify(previous: before, current: after))
     }
 
     func testChangeSentenceNamesDirectionAndIsSilentWithoutAPreviousCheck() {

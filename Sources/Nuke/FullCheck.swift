@@ -12,6 +12,7 @@ import UserNotifications
 /// It measures and ranks. It selects nothing and cleans nothing; taking the
 /// result to review is a separate, explicit step.
 struct FullCheckState: Equatable {
+    let id = UUID()
     var running = false
     var started: Date?
     var finished: Date?
@@ -19,11 +20,13 @@ struct FullCheckState: Equatable {
     var projectsRoot: URL?
     /// True when no conventional code folder exists, so projects were not scanned.
     var projectsSkipped = false
+    var projectsPartial = false
     var stopped = false
     /// Started by the weekly schedule rather than by the person.
     var automatic = false
     /// The check before this one, kept so the result can say what changed.
     var previous: FullCheckRecord?
+    var record: FullCheckRecord?
     /// Set when low storage started this check; the free space at that moment.
     var lowStorageFree: Int64?
     /// The locations that grew most since the previous check.
@@ -52,6 +55,13 @@ struct FullCheckRecord: Codable, Equatable, Sendable {
     /// looks in more places finds more without anything having grown, so two
     /// records are only compared when this matches.
     var coverage: Int? = nil
+    var partial: Bool? = nil
+    var projectPath: String? = nil
+
+    func isComparable(to other: Self) -> Bool {
+        partial != true && other.partial != true && coverage == other.coverage
+            && measuredProjects == other.measuredProjects && projectPath == other.projectPath
+    }
 }
 
 /// One location that takes more space than it did at the previous check.
@@ -100,12 +110,11 @@ enum FullCheckHistory {
     }
 
     /// What changed since the previous check, or nil when there is nothing to say.
-    /// Raised whenever the check starts measuring somewhere new. 2 added build
-    /// folders in projects outside the chosen code folder.
-    static let coverage = 2
+    /// Version 3 records coverage gaps and the project scope explicitly.
+    static let coverage = 3
 
     static func change(previous: FullCheckRecord?, current: FullCheckRecord) -> String? {
-        guard let previous, previous.coverage == current.coverage else { return nil }
+        guard let previous, previous.isComparable(to: current) else { return nil }
         let delta = current.regenerableBytes - previous.regenerableBytes
         let when = previous.date.formatted(date: .abbreviated, time: .omitted)
         if delta >= notableGrowth { return String(format: String(localized: "%@ more than on %@."), bytes(delta), when) }
@@ -115,7 +124,9 @@ enum FullCheckHistory {
 
     /// A weekly check only interrupts when the answer has materially grown.
     static func shouldNotify(previous: FullCheckRecord?, current: FullCheckRecord) -> Bool {
-        guard let previous, previous.coverage == current.coverage else { return current.regenerableBytes >= notableGrowth }
+        guard current.partial != true else { return false }
+        guard let previous else { return current.regenerableBytes >= notableGrowth }
+        guard previous.isComparable(to: current) else { return false }
         return current.regenerableBytes - previous.regenerableBytes >= notableGrowth
     }
 }
@@ -137,20 +148,25 @@ extension AppModel {
     func startFullCheck(automatic: Bool = false, lowStorageFree: Int64? = nil, recordHistory: Bool = true) -> Bool {
         guard canStartFullCheck else { return false }
         fullCheck = FullCheckState(running: true, started: Date(), automatic: automatic, previous: FullCheckHistory.last, lowStorageFree: lowStorageFree)
+        let checkID = fullCheck.id
         Log.scan.notice("Full check starting: automatic=\(automatic, privacy: .public)")
         quickSelected = []
         findSpace()
         scanCaches()
         Task {
+            guard fullCheck.id == checkID, fullCheck.running else { return }
             // Projects need a folder. Reuse the one already chosen, otherwise the
             // conventional location holding the most projects; with neither, the
             // area is reported as not measured rather than silently skipped.
             var root = features.projectRoot
+            if let selected = root, IgnoredLocations.contains(selected, in: IgnoredLocations.paths) {
+                root = nil
+            }
             if root == nil {
                 let found = await DiskWork.run("Looking for your code", lane: .interactive) { CodeFolderDetection.detect(deep: true) }
                 root = found.first?.url
             }
-            guard fullCheck.running else { return }
+            guard fullCheck.id == checkID, fullCheck.running else { return }
             if let root {
                 fullCheck.projectsRoot = root
                 if recordHistory { FolderAccess.shared.remember(root) }
@@ -162,18 +178,19 @@ extension AppModel {
             // that folder is left to the project scan and not walked twice.
             scanPersonalFiles()
             // Each scan publishes its own busy flag; wait for all three to clear.
-            while fullCheck.running, quick.busy || cacheScanning || features.projectLoading || personal.running {
+            while fullCheck.id == checkID, fullCheck.running, quick.busy || cacheScanning || features.projectLoading || personal.running {
                 try? await Task.sleep(for: .milliseconds(250))
             }
-            guard fullCheck.running else { return }
+            guard fullCheck.id == checkID, fullCheck.running else { return }
             let items = fullCheckItems()
             triage.refresh(items: items, rootName: Self.fullCheckRootName, signals: triageSignals(), keepEmptyResult: true)
             // Ranking is part of the check: the result is only an answer once the
             // totals exist, so the run stays "running" until they do.
-            while fullCheck.running, triage.computing { try? await Task.sleep(for: .milliseconds(150)) }
-            guard fullCheck.running else { return }
+            while fullCheck.id == checkID, fullCheck.running, triage.computing { try? await Task.sleep(for: .milliseconds(150)) }
+            guard fullCheck.id == checkID, fullCheck.running else { return }
             fullCheck.running = false
             fullCheck.finished = Date()
+            fullCheck.projectsPartial = fullCheck.projectsRoot != nil && features.projectDiscoveryPartial
             Log.scan.notice("Full check finished: items=\(items.count, privacy: .public) projectsSkipped=\(self.fullCheck.projectsSkipped, privacy: .public)")
             fullCheck.gaps = fullCheckGaps()
             guard recordHistory else { return }
@@ -182,18 +199,22 @@ extension AppModel {
             let measuredProjects = !fullCheck.projectsSkipped
             let record = FullCheckRecord(
                 date: Date(), regenerableBytes: totals.regenerableBytes, candidateBytes: totals.candidateBytes,
-                sizes: FullCheckHistory.sizes(of: items), measuredProjects: measuredProjects, coverage: FullCheckHistory.coverage
+                sizes: FullCheckHistory.sizes(of: items), measuredProjects: measuredProjects, coverage: FullCheckHistory.coverage,
+                partial: fullCheck.gaps > 0 || fullCheck.projectsPartial || personal.report?.limited == true
+                    || personal.report?.unreadable.isEmpty == false,
+                projectPath: fullCheck.projectsRoot?.standardizedFileURL.path
             )
+            fullCheck.record = record
             let previous = fullCheck.previous
-            fullCheck.growers = FullCheckHistory.growers(
-                previous: previous?.sizes, current: items,
-                // Only call something new when both checks looked in the same places.
-                includeNew: previous?.measuredProjects == measuredProjects && previous?.coverage == record.coverage
-            )
+            if let previous, previous.isComparable(to: record) {
+                fullCheck.growers = FullCheckHistory.growers(previous: previous.sizes, current: items)
+            }
             let grew = FullCheckHistory.growthSentence(fullCheck.growers, since: previous?.date)
             // The automatic cleanup acts first, so the alert describes what is
             // left for the person rather than what has already been handled.
-            fullCheck.autoCleaned = await runAutoClean(report)
+            let autoCleaned = await runAutoClean(report)
+            guard fullCheck.id == checkID else { return }
+            fullCheck.autoCleaned = autoCleaned
             let cleaned = fullCheck.autoCleaned?.movedBytes ?? 0
             let remaining = max(0, record.regenerableBytes - cleaned)
             if let free = fullCheck.lowStorageFree {
@@ -246,9 +267,10 @@ extension AppModel {
         return startFullCheck(automatic: true, lowStorageFree: free)
     }
 
-    /// How many measured locations came back partial because of access.
+    /// How many checked cache and Trash locations came back partial.
     func fullCheckGaps() -> Int {
-        caches.filter { $0.skipped > 0 }.count + (quick.trashPartial ? 1 : 0) + quick.entries.filter { $0.item.incomplete }.count
+        caches.filter { $0.skipped > 0 || $0.item?.incomplete == true }.count
+            + (quick.trashPartial ? 1 : 0) + quick.entries.filter { $0.item.incomplete }.count
     }
 
     /// Re-reads whether Full Disk Access appears granted. Cheap, but it touches
@@ -291,7 +313,8 @@ extension AppModel {
 
     /// Everything the three scans measured, merged for one ranking.
     func fullCheckItems() -> [DiskItem] {
-        FullCheckHistory.merge(caches.compactMap(\.item) + features.projects.flatMap(\.entries).map(\.item) + (personal.report?.strayBuilds ?? []) + quick.entries.map(\.item))
+        let projects = fullCheck.projectsSkipped ? [] : features.projects.flatMap(\.entries).map(\.item)
+        return FullCheckHistory.merge(caches.compactMap(\.item) + projects + (personal.report?.strayBuilds ?? []) + quick.entries.map(\.item))
     }
 }
 
@@ -449,6 +472,32 @@ struct FullCheckCard: View {
                 Spacer()
                 Button("Check again") { model.startFullCheck() }.buttonStyle(QuietButton()).disabled(!model.canStartFullCheck)
             }
+            if model.fullCheck.projectsSkipped && (features.projectRoot.map {
+                IgnoredLocations.contains($0, in: IgnoredLocations.paths)
+            } ?? true) {
+                HStack(spacing: 10) {
+                    Text("Project build output was not measured: no code folder was found in the usual places.")
+                        .font(.system(size: 11)).foregroundStyle(Theme.secondary).fixedSize(horizontal: false, vertical: true)
+                    Button("Choose your code folder…") { features.scanProjects() }
+                        .buttonStyle(.plain).font(.system(size: 11, weight: .medium)).foregroundStyle(Theme.orange)
+                        .help("Measured now, and included every time you check again")
+                }
+            } else if model.fullCheck.projectsSkipped {
+                Text("A code folder is now chosen. Check again to include its build output in these figures.")
+                    .font(.system(size: 11)).foregroundStyle(Theme.secondary)
+            }
+            if model.fullCheck.projectsPartial {
+                Text("Project scanning was incomplete. There may be more build output to review.")
+                    .font(.system(size: 11)).foregroundStyle(Theme.secondary)
+            }
+            if model.fullCheck.gaps > 0 || model.diskAccess == .missing {
+                if model.diskAccess == .missing {
+                    AccessStep(afterCheck: true)
+                } else {
+                    Text("\(model.fullCheck.gaps) locations could only be measured in part, so these figures are a lower bound.")
+                        .font(.system(size: 11)).foregroundStyle(Theme.secondary)
+                }
+            }
             if totals.candidateBytes > 0 {
                 HStack(alignment: .top, spacing: 26) {
                     figure(bytes(totals.regenerableBytes), "comes back by itself", "Caches, dependencies and build output nothing is using", tint: Theme.green)
@@ -457,8 +506,8 @@ struct FullCheckCard: View {
                         figure(bytes(totals.exposedBytes), "held back", "No copy exists anywhere else", tint: Theme.error)
                     }
                 }
-                if let previous = model.fullCheck.previous,
-                   let change = FullCheckHistory.change(previous: previous, current: .init(date: Date(), regenerableBytes: totals.regenerableBytes, candidateBytes: totals.candidateBytes, coverage: FullCheckHistory.coverage)) {
+                if let record = model.fullCheck.record,
+                   let change = FullCheckHistory.change(previous: model.fullCheck.previous, current: record) {
                     Text(verbatim: change).font(.system(size: 11, weight: .medium)).foregroundStyle(Theme.secondary)
                 }
                 if !model.fullCheck.growers.isEmpty, let previous = model.fullCheck.previous {
@@ -492,26 +541,6 @@ struct FullCheckCard: View {
                 if totals.inUseCount > 0 {
                     Text("\(totals.inUseCount) of these are in use right now and are left out of the first figure.")
                         .font(.system(size: 11)).foregroundStyle(Theme.secondary)
-                }
-                if model.fullCheck.projectsSkipped && features.projectRoot == nil {
-                    HStack(spacing: 10) {
-                        Text("Project build output was not measured: no code folder was found in the usual places.")
-                            .font(.system(size: 11)).foregroundStyle(Theme.secondary).fixedSize(horizontal: false, vertical: true)
-                        Button("Choose your code folder…") { features.scanProjects() }
-                            .buttonStyle(.plain).font(.system(size: 11, weight: .medium)).foregroundStyle(Theme.orange)
-                            .help("Measured now, and included every time you check again")
-                    }
-                } else if model.fullCheck.projectsSkipped {
-                    Text("A code folder is now chosen. Check again to include its build output in these figures.")
-                        .font(.system(size: 11)).foregroundStyle(Theme.secondary)
-                }
-                if model.fullCheck.gaps > 0 || model.diskAccess == .missing {
-                    if model.diskAccess == .missing {
-                        AccessStep(afterCheck: true)
-                    } else {
-                        Text("\(model.fullCheck.gaps) locations could only be measured in part, so these figures are a lower bound.")
-                            .font(.system(size: 11)).foregroundStyle(Theme.secondary)
-                    }
                 }
                 Toggle("Check weekly and tell me when this has grown", isOn: Binding(
                     get: { model.fullCheckWeekly },

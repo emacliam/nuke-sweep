@@ -17,7 +17,8 @@ enum MonthlyCheckArchive {
         let cutoff = calendar.date(byAdding: .month, value: -12, to: record.date) ?? record.date
         let grouped = Dictionary(grouping: values.filter { $0.date >= cutoff }) { value in
             ArchiveGroup(month: calendar.dateInterval(of: .month, for: value.date)?.start ?? value.date,
-                         projects: value.measuredProjects, coverage: value.coverage)
+                         projects: value.measuredProjects, coverage: value.coverage,
+                         partial: value.partial, projectPath: value.projectPath)
         }
         let endpoints = grouped.values.flatMap { checks -> [FullCheckRecord] in
             let ordered = checks.sorted { $0.date < $1.date }
@@ -30,6 +31,8 @@ enum MonthlyCheckArchive {
         let month: Date
         let projects: Bool?
         let coverage: Int?
+        let partial: Bool?
+        let projectPath: String?
     }
 }
 
@@ -53,10 +56,10 @@ struct MonthlyReport {
         automaticMoved = Self.sum(monthlyReceipts.lazy.filter { $0.title == "Automatic cleanup" }
             .flatMap(\.items).filter { $0.success && $0.trashPath != nil }.map(\.size))
 
-        let measured = checks.filter { $0.date >= period.start && $0.date < period.end && $0.sizes != nil }
+        let measured = checks.filter { $0.date >= period.start && $0.date < period.end && $0.sizes != nil && $0.partial != true }
         if let latest = measured.max(by: { $0.date < $1.date }),
            let baseline = measured.filter({
-               $0.date < latest.date && $0.coverage == latest.coverage && $0.measuredProjects == latest.measuredProjects
+               $0.date < latest.date && $0.isComparable(to: latest)
            }).min(by: { $0.date < $1.date }),
            let before = baseline.sizes, let after = latest.sizes {
             comparedChecks = true
