@@ -2,6 +2,19 @@ import XCTest
 @testable import Nuke
 
 final class AccessDockerTests: XCTestCase {
+    func testDockerCleanupPreviewUsesOnlyReadCommandsInTheReviewedContext() {
+        for (kind, command) in [("Dangling images", ["image", "ls"]), ("Stopped containers", ["container", "ls"]),
+                                ("Build cache", ["system", "df"])] {
+            let result = DockerInspection.cleanupPreview(kind, context: "test-remote") { args, _ in
+                XCTAssertEqual(Array(args.prefix(4)), ["--context", "test-remote"] + command)
+                XCTAssertFalse(args.contains("prune"))
+                return CommandResult(output: #"{"Type":"Build Cache","Size":"2 GB","Reclaimable":"1 GB"}"#, status: 0)
+            }
+            XCTAssertEqual(result.status, 0)
+            XCTAssertFalse(result.output.isEmpty)
+        }
+    }
+
     func fixture() throws -> URL {
         let url = URL(fileURLWithPath: "/tmp").resolvingSymlinksInPath().appendingPathComponent("nuke-access-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)

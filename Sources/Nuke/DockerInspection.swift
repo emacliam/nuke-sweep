@@ -18,6 +18,30 @@ struct DockerReport: Sendable {
     let volumeError: String?
 }
 enum DockerInspection {
+    static func cleanupPreview(_ kind: String, context: String,
+                               run: ([String], TimeInterval) -> CommandResult = {
+                                   CommandRunner.run("/usr/bin/env", ["docker"] + $0, timeout: $1)
+                               }) -> CommandResult {
+        let args: [String]
+        switch kind {
+        case "Dangling images":
+            args = ["image", "ls", "--filter", "dangling=true", "--format", "{{.ID}} · {{.Size}}"]
+        case "Stopped containers":
+            args = ["container", "ls", "--all", "--filter", "status=exited", "--filter", "status=created",
+                    "--filter", "status=dead", "--format", "{{.Names}} · {{.Status}}"]
+        case "Build cache":
+            args = ["system", "df", "--format", "{{json .}}"]
+        default:
+            return CommandResult(output: "", status: 1)
+        }
+        let result = run(["--context", context] + args, 12)
+        guard result.status == 0, kind == "Build cache" else { return result }
+        guard let cache = parse(result.output).first(where: { $0.type.caseInsensitiveCompare("Build Cache") == .orderedSame }) else {
+            return CommandResult(output: "", status: 1)
+        }
+        return CommandResult(output: String(format: String(localized: "Build cache: %@ total, %@ reclaimable."), cache.size, cache.reclaimable), status: 0)
+    }
+
     static func inspect(run: ([String], TimeInterval) -> CommandResult = { CommandRunner.run("/usr/bin/env", ["docker"] + $0, timeout: $1) }) -> DockerReport {
         let context = run(["context", "show"], 5)
         guard context.status == 0, !context.output.isEmpty else { return .init(context: "", rows: [], reachable: false, note: "Docker CLI or its context configuration is unavailable. Install Docker Desktop or check its CLI setup, then retry. " + String(context.output.prefix(500)), volumes: [], volumeError: nil) }

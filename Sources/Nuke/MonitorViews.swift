@@ -5,6 +5,7 @@ struct DockerView: View {
     @Environment(AppModel.self) var model
     @State private var review: String?
     @State private var reviewedContext = ""
+    @State private var preview: CommandResult?
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
             HStack { Label(model.dockerContext.isEmpty ? "Docker context not checked" : "Context: \(model.dockerContext)", systemImage: "shippingbox").font(.system(size: 12, weight: .medium)); Spacer(); if model.dockerLoading { ProgressView().controlSize(.small) }; Button("Refresh usage") { model.inspectDocker() }.buttonStyle(QuietButton()).disabled(model.dockerLoading || model.actionBusy) }
@@ -61,7 +62,7 @@ struct DockerView: View {
                 }
                 Text("Choose a cleanup").font(.system(size: 15, weight: .semibold))
                 ForEach(["Build cache", "Dangling images", "Stopped containers"], id: \.self) { kind in
-                    HStack { VStack(alignment: .leading, spacing: 6) { Text(kind).font(.system(size: 13, weight: .semibold)); Text(explanation(kind)).font(.system(size: 11)).foregroundStyle(Theme.secondary) }; Spacer(); Button("Review…") { reviewedContext = model.dockerContext; review = kind }.buttonStyle(QuietButton()).disabled(model.actionBusy || model.dockerLoading || !model.dockerReachable) }
+                    HStack { VStack(alignment: .leading, spacing: 6) { Text(kind).font(.system(size: 13, weight: .semibold)); Text(explanation(kind)).font(.system(size: 11)).foregroundStyle(Theme.secondary) }; Spacer(); Button("Review…") { preview = nil; reviewedContext = model.dockerContext; review = kind }.buttonStyle(QuietButton()).disabled(model.actionBusy || model.dockerLoading || !model.dockerReachable) }
                     Divider()
                 }
                 Notice(text: "Usage is a snapshot. Docker decides which objects are eligible when cleanup runs. Volumes are excluded from these actions. Docker cleanup cannot be undone in Trash.", symbol: "info.circle")
@@ -80,22 +81,38 @@ struct DockerView: View {
                 Text(review ?? "").font(.headline)
                 Text("Context: \(reviewedContext)").font(.system(size: 12, design: .monospaced))
                 Text(explanation(review ?? "")).font(.system(size: 13))
-                if let row = model.docker.first(where: { $0.type.caseInsensitiveCompare(usageType(review)) == .orderedSame }) {
-                    Text("Docker disk usage reports \(row.reclaimable) reclaimable for \(row.type.lowercased()).")
-                        .font(.system(size: 12)).foregroundStyle(Theme.secondary)
+                if let preview {
+                    if preview.status != 0 {
+                        Text("Docker could not prepare a current preview. Cancel and try again.").foregroundStyle(Theme.warning)
+                    } else if preview.output.isEmpty {
+                        Text("No matching objects appeared in the current inventory.").foregroundStyle(Theme.secondary)
+                    } else {
+                        ScrollView {
+                            Text(verbatim: String(preview.output.prefix(3_000)))
+                                .font(.system(size: 11, design: .monospaced)).textSelection(.enabled)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }.frame(maxHeight: 130)
+                        if preview.output.count > 3_000 {
+                            Text("Showing the first part of the Docker inventory.").font(.caption)
+                        }
+                    }
+                } else {
+                    ProgressView("Reading current Docker inventory…").controlSize(.small)
                 }
-                Text("Docker does not provide a prune dry run. The disk usage figure covers the category and cannot predict exactly what this command will remove.")
+                Text("Docker prune has no dry-run option. This inventory is an estimate. Docker determines eligibility when the command runs.")
                     .font(.system(size: 12)).foregroundStyle(Theme.secondary)
                 Notice(text: "This permanently removes eligible Docker objects. The command may include objects created after the last usage refresh. Stopped containers can contain data in their writable layers.", symbol: "exclamationmark.triangle")
-                HStack { Button("Cancel") { review = nil }.keyboardShortcut(.cancelAction); Spacer(); Button("Run cleanup") { let kind = review ?? ""; review = nil; model.pruneDocker(kind, reviewedContext: reviewedContext) }.buttonStyle(PrimaryButton()).disabled(!model.dockerReachable || model.dockerLoading) }
+                HStack { Button("Cancel") { review = nil }.keyboardShortcut(.cancelAction); Spacer(); Button("Run cleanup") { let kind = review ?? ""; review = nil; model.pruneDocker(kind, reviewedContext: reviewedContext) }.buttonStyle(PrimaryButton()).disabled(preview?.status != 0 || !model.dockerReachable || model.dockerLoading || model.dockerContext != reviewedContext) }
             }.padding(30).frame(width: 520)
-        }
-    }
-    private func usageType(_ kind: String?) -> String {
-        switch kind {
-        case "Build cache": return "Build Cache"
-        case "Dangling images": return "Images"
-        default: return "Containers"
+                .task(id: review) {
+                    guard let kind = review else { return }
+                    let context = reviewedContext
+                    let result = await Task.detached(priority: .utility) {
+                        DockerInspection.cleanupPreview(kind, context: context)
+                    }.value
+                    guard !Task.isCancelled, review == kind, reviewedContext == context else { return }
+                    preview = result
+                }
         }
     }
 
