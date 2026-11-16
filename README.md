@@ -37,7 +37,14 @@ If upgrading from Nuke, quit the older app and keep only the version you intend 
 
 ### Command line
 
-From a build that includes the command-line tool, link the installed app’s executable into a directory on your `PATH`:
+Homebrew installs the app and puts the `nuke` command on your path:
+
+```sh
+brew tap emacliam/nuke-sweep https://github.com/emacliam/nuke-sweep.git
+brew install --cask emacliam/nuke-sweep/nuke-sweep
+```
+
+If you installed the app from the DMG, link its executable into a directory on your `PATH`:
 
 ```sh
 mkdir -p "$HOME/.local/bin"
