@@ -4,8 +4,20 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
     <channel>
         <title>Nuke Sweep</title>
         <item>
+            <title>0.9.2</title>
+            <pubDate>Mon, 16 Nov 2026 21:16:41 +0200</pubDate>
+            <sparkle:version>13</sparkle:version>
+            <sparkle:shortVersionString>0.9.2</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <enclosure url="https://sweep.zyncraft.com/downloads/Nuke-Sweep-0.9.2.dmg" length="5094671" type="application/octet-stream" sparkle:edSignature="BqyPsNr+6cBlDtjEz0ZQb2jdYfaoKvv8fdSqXrGpiG48MbiMlWpiV3w8vKfyGWvOHixMq8JZsuWsJiSKXZlqCg=="></enclosure>
+            <sparkle:deltas>
+                <enclosure url="https://sweep.zyncraft.com/downloads/Nuke%20Sweep13-12.delta" sparkle:deltaFrom="12" length="1409210" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="gjdkU2Z1e2m6OD7Z9ACBpthU3PJJyyrdHuptXZd61UKIsKtLStHth9vkA9Rhtr/Wh2VQvqy98s0RWGVZJjYcDw=="></enclosure>
+            </sparkle:deltas>
+        </item>
+        <item>
             <title>0.9.1</title>
-            <pubDate>Fri, 13 Nov 2026 09:50:49 +0200</pubDate>
+            <pubDate>Mon, 16 Nov 2026 21:16:41 +0200</pubDate>
             <sparkle:version>12</sparkle:version>
             <sparkle:shortVersionString>0.9.1</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
@@ -14,6 +26,6 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
         </item>
     </channel>
 </rss><!-- sparkle-signatures:
-edSignature: Y3WTfcum8leSmpYFZ5G9BP9sLltC9/3rSqznMiekjQ9wpJR1jkT+AJjO66EqFS40mCcuV93QvbewV3iUsV1mBg==
-length: 1100
+edSignature: 3j1GvgnXy/8quswWuMuDPRicDAiLLJ2cs6rs81g+WwDDCW1meF3gOYFozahvr8T4MsrDkTFQrTO/6WzlVUwtDQ==
+length: 2221
 -->
