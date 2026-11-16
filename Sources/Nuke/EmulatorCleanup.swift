@@ -28,6 +28,12 @@ struct SimulatorRuntime: Decodable, Identifiable, Sendable {
         guard deletable == true, UUID(uuidString: id) != nil else { return nil }
         return "xcrun simctl runtime delete " + id
     }
+
+    func matchingDevices(in devices: [SimulatorDevice]) -> [SimulatorDevice] {
+        guard let runtimeIdentifier else { return [] }
+        let runtime = runtimeIdentifier.replacingOccurrences(of: "com.apple.CoreSimulator.SimRuntime.", with: "")
+        return devices.filter { $0.runtime == runtime }
+    }
 }
 
 struct SimulatorInventory: Sendable {

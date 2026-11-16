@@ -424,6 +424,8 @@ struct DevicesView: View {
             ForEach(features.simulators.runtimes.filter { runtime in
                 !outdatedOnly || features.simulators.outdatedRuntimeIDs?.contains(runtime.id.uppercased()) != false
             }) { runtime in
+                let devices = runtime.matchingDevices(in: features.simulators.devices)
+                let booted = devices.filter { $0.state == "Booted" }.count
                 VStack(alignment: .leading, spacing: 5) {
                     HStack {
                         Text(runtime.name).fontWeight(.semibold)
@@ -438,6 +440,10 @@ struct DevicesView: View {
                         Text("Last used: \(date.formatted(date: .abbreviated, time: .omitted))")
                     } else { Text("Last used: Unknown") }
                     if let state = runtime.state { Text(state).foregroundStyle(Theme.secondary) }
+                    if !devices.isEmpty {
+                        Text("\(devices.count) devices for this runtime version · \(booted) booted")
+                            .foregroundStyle(booted > 0 ? Theme.warning : Theme.secondary)
+                    }
                     if let command = runtime.removalCommand {
                         Text(verbatim: command + " --dry-run").textSelection(.enabled)
                             .font(.system(size: 10, design: .monospaced))
