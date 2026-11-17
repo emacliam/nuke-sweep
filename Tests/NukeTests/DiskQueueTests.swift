@@ -6,14 +6,14 @@ final class DiskQueueTests: XCTestCase {
     func testARepeatedRequestSupersedesTheOneStillWaiting() async {
         let blocker = ScanCancellation()
         let gate = DispatchSemaphore(value: 0)
-        async let busy: Void = DiskWork.run("Queue test blocker") { gate.wait() }
+        async let busy: Void = fillBulkLane(gate)
         try? await Task.sleep(for: .milliseconds(100))
         let first = ScanCancellation(), second = ScanCancellation()
         async let a: Bool = DiskWork.run("Queue test repeat", cancellation: first) { first.cancelled }
         try? await Task.sleep(for: .milliseconds(50))
         async let b: Bool = DiskWork.run("Queue test repeat", cancellation: second) { second.cancelled }
         try? await Task.sleep(for: .milliseconds(50))
-        gate.signal()
+        for _ in 0..<DiskWork.width[.bulk]! { gate.signal() }
         let (wasFirstCancelled, wasSecondCancelled) = await (a, b)
         _ = await busy
         _ = blocker
@@ -24,7 +24,7 @@ final class DiskQueueTests: XCTestCase {
     func testAStoppedJobRunsBeforeWorkQueuedAheadOfIt() async {
         let gate = DispatchSemaphore(value: 0)
         let order = OrderLog()
-        async let busy: Void = DiskWork.run("Queue order blocker") { gate.wait() }
+        async let busy: Void = fillBulkLane(gate)
         try? await Task.sleep(for: .milliseconds(100))
         async let slow: Void = DiskWork.run("Queue order slow") { order.add("slow") }
         try? await Task.sleep(for: .milliseconds(30))
@@ -32,9 +32,16 @@ final class DiskQueueTests: XCTestCase {
         async let stopped: Void = DiskWork.run("Queue order stopped", cancellation: token) { order.add("stopped") }
         try? await Task.sleep(for: .milliseconds(30))
         token.cancel()
-        gate.signal()
+        for _ in 0..<DiskWork.width[.bulk]! { gate.signal() }
         _ = await (busy, slow, stopped)
         XCTAssertEqual(order.values, ["stopped", "slow"])
+    }
+}
+
+/// Holds every bulk slot until the gate is signalled once per slot.
+private func fillBulkLane(_ gate: DispatchSemaphore) async {
+    await withTaskGroup(of: Void.self) { group in
+        for _ in 0..<DiskWork.width[.bulk]! { group.addTask { await DiskWork.run("Queue test blocker") { gate.wait() } } }
     }
 }
 

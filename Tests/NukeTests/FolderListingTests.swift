@@ -22,15 +22,19 @@ final class FolderListingTests: XCTestCase {
     }
     @MainActor func testExpansionListsNamesWhileBulkQueueIsBusy() async throws {
         let root = try fixture(); defer { try? FileManager.default.removeItem(at: root) }
+        // Hold every bulk slot, so measuring has to wait while names still list.
+        let slots = DiskWork.width[.bulk]!
         let entered = expectation(description:"bulk active"), release = DispatchSemaphore(value:0)
-        let bulk = Task { await DiskWork.run("Held bulk") { entered.fulfill(); release.wait(); return true } }
+        entered.expectedFulfillmentCount = slots
+        let held = (0..<slots).map { _ in Task { await DiskWork.run("Held bulk") { entered.fulfill(); release.wait(); return true } } }
         await fulfillment(of:[entered],timeout:2)
         let item = try XCTUnwrap(InventoryService.measure(root))
         let store = FolderTreeStore(); store.toggle(item)
         let deadline = Date().addingTimeInterval(1)
         while store.children[item.id] == nil, Date() < deadline { try await Task.sleep(for:.milliseconds(10)) }
         let children = store.children[item.id]
-        release.signal(); _ = await bulk.value
+        for task in held { release.signal(); _ = task }
+        for task in held { _ = await task.value }
         XCTAssertEqual(children?.map(\.name), ["large"])
         XCTAssertEqual(children?.first?.measurementPending, true)
         store.reset()

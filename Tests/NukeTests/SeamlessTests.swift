@@ -155,12 +155,12 @@ final class SeamlessTests: XCTestCase {
         XCTAssertTrue(plan.failures.contains { $0.contains("source-control metadata") })
     }
 
-    func testDiskWorkSerializesConcurrentRequests() async {
+    func testDiskWorkCapsConcurrentRequestsAtTheLaneWidth() async {
         let counter = WorkCounter()
         await withTaskGroup(of: Void.self) { group in
             for _ in 0..<8 { group.addTask { await DiskWork.run { counter.enter(); Thread.sleep(forTimeInterval: 0.005); counter.leave() } } }
         }
-        XCTAssertEqual(counter.maximum, 1)
+        XCTAssertLessThanOrEqual(counter.maximum, DiskWork.width[.bulk]!)
     }
 }
 private final class WorkCounter: @unchecked Sendable {
