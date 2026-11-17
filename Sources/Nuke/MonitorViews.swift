@@ -239,7 +239,8 @@ struct TrashReview: View {
     @Environment(AISettings.self) var ai
     @Environment(\.dismiss) var dismiss
     @State private var aiTarget: AIExplainTarget?
-    @State private var blockedExpanded = true
+    @State private var blockedExpanded = false
+    @State private var restoreExpanded = false
     @State private var openHandlesReviewed = false
     @State private var restoreReport: RestorePreflight.Report?
     var body: some View {
@@ -288,7 +289,7 @@ struct TrashReview: View {
                         Divider()
                     }
                 }
-            }.frame(maxHeight: 220)
+            }.frame(minHeight: 90, maxHeight: 220).layoutPriority(-1)
             if !model.pendingBlocked.isEmpty {
                 DisclosureGroup("Not included · \(model.pendingBlocked.count) could not be verified", isExpanded: $blockedExpanded) {
                     ScrollView {
@@ -317,9 +318,10 @@ struct TrashReview: View {
             }
             let restore = restoreReport.flatMap { $0.findings.map(\.item) == selected ? $0 : nil }
             if let restore, !restore.allRestorable {
+                // Collapsed by default so the warning never pushes the
+                // Move button out of the sheet.
+                DisclosureGroup(isExpanded: $restoreExpanded) {
                 VStack(alignment: .leading, spacing: 6) {
-                    Label("Put Back will not work for \(restore.manualOnly.count) of these", systemImage: "arrow.uturn.backward.circle")
-                        .font(.system(size: 12, weight: .semibold)).foregroundStyle(Theme.warning)
                     ForEach(restore.manualOnly.prefix(3)) { finding in
                         VStack(alignment: .leading, spacing: 1) {
                             Text(verbatim: finding.item.name).font(.system(size: 11, weight: .medium))
@@ -334,6 +336,10 @@ struct TrashReview: View {
                     }
                     Text("These still move to Trash and can be dragged back by hand. Only the one-click restore is unavailable.")
                         .font(.system(size: 10)).foregroundStyle(Theme.secondary).fixedSize(horizontal: false, vertical: true)
+                }.padding(.top, 4)
+                } label: {
+                    Label("Put Back will not work for \(restore.manualOnly.count) of these", systemImage: "arrow.uturn.backward.circle")
+                        .font(.system(size: 12, weight: .semibold)).foregroundStyle(Theme.warning)
                 }
                 .padding(12).frame(maxWidth: .infinity, alignment: .leading)
                 .background(Theme.warning.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
@@ -355,7 +361,7 @@ struct TrashReview: View {
                     .buttonStyle(PrimaryButton()).keyboardShortcut(.defaultAction)
                     .disabled(selected.isEmpty || (!model.pendingWarnings.isEmpty && !openHandlesReviewed) || model.actionBusy)
             }
-        }.padding(30).frame(width: 580)
+        }.padding(30).frame(width: 580).frame(maxHeight: 680)
             .task(id: selected) {
                 guard !selected.isEmpty else { restoreReport = nil; return }
                 let token = ScanCancellation()
