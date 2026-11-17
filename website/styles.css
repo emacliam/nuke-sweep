@@ -6,3 +6,8 @@
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*,*:before,*:after{animation:none!important;transition:none!important}}
 
 .tool-icon svg{display:block;width:24px;height:24px}.feature-symbol svg{display:block;width:30px;height:30px}
+
+.homebrew{margin-top:24px;padding-top:20px;border-top:1px solid var(--line)}
+.homebrew summary{cursor:pointer;font-weight:600}
+.homebrew p{font-size:14px;color:var(--muted)}
+.homebrew pre{overflow-x:auto;padding:14px 16px;background:var(--rail);border-radius:7px;font-size:13px}
