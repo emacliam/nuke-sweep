@@ -87,7 +87,7 @@ struct LocalSnapshotsView: View {
     private func inspect() {
         busy = true
         Task {
-            report = await DiskWork.run("Inspecting local snapshots") { LocalSnapshots.inspect() }
+            report = await DiskWork.run("Inspecting local snapshots", lane: .interactive) { LocalSnapshots.inspect() }
             busy = false
         }
     }
@@ -103,7 +103,7 @@ struct LocalSnapshotsView: View {
                 ? "Time Machine finished the thinning request. Refreshing storage readings."
                 : "Time Machine could not complete the request. " + result.output
             model.refreshResources()
-            report = await DiskWork.run("Inspecting local snapshots") { LocalSnapshots.inspect() }
+            report = await DiskWork.run("Inspecting local snapshots", lane: .interactive) { LocalSnapshots.inspect() }
             busy = false
             model.actionBusy = false
         }

@@ -377,7 +377,7 @@ struct FolderTreeView: View {
     /// placeholder as evidence. The sheet is only shown once real context exists.
     private func requestExplain(_ item: DiskItem, scope: DeveloperScope?) {
         Task {
-            let evidence = await DiskWork.run("Inspecting \(item.name)", priority: .foreground) {
+            let evidence = await DiskWork.run("Inspecting \(item.name)", priority: .foreground, lane: .interactive) {
                 CleanupEvidenceService.classify(item.url, sourceCheck: scope != nil)
             }
             await MainActor.run { explainTarget = AIExplainTarget(item: item, evidence: evidence, scope: scope) }
