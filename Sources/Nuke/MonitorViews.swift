@@ -366,9 +366,13 @@ struct TrashReview: View {
                 guard !selected.isEmpty else { restoreReport = nil; return }
                 let token = ScanCancellation()
                 await withTaskCancellationHandler {
-                    let report = await DiskWork.run("Checking restore options", lane: .interactive, cancellation: token) {
-                        RestorePreflight.inspect(selected, token: token, systemTrash: TrashService.current.root)
-                    }
+                    // A few stat calls per item: run it on its own, outside
+                    // the disk queue, so it never waits behind scans or holds
+                    // up other work.
+                    let trash = TrashService.current.root
+                    let report = await Task.detached(priority: .userInitiated) {
+                        RestorePreflight.inspect(selected, token: token, systemTrash: trash)
+                    }.value
                     if !Task.isCancelled { restoreReport = report }
                 } onCancel: { token.cancel() }
             }
