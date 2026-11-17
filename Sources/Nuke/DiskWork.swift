@@ -70,6 +70,7 @@ enum DiskWork {
         tokens.forEach { $0.cancel() }
         lock.lock(); publish(); lock.unlock()
     }
+    /// Jobs that cannot be stopped: they have no cancellation token.
     static func cancelAll() {
         lock.lock(); let tokens = (pending + Array(active.values)).compactMap(\.cancellation); lock.unlock()
         tokens.forEach { $0.cancel() }
@@ -98,14 +99,24 @@ enum DiskWork {
     static func run<T: Sendable>(_ label: String = "Disk inspection", priority: Priority = .foreground, lane: Lane = .bulk, cancellation: ScanCancellation? = nil, _ operation: @escaping @Sendable () -> T) async -> T {
         await withCheckedContinuation { continuation in
             let job = Job(label: label, lane: lane, priority: priority, cancellation: cancellation, operation: { continuation.resume(returning: operation()) })
-            lock.lock(); pending.append(job); schedule(.interactive); schedule(.bulk); publish(); lock.unlock()
+            lock.lock()
+            // Opening a page again asks for the same answer again. The older
+            // request still waiting is superseded rather than run twice; its
+            // caller sees a cancelled result, as it would after Stop.
+            if cancellation != nil {
+                for old in pending where old.label == label && old.lane == lane && old.cancellation != nil { old.cancellation?.cancel() }
+            }
+            pending.append(job); schedule(.interactive); schedule(.bulk); publish(); lock.unlock()
         }
     }
     /// Caller holds lock. Each lane is FIFO within priority, with one active job.
     private static func schedule(_ lane: Lane) {
         guard active[lane] == nil else { return }
         let indices = pending.indices.filter { pending[$0].lane == lane }
-        guard let index = indices.first(where: { pending[$0].priority == .foreground }) ?? indices.first else { return }
+        // A stopped job returns at once, so it goes first: Stop should empty the
+        // queue now, not after everything ahead of it has finished.
+        guard let index = indices.first(where: { pending[$0].cancellation?.cancelled == true })
+            ?? indices.first(where: { pending[$0].priority == .foreground }) ?? indices.first else { return }
         let job = pending.remove(at: index)
         active[lane] = job; progress[job.id] = Progress()
         let queue = lane == .interactive ? interactiveQueue : bulkQueue

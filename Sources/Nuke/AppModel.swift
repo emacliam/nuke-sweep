@@ -48,6 +48,8 @@ import UserNotifications
     /// The one-button "check this Mac" pass. See `FullCheck.swift`.
     var fullCheck = FullCheckState()
     var personal = PersonalFilesState()
+    var scrollToPersonal = false
+    @ObservationIgnored var accessWatch: Task<Void, Never>?
     @ObservationIgnored var personalToken = ScanCancellation()
     /// Mirrors the stored preference so the toggle redraws when it changes.
     var fullCheckWeekly = FullCheckHistory.weeklyEnabled

@@ -357,7 +357,7 @@ struct TrashReview: View {
                 guard !selected.isEmpty else { restoreReport = nil; return }
                 let token = ScanCancellation()
                 await withTaskCancellationHandler {
-                    let report = await DiskWork.run("Checking restore options", cancellation: token) {
+                    let report = await DiskWork.run("Checking restore options", lane: .interactive, cancellation: token) {
                         RestorePreflight.inspect(selected, token: token)
                     }
                     if !Task.isCancelled { restoreReport = report }

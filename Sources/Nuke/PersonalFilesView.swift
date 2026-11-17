@@ -38,6 +38,27 @@ extension AppModel {
         }
     }
 
+    func showPersonalFiles() {
+        if let first = personal.report?.categories.first { personal.expanded.insert(first.rawValue) }
+        scrollToPersonal = true
+    }
+
+    /// Files are moved, renamed and deleted outside the app. Anything listed
+    /// that is no longer where it was is dropped, so the list never offers a
+    /// file that is gone. Cheap: one lstat per listed item, off the main actor.
+    func pruneMovedPersonalFiles() {
+        guard let report = personal.report, !personal.running else { return }
+        let listed = report.findings.map { ($0.item.url.path, $0.item.identity) } + report.strayBuilds.map { ($0.url.path, $0.identity) }
+        Task {
+            let gone = await Task.detached(priority: .utility) {
+                listed.filter { path, identity in FileIdentity.read(URL(fileURLWithPath: path)) != identity || identity == nil }.map(\.0)
+            }.value
+            guard !gone.isEmpty else { return }
+            personalFilesMoved(gone)
+            Log.scan.info("Personal files: dropped \(gone.count, privacy: .public) that moved or were removed")
+        }
+    }
+
     var personalSelectedItems: [DiskItem] {
         guard let report = personal.report else { return [] }
         return report.findings.filter { personal.selected.contains($0.id) && !$0.item.incomplete }.map(\.item)
@@ -151,7 +172,8 @@ struct PersonalFilesPanel: View {
                     ForEach(shown) { finding in row(finding) }
                     HStack(spacing: 14) {
                         if findings.count > shown.count {
-                            Button(all ? "First 300 shown" : "Show all \(findings.count)") { model.personal.showingAll.insert(category.rawValue) }
+                            let title: LocalizedStringKey = all ? "First 300 shown" : "Show all \(findings.count)"
+                            Button(title) { model.personal.showingAll.insert(category.rawValue) }
                                 .disabled(all)
                         } else if all, findings.count > Self.preview {
                             Button("Show fewer") { model.personal.showingAll.remove(category.rawValue) }
@@ -161,7 +183,8 @@ struct PersonalFilesPanel: View {
                             Button("Untick this group") { model.personal.selected.subtract(ids) }
                                 .disabled(model.actionBusy)
                         } else if !ids.isEmpty {
-                            Button(findings.count > 300 ? "Tick the largest 300" : "Tick this whole group") { model.personal.selected.formUnion(ids) }
+                            let title: LocalizedStringKey = findings.count > 300 ? "Tick the largest 300" : "Tick this whole group"
+                            Button(title) { model.personal.selected.formUnion(ids) }
                                 .disabled(model.actionBusy)
                                 .help("Ticks them for review. Nothing moves until you confirm in the review.")
                         }

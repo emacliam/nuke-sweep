@@ -89,7 +89,16 @@ struct FindSpaceView: View {
             let personalFirst = ProcessInfo.processInfo.arguments.contains("--capture-personal")
             if personalFirst, model.personal.report != nil { PersonalFilesPanel() }
             FullCheckCard()
-            if !personalFirst, model.personal.running || model.personal.report != nil { PersonalFilesPanel() }
+            if !personalFirst, model.personal.running || model.personal.report != nil {
+                ScrollViewReader { proxy in
+                    PersonalFilesPanel().id("personal-files")
+                        .onChange(of: model.scrollToPersonal) { _, go in
+                            guard go else { return }
+                            withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo("personal-files", anchor: .top) }
+                            model.scrollToPersonal = false
+                        }
+                }
+            }
             if hasPass { lastPassHeader }
             ReclaimSummaryPanel()
             if hasPass {
