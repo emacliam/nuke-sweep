@@ -39,7 +39,7 @@ extension AppModel {
     }
 
     func showPersonalFiles() {
-        if let first = personal.report?.categories.first { personal.expanded.insert(first.rawValue) }
+        if let first = personal.report?.categories.first { personal.expanded = [first.rawValue] }
         scrollToPersonal = true
     }
 
@@ -142,7 +142,8 @@ struct PersonalFilesPanel: View {
         let chosen = findings.filter { model.personal.selected.contains($0.id) }.count
         VStack(alignment: .leading, spacing: 8) {
             Button {
-                if open { model.personal.expanded.remove(category.rawValue) } else { model.personal.expanded.insert(category.rawValue) }
+                // One group open at a time keeps the page short.
+                model.personal.expanded = open ? [] : [category.rawValue]
             } label: {
                 HStack(spacing: 10) {
                     Image(systemName: open ? "chevron.down" : "chevron.right").font(.system(size: 9, weight: .semibold)).foregroundStyle(Theme.secondary).frame(width: 10)
@@ -169,7 +170,14 @@ struct PersonalFilesPanel: View {
                 let shown = all ? Array(findings.prefix(300)) : Array(findings.prefix(Self.preview))
                 VStack(alignment: .leading, spacing: 6) {
                     Text(verbatim: category.explanation).font(.system(size: 11)).foregroundStyle(Theme.secondary).fixedSize(horizontal: false, vertical: true)
-                    ForEach(shown) { finding in row(finding) }
+                    if all {
+                        // A long list scrolls in place instead of stretching the page.
+                        ScrollView {
+                            LazyVStack(alignment: .leading, spacing: 6) { ForEach(shown) { finding in row(finding) } }
+                        }.frame(maxHeight: 340)
+                    } else {
+                        ForEach(shown) { finding in row(finding) }
+                    }
                     HStack(spacing: 14) {
                         if findings.count > shown.count {
                             let title: LocalizedStringKey = all ? "First 300 shown" : "Show all \(findings.count)"

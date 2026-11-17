@@ -49,13 +49,14 @@ final class PolishTests: XCTestCase {
     func testForegroundDiskJobRunsBeforePendingWatch() async throws {
         let entered = DispatchSemaphore(value: 0), release = DispatchSemaphore(value: 0)
         let order = JobOrder()
-        let first = Task { await DiskWork.run("held") { entered.signal(); release.wait() } }
-        XCTAssertEqual(entered.wait(timeout: .now() + 2), .success)
+        let slots = DiskWork.width[.bulk]!
+        let held = (0..<slots).map { _ in Task { await DiskWork.run("held") { entered.signal(); release.wait() } } }
+        for _ in 0..<slots { XCTAssertEqual(entered.wait(timeout: .now() + 2), .success) }
         let watch = Task { await DiskWork.run("watch", priority: .background) { order.append("watch") } }
         try await Task.sleep(for: .milliseconds(60))
         let user = Task { await DiskWork.run("user") { order.append("user") } }
-        try await Task.sleep(for: .milliseconds(60)); release.signal()
-        await first.value; await watch.value; await user.value
+        try await Task.sleep(for: .milliseconds(60)); for _ in 0..<slots { release.signal() }
+        for task in held { await task.value }; await watch.value; await user.value
         XCTAssertEqual(order.values, ["user", "watch"])
     }
 }

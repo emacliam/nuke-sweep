@@ -548,9 +548,13 @@ struct FullCheckCard: View {
                     DisclosureGroup("Automatic cleanup preview · \(items.count) locations · \(bytes(items.reduce(0) { $0 + $1.size }))") {
                         Text("These locations passed review. Files were left in place.")
                             .foregroundStyle(Theme.secondary)
-                        ForEach(items) { item in
-                            Text(verbatim: item.url.path).textSelection(.enabled)
-                        }
+                        ScrollView {
+                            LazyVStack(alignment: .leading, spacing: 4) {
+                                ForEach(items) { item in
+                                    Text(verbatim: item.url.path).textSelection(.enabled)
+                                }
+                            }
+                        }.frame(maxHeight: 200)
                     }.font(.system(size: 11))
                 }
                 if let cleaned = model.fullCheck.autoCleaned, cleaned.movedCount > 0 {

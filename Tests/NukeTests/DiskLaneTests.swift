@@ -26,9 +26,21 @@ final class DiskLaneTests: XCTestCase {
         let bulk = Task { await DiskWork.run("Bulk", cancellation: a) { work(a) } }
         let listing = Task { await DiskWork.run("Listing", lane: .interactive, cancellation: b) { work(b) } }
         await fulfillment(of: [entered], timeout: 2)
+        // Fill the rest of the bulk lane so the next job really waits.
+        let fillers = (1..<DiskWork.width[.bulk]!).map { _ in ScanCancellation() }
+        let filling = expectation(description: "fillers"); filling.expectedFulfillmentCount = max(1, fillers.count)
+        if fillers.isEmpty { filling.fulfill() }
+        let held = fillers.map { token in Task { await DiskWork.run("Filler", cancellation: token) { () -> Bool in
+            filling.fulfill()
+            let deadline = Date().addingTimeInterval(2)
+            while !token.cancelled && Date() < deadline { Thread.sleep(forTimeInterval: 0.001) }
+            return token.cancelled
+        } } }
+        await fulfillment(of: [filling], timeout: 2)
         let pending = Task { await DiskWork.run("Queued", cancellation: queued) { queued.cancelled } }
         try await Task.sleep(for: .milliseconds(20)); DiskWork.cancelAll()
         let results = await (bulk.value, listing.value, pending.value)
         XCTAssertTrue(results.0); XCTAssertTrue(results.1); XCTAssertTrue(results.2)
+        for task in held { _ = await task.value }
     }
 }
