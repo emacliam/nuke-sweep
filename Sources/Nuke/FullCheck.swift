@@ -278,7 +278,31 @@ extension AppModel {
     func refreshDiskAccess() {
         Task {
             let status = await Task.detached(priority: .utility) { DiskAccessProbe.status() }.value
-            if diskAccess != status { diskAccess = status }
+            guard diskAccess != status else { return }
+            let gained = diskAccess == .missing && status == .granted
+            diskAccess = status
+            Log.access.notice("Full Disk Access now: \(String(describing: status), privacy: .public)")
+            // Places that were unreadable are readable now. Look again at once
+            // rather than leaving a lower-bound answer on screen.
+            if gained, fullCheck.finished != nil, !fullCheck.running { startFullCheck() }
+        }
+        watchDiskAccessWhileMissing()
+    }
+
+    /// System Settings changes the permission while this app sits in the
+    /// background, so waiting for it to become active again is not enough.
+    /// While access is missing, look every two seconds; stop once it is granted.
+    private func watchDiskAccessWhileMissing() {
+        guard accessWatch == nil else { return }
+        accessWatch = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(2))
+                guard let self else { return }
+                if self.diskAccess == .granted { break }
+                let status = await Task.detached(priority: .utility) { DiskAccessProbe.status() }.value
+                if status != self.diskAccess { self.refreshDiskAccess() }
+            }
+            self?.accessWatch = nil
         }
     }
 
@@ -401,7 +425,10 @@ struct FullCheckCard: View {
             }
         }
         .onAppear { model.refreshDiskAccess() }
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in model.refreshDiskAccess() }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            model.refreshDiskAccess()
+            model.pruneMovedPersonalFiles()
+        }
     }
 
     private var invitation: some View {
@@ -423,7 +450,8 @@ struct FullCheckCard: View {
             if model.diskAccess == .missing { AccessStep() }
             HStack {
                 Spacer()
-                Button(model.diskAccess == .missing ? "Check without it" : "Check this Mac") { model.startFullCheck() }
+                let checkTitle: LocalizedStringKey = model.diskAccess == .missing ? "Check without it" : "Check this Mac"
+                Button(checkTitle) { model.startFullCheck() }
                     .buttonStyle(PrimaryButton()).disabled(!model.canStartFullCheck)
             }
         }
@@ -467,7 +495,10 @@ struct FullCheckCard: View {
         let totals = report.totals
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .firstTextBaseline) {
-                Text(totals.candidateBytes > 0 ? "Here is what you can clear" : (model.personal.report?.totalBytes ?? 0) > 0 ? "Nothing rebuilds itself here, but your own files are worth a look" : "Nothing worth clearing was found")
+                let title: LocalizedStringKey = totals.candidateBytes > 0 ? "Here is what you can clear"
+                    : (model.personal.report?.totalBytes ?? 0) > 0 ? "Nothing rebuilds itself here, but your own files are worth a look"
+                    : "Nothing worth clearing was found"
+                Text(title)
                     .font(.system(size: 17, weight: .semibold))
                 Spacer()
                 Button("Check again") { model.startFullCheck() }.buttonStyle(QuietButton()).disabled(!model.canStartFullCheck)
@@ -534,14 +565,13 @@ struct FullCheckCard: View {
                 if let personal = model.personal.report, personal.totalBytes > 0 {
                     HStack(spacing: 8) {
                         Image(systemName: "person.crop.square").font(.system(size: 11)).foregroundStyle(Theme.orange)
-                        Text("Also found: \(bytes(personal.totalBytes)) in \(personal.findings.count) of your own files, listed below. None of it rebuilds itself, so it is not part of these figures.")
+                        Text("Also found: \(bytes(personal.totalBytes)) in \(personal.findings.count) of your own files. None of it rebuilds itself, so it is not part of these figures.")
                             .font(.system(size: 11)).foregroundStyle(Theme.secondary).fixedSize(horizontal: false, vertical: true)
+                        Button("Go through them") { model.showPersonalFiles() }
+                            .buttonStyle(.plain).font(.system(size: 11, weight: .medium)).foregroundStyle(Theme.orange)
                     }
                 }
-                if totals.inUseCount > 0 {
-                    Text("\(totals.inUseCount) of these are in use right now and are left out of the first figure.")
-                        .font(.system(size: 11)).foregroundStyle(Theme.secondary)
-                }
+                if totals.inUseCount > 0 { InUseLine(items: report.inUse, count: totals.inUseCount) }
                 Toggle("Check weekly and tell me when this has grown", isOn: Binding(
                     get: { model.fullCheckWeekly },
                     set: { model.setWeeklyCheck($0) }
@@ -663,5 +693,37 @@ enum GrowthDigest {
         let head = String(format: String(localized: "Grew %@ since %@."), bytes(delta), since)
         guard regenerable >= notable / 5 else { return head }
         return head + " " + String(format: String(localized: "%@ of that regenerates by itself."), bytes(min(regenerable, delta)))
+    }
+}
+
+/// Names what is in use instead of only counting it, and says what to do.
+struct InUseLine: View {
+    @Environment(AppModel.self) var model
+    let items: [DiskItem]
+    let count: Int
+    @State private var open = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(spacing: 8) {
+                Text("\(count) of these are in use right now and are left out of the first figure.")
+                    .font(.system(size: 11)).foregroundStyle(Theme.secondary)
+                Button(open ? "Hide" : "Which ones?") { open.toggle() }
+                    .buttonStyle(.plain).font(.system(size: 11, weight: .medium)).foregroundStyle(Theme.orange)
+            }
+            if open {
+                ForEach(items.prefix(12), id: \.id) { item in
+                    HStack(spacing: 8) {
+                        Text(verbatim: bytes(item.size)).font(.system(size: 11)).monospacedDigit().foregroundStyle(Theme.secondary).frame(width: 70, alignment: .trailing)
+                        Text(verbatim: FullCheckGrower(path: item.url.path, delta: 0, isNew: false).name).font(.system(size: 11)).lineLimit(1).truncationMode(.middle)
+                        Spacer(minLength: 0)
+                        Button("Show") { model.reveal(item.url) }
+                            .buttonStyle(.plain).font(.system(size: 10, weight: .medium)).foregroundStyle(Theme.secondary).help(item.url.path)
+                    }
+                }
+                Text("Quit the app, build or dev server using them, then check again to include them.")
+                    .font(.system(size: 10)).foregroundStyle(Theme.secondary)
+            }
+        }
     }
 }

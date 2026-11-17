@@ -100,6 +100,8 @@ enum StorageTriage {
         /// no caution of any kind. A person can weigh a caution; a timer cannot,
         /// so anything that would have prompted a second look is left for review.
         var unattended: [DiskItem] = []
+        /// Candidates something is using right now, largest first.
+        var inUse: [DiskItem] = []
         var isEmpty: Bool { findings.isEmpty }
     }
 
@@ -165,6 +167,7 @@ enum StorageTriage {
         report.regenerable = Array(ranked
             .filter { $0.rebuild.effort <= .slow && $0.driver != .inUse && $0.driver != .unverified }
             .map(\.item).sorted { $0.size > $1.size }.prefix(200))
+        report.inUse = Array(ranked.filter { $0.driver == .inUse }.map(\.item).sorted { $0.size > $1.size }.prefix(50))
         report.unattended = Array(ranked
             .filter { finding in
                 guard finding.rebuild.effort <= .slow, !finding.needsPerson else { return false }

@@ -16,6 +16,12 @@ struct MountedVolume: Identifiable, Equatable, Sendable {
 }
 
 enum MountedVolumeService {
+    static func connectedIdentity(_ url: URL) -> FileIdentity? {
+        let root = URL(fileURLWithPath: url.path).standardizedFileURL
+        guard (try? root.resourceValues(forKeys: [.volumeURLKey]).volume?.standardizedFileURL) == root else { return nil }
+        return FileIdentity.read(root)
+    }
+
     static func list() -> [MountedVolume] {
         let keys: Set<URLResourceKey> = [
             .volumeNameKey,

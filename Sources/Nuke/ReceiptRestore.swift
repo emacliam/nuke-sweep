@@ -38,7 +38,7 @@ enum ReceiptRestore {
 
     private static func openParent(_ item: URL, expected: FileIdentity) throws -> Int32 {
         let parent = item.deletingLastPathComponent()
-        let descriptor = open(parent.path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+        let descriptor = openDirectory(parent)
         guard descriptor >= 0 else { throw Failure("A parent folder is missing or inaccessible. Check the original location and Trash in Finder.") }
         var info = stat()
         guard fstat(descriptor, &info) == 0, identity(info) == expected else {
@@ -46,6 +46,10 @@ enum ReceiptRestore {
             throw Failure("A parent folder has changed since cleanup. Choose the restore location in Finder.")
         }
         return descriptor
+    }
+
+    static func openDirectory(_ directory: URL) -> Int32 {
+        open(directory.path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
     }
 
     private static func identity(_ info: stat) -> FileIdentity {

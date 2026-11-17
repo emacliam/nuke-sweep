@@ -44,10 +44,25 @@ enum RestorePreflight {
     /// `selection` is the whole batch, because one item's restorability depends on
     /// the others: trashing a folder and something inside it in the same pass
     /// leaves the inner item with nowhere to go back to.
-    static func inspect(_ selection: [DiskItem], token: ScanCancellation? = nil, writable: (URL) -> Bool = isWritable) -> Report {
+    static func inspect(_ selection: [DiskItem], token: ScanCancellation? = nil, systemTrash: URL? = nil,
+                        writable: (URL) -> Bool = isWritable) -> Report {
         let paths = Set(selection.map { $0.url.standardizedFileURL.path })
+        // Other volumes may use their own Trash. The home Trash probe can only
+        // inform the outlook for items on its volume.
+        let trashVolume = systemTrash.flatMap(FileIdentity.read)?.device
+            ?? systemTrash.flatMap { FileIdentity.read($0.deletingLastPathComponent())?.device }
+        let trashReadable = systemTrash.map { url in
+            let descriptor = ReceiptRestore.openDirectory(url)
+            guard descriptor >= 0 else { return false }
+            close(descriptor)
+            return true
+        } ?? true
         let findings = selection.prefix(while: { _ in token?.cancelled != true }).map { item -> Finding in
-            Finding(item: item, outlook: outlook(for: item, inBatch: paths, writable: writable))
+            if !trashReadable, let trashVolume, item.identity?.device == trashVolume {
+                return Finding(item: item, outlook: .manualOnly(reason: String(localized:
+                    "Nuke Sweep could not open Trash. Use Finder to restore this item unless you grant access.")))
+            }
+            return Finding(item: item, outlook: outlook(for: item, inBatch: paths, writable: writable))
         }
         return Report(findings: findings)
     }

@@ -155,5 +155,10 @@ struct NukeApp: App {
         view.cacheDisplay(in: view.bounds, to: rep)
         if let data = rep.representation(using: .png, properties: [:]) { try? data.write(to: URL(fileURLWithPath: "/tmp/nuke-" + name + ".png")) }
     }
-    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { !UserDefaults.standard.bool(forKey: "nuke.menuEnabled") }
+    /// The menu-bar item is on unless switched off, so closing the window keeps
+    /// the app there. This read the setting with `bool(forKey:)`, which is false
+    /// when it was never written, so a default install quit on close.
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        !(UserDefaults.standard.object(forKey: "nuke.menuEnabled") as? Bool ?? true)
+    }
 }

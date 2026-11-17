@@ -1,8 +1,43 @@
+import Darwin
 import Foundation
 import XCTest
 @testable import Nuke
 
 final class ReceiptRestoreTests: XCTestCase {
+    func testReviewedMoveThroughSystemTrashAndRestore() throws {
+        try XCTSkipUnless(ProcessInfo.processInfo.environment["NUKE_TEST_SYSTEM_TRASH"] == "1",
+                          "Opt in to exercising macOS Trash with a disposable fixture.")
+        let manager = FileManager.default
+        let trashDirectory = manager.homeDirectoryForCurrentUser.appendingPathComponent(".Trash")
+        let trashDescriptor = open(trashDirectory.path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+        try XCTSkipUnless(trashDescriptor >= 0, "The test process needs access to open the macOS Trash directory.")
+        close(trashDescriptor)
+        let buildDirectory = URL(fileURLWithPath: manager.currentDirectoryPath)
+            .appendingPathComponent(".build", isDirectory: true).resolvingSymlinksInPath()
+        let root = buildDirectory.appendingPathComponent("nuke-system-trash-" + UUID().uuidString)
+        let original = root.appendingPathComponent(root.lastPathComponent + ".bin")
+        try manager.createDirectory(at: root, withIntermediateDirectories: false)
+        defer {
+            if manager.fileExists(atPath: original.path) { try? manager.removeItem(at: original) }
+            _ = rmdir(root.path)
+        }
+        let payload = Data([1, 2, 3])
+        try payload.write(to: original)
+        let scope = CleanupScope(root: root, identity: try XCTUnwrap(FileIdentity.read(root)))
+        let measured = try XCTUnwrap(InventoryService.measure(original))
+        let preparation = ReviewPlanner.prepare([measured], scopes: [scope], openFiles: { [] })
+        let reviewed = try XCTUnwrap(preparation.items.first, preparation.failures.joined(separator: "\n"))
+        let receipt = ReceiptService.moveToTrash([reviewed], proofs: [], runningAppPaths: [], allowedRoots: [scope])
+        let moved = try XCTUnwrap(receipt.items.first)
+        XCTAssertTrue(moved.success, moved.outcome)
+        let trashed = URL(fileURLWithPath: try XCTUnwrap(moved.trashPath, moved.outcome))
+        XCTAssertFalse(manager.fileExists(atPath: original.path))
+        XCTAssertEqual(try Data(contentsOf: trashed), payload)
+        XCTAssertNoThrow(try ReceiptRestore.restore(moved), "Restore the system Trash receipt")
+        XCTAssertEqual(try Data(contentsOf: original), payload)
+        XCTAssertFalse(manager.fileExists(atPath: trashed.path))
+    }
+
     func testReviewedMoveRecordsRestorableEvidence() throws {
         let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
             .appendingPathComponent(".build/restore-" + UUID().uuidString)
