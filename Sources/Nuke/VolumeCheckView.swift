@@ -83,7 +83,7 @@ struct VolumeCheckView: View {
         token = cancellation
         Task {
             let connected = await DiskWork.run("Checking volume connection", cancellation: cancellation) {
-                FileIdentity.read(volume.url) == inspectedIdentity
+                MountedVolumeService.connectedIdentity(volume.url) == inspectedIdentity
             }
             token = nil
             guard !cancellation.cancelled else { return }
@@ -104,11 +104,9 @@ struct VolumeCheckView: View {
         unavailable = false
         Task {
             let checked = await DiskWork.run("Checking " + volume.name, cancellation: cancellation) { () -> (ScanResult, FileIdentity)? in
-                guard let identity = FileIdentity.read(volume.url),
-                      (try? volume.url.resourceValues(forKeys: [.volumeURLKey]).volume?.standardizedFileURL) == volume.url.standardizedFileURL
-                else { return nil }
+                guard let identity = MountedVolumeService.connectedIdentity(volume.url) else { return nil }
                 let result = DiskScanner.scan(volume.url, cancellation: cancellation)
-                guard FileIdentity.read(volume.url) == identity else { return nil }
+                guard MountedVolumeService.connectedIdentity(volume.url) == identity else { return nil }
                 return (result, identity)
             }
             result = checked?.0

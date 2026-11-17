@@ -11,3 +11,9 @@ The boot volume is listed first, then internal volumes, then external volumes by
 Nothing is selected or cleaned when choosing a volume. The menu is only a navigation shortcut.
 
 Tests verify that the mounted-volume list is non-empty, contains the root volume, exposes valid capacity values, and sorts the root first.
+
+Cleanup also offers **Check an external or network volume**. It reports the
+largest measured folders and checks the mounted volume’s identity before
+scanning, after scanning, and before opening it in Files. If macOS still shows
+an ordinary folder at the former mount path after ejecting the volume, the
+app asks the user to refresh the volume list.

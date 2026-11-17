@@ -12,13 +12,7 @@ cp Resources/PrivacyInfo.xcprivacy "$APP/Contents/Resources/"
 # Bundle.main finds them. SwiftUI's Text/Button/Label take a LocalizedStringKey,
 # so every literal in a view localizes from here with no call-site change.
 # Keys missing from a translation fall back to the English source text.
-for LPROJ in Resources/*.lproj(N); do
-  [[ -d "$LPROJ" ]] || continue
-  mkdir -p "$APP/Contents/Resources/${LPROJ:t}"
-  for resource in "$LPROJ"/*.strings(N) "$LPROJ"/*.stringsdict(N); do
-    cp "$resource" "$APP/Contents/Resources/${LPROJ:t}/"
-  done
-done
+/bin/zsh ./scripts/embed-localizations.sh "$APP"
 
 swift scripts/make-icon.swift "$PWD/.build"
 python3 scripts/package-icon.py .build/NukeSweep.iconset "$APP/Contents/Resources/Nuke.icns"

@@ -1,9 +1,9 @@
 # Localization
 
 Nuke Sweep ships English (`en`) and a partial Spanish (`es`) catalogue. The
-Spanish one is deliberately partial: it exists to prove the pipeline end to end
-and to keep it from silently breaking. Keys without a translation fall back to
-the English source text, so a partial catalogue is always safe to ship.
+Spanish catalogue covers first-run setup, the main storage check, Personal
+Files, and the main labels in Trash review and receipts. Other keys fall back
+to the English source text.
 
 ## How it works
 
@@ -82,9 +82,9 @@ fragments. `StorageView.partialScanNotice` is the worked example.
    `ContentView` and `InsightViews`; run `scripts/extract-strings.py` to list the
    current count. Prose where word order matters should be converted first —
    label-plus-value pairs degrade more gracefully.
-2. **Spanish is a sample, not a translation.** Roughly 60 of 750 keys. It exists
-   to keep the pipeline honest and is verified in CI by nothing — check it by
-   hand with `-AppleLanguages '(es)'` after changing the catalogue.
+2. **Spanish coverage is partial.** The catalogue has 220 keys. Use
+   `-AppleLanguages '(es)'` to check translated flows and identify English
+   fallback in the remaining screens.
 3. **No pseudolocalization pass.** Nothing checks that a longer translation fits;
    German and Finnish strings routinely run 30-40% longer than English.
 4. **Date and byte formatting** goes through `ByteCountFormatter` and

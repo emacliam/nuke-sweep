@@ -69,10 +69,6 @@ struct FindSpaceView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             CleanupStorageSummary()
-            LocalSnapshotsView()
-            LargeAppDataView()
-            VolumeCheckView()
-            AppLeftoversReportView()
             if features.monitor.monitorEnabled, !features.monitor.monitorPaused,
                let days = features.monitor.forecastDays {
                 Text("At this rate, your disk could be full in about \(days) days.")
@@ -99,9 +95,28 @@ struct FindSpaceView: View {
                         }
                 }
             }
-            if hasPass { lastPassHeader }
-            ReclaimSummaryPanel()
-            if hasPass {
+            // The check and the personal list are the page. Everything else is
+            // reference material, kept one click away so the answer is not
+            // buried under it.
+            DisclosureGroup(isExpanded: Binding(get: { model.cleanupDetailsOpen }, set: { model.cleanupDetailsOpen = $0 })) {
+                VStack(alignment: .leading, spacing: 18) { details }.padding(.top, 12)
+            } label: {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("More places and detail").font(.system(size: 13, weight: .semibold))
+                    Text("Snapshots, large app data, other drives, app leftovers, and every location by size")
+                        .font(.system(size: 11)).foregroundStyle(Theme.secondary)
+                }
+            }
+        }
+    }
+    @ViewBuilder var details: some View {
+        LocalSnapshotsView()
+        LargeAppDataView()
+        VolumeCheckView()
+        AppLeftoversReportView()
+        if hasPass { lastPassHeader }
+        ReclaimSummaryPanel()
+        if hasPass {
                 TriagePanel(store: model.triage)
                 categories
                 trashSection
@@ -112,7 +127,6 @@ struct FindSpaceView: View {
                 if model.quick.entries.isEmpty {
                     EmptyPanel(symbol: "checkmark.circle", title: "No application cache candidates measured", detail: "Nothing was found in ~/Library/Caches within this bounded pass. Developer caches have their own tab. Trash is reported above and is never inferred empty from a denied scan.")
                 }
-            }
         }
     }
     var lastPassHeader: some View {

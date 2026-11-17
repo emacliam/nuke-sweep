@@ -49,6 +49,8 @@ import UserNotifications
     var fullCheck = FullCheckState()
     var personal = PersonalFilesState()
     var scrollToPersonal = false
+    /// Reference sections under the check. Closed by default; kept for the session.
+    var cleanupDetailsOpen = false
     @ObservationIgnored var accessWatch: Task<Void, Never>?
     @ObservationIgnored var personalToken = ScanCancellation()
     /// Mirrors the stored preference so the toggle redraws when it changes.
