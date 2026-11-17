@@ -31,6 +31,7 @@ struct NukeApp: App {
     var body: some Scene {
         Window("Nuke Sweep", id: "main") {
             ContentView().environment(model).environment(model.features).environment(model.features.monitor).environment(model.ai).environment(model.scheduledScans).frame(minWidth: 980, minHeight: 650)
+                .disclosureGroupStyle(TitleTogglesDisclosure())
                 .preferredColorScheme(appearance == "dark" ? .dark : appearance == "light" ? .light : nil)
         }
         .windowStyle(.hiddenTitleBar).defaultSize(width: 1180, height: 790)
@@ -160,5 +161,28 @@ struct NukeApp: App {
     /// when it was never written, so a default install quit on close.
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         !(UserDefaults.standard.object(forKey: "nuke.menuEnabled") as? Bool ?? true)
+    }
+}
+
+/// Disclosure rows that open and close when the title is clicked, not just the chevron.
+struct TitleTogglesDisclosure: DisclosureGroupStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Button {
+                withAnimation(.easeOut(duration: 0.18)) { configuration.isExpanded.toggle() }
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 10, weight: .semibold))
+                        .rotationEffect(.degrees(configuration.isExpanded ? 90 : 0))
+                    configuration.label
+                    Spacer(minLength: 0)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityValue(configuration.isExpanded ? "Expanded" : "Collapsed")
+            if configuration.isExpanded { configuration.content }
+        }
     }
 }
