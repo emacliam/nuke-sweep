@@ -21,9 +21,8 @@ struct DiskJobSnapshot: Identifiable, Sendable {
     func stop() { DiskWork.cancelAll() }
     func stop(_ id: UUID) { DiskWork.cancel(id) }
 }
-/// Bulk traversal stays serialized; short interactive listings have their own
-/// bounded worker so an active scan cannot hold navigation hostage. At most two
-/// disk jobs run simultaneously. Background priority affects pending bulk work.
+/// Two lanes, each running a few jobs side by side: bulk scans, and short
+/// interactive work that must never wait behind a scan. Background priority affects pending bulk work.
 enum DiskWork {
     enum Priority: Int { case background = 0, foreground = 1 }
     enum Lane: Hashable { case bulk, interactive }
@@ -53,8 +52,8 @@ enum DiskWork {
         init(id: UUID) { self.id = id }
     }
     private static let lock = NSLock()
-    private static let bulkQueue = DispatchQueue(label: "local.nuke.disk.bulk", qos: .utility)
-    private static let interactiveQueue = DispatchQueue(label: "local.nuke.disk.interactive", qos: .userInitiated)
+    private static let bulkQueue = DispatchQueue(label: "local.nuke.disk.bulk", qos: .utility, attributes: .concurrent)
+    private static let interactiveQueue = DispatchQueue(label: "local.nuke.disk.interactive", qos: .userInitiated, attributes: .concurrent)
     private static let threadKey = "local.nuke.disk.job"
     /// At most five progress ticks per second per worker; progress is cosmetic, scans are not.
     private static let reportIntervalNS: UInt64 = 200_000_000
@@ -62,21 +61,26 @@ enum DiskWork {
     // inside a lock/unlock pair, which the compiler cannot see through. The
     // unsafe opt-out records that invariant rather than hiding its absence.
     nonisolated(unsafe) private static var pending: [Job] = []
-    nonisolated(unsafe) private static var active: [Lane: Job] = [:]
+    nonisolated(unsafe) private static var active: [Job] = []
+    /// How many jobs each lane runs at once. One big scan per lane kept every
+    /// other request waiting; a few side by side keeps the app responsive
+    /// without thrashing the disk.
+    static let width: [Lane: Int] = [.bulk: 2, .interactive: 4]
     nonisolated(unsafe) private static var progress: [UUID: Progress] = [:]
 
     static func cancelActiveInspection() {
-        lock.lock(); let tokens = active.values.compactMap(\.cancellation); lock.unlock()
+        lock.lock(); let tokens = active.compactMap(\.cancellation); lock.unlock()
         tokens.forEach { $0.cancel() }
         lock.lock(); publish(); lock.unlock()
     }
+    /// Jobs that cannot be stopped: they have no cancellation token.
     static func cancelAll() {
-        lock.lock(); let tokens = (pending + Array(active.values)).compactMap(\.cancellation); lock.unlock()
+        lock.lock(); let tokens = (pending + active).compactMap(\.cancellation); lock.unlock()
         tokens.forEach { $0.cancel() }
         lock.lock(); publish(); lock.unlock()
     }
     static func cancel(_ id: UUID) {
-        lock.lock(); let token = (pending + Array(active.values)).first { $0.id == id }?.cancellation; lock.unlock()
+        lock.lock(); let token = (pending + active).first { $0.id == id }?.cancellation; lock.unlock()
         token?.cancel()
         lock.lock(); publish(); lock.unlock()
     }
@@ -98,27 +102,47 @@ enum DiskWork {
     static func run<T: Sendable>(_ label: String = "Disk inspection", priority: Priority = .foreground, lane: Lane = .bulk, cancellation: ScanCancellation? = nil, _ operation: @escaping @Sendable () -> T) async -> T {
         await withCheckedContinuation { continuation in
             let job = Job(label: label, lane: lane, priority: priority, cancellation: cancellation, operation: { continuation.resume(returning: operation()) })
-            lock.lock(); pending.append(job); schedule(.interactive); schedule(.bulk); publish(); lock.unlock()
+            lock.lock()
+            // Opening a page again asks for the same answer again. The older
+            // request still waiting is superseded rather than run twice; its
+            // caller sees a cancelled result, as it would after Stop.
+            if cancellation != nil {
+                for old in pending where old.label == label && old.lane == lane && old.cancellation != nil { old.cancellation?.cancel() }
+            }
+            pending.append(job); schedule(.interactive); schedule(.bulk); publish(); lock.unlock()
         }
     }
-    /// Caller holds lock. Each lane is FIFO within priority, with one active job.
+    /// Caller holds lock. Each lane is FIFO within priority, up to `width` jobs at once.
     private static func schedule(_ lane: Lane) {
-        guard active[lane] == nil else { return }
+        // A stopped job returns at once, so it never waits for a free slot.
+        while let index = pending.firstIndex(where: { $0.lane == lane && $0.cancellation?.cancelled == true }) {
+            start(pending.remove(at: index))
+        }
+        while active.filter({ $0.lane == lane }).count < width[lane, default: 1], let job = next(lane) { start(job) }
+    }
+    /// Caller holds lock.
+    private static func next(_ lane: Lane) -> Job? {
         let indices = pending.indices.filter { pending[$0].lane == lane }
-        guard let index = indices.first(where: { pending[$0].priority == .foreground }) ?? indices.first else { return }
-        let job = pending.remove(at: index)
-        active[lane] = job; progress[job.id] = Progress()
+        // A stopped job returns at once, so it goes first: Stop should empty the
+        // queue now, not after everything ahead of it has finished.
+        guard let index = indices.first(where: { pending[$0].priority == .foreground }) ?? indices.first else { return nil }
+        return pending.remove(at: index)
+    }
+    /// Caller holds lock.
+    private static func start(_ job: Job) {
+        let lane = job.lane
+        active.append(job); progress[job.id] = Progress()
         let queue = lane == .interactive ? interactiveQueue : bulkQueue
         queue.async {
             Thread.current.threadDictionary[threadKey] = JobHandle(id: job.id)
             job.operation()
             Thread.current.threadDictionary.removeObject(forKey: threadKey)
-            lock.lock(); active[lane] = nil; progress[job.id] = nil; schedule(lane); publish(); lock.unlock()
+            lock.lock(); active.removeAll { $0.id == job.id }; progress[job.id] = nil; schedule(lane); publish(); lock.unlock()
         }
     }
     /// Caller holds lock; publish immutable snapshots in scheduler order.
     private static func publish() {
-        let running = [active[.interactive], active[.bulk]].compactMap { $0 }
+        let running = active.filter { $0.lane == .interactive } + active.filter { $0.lane == .bulk }
         let jobs = (running + pending).map { job in
             let value = progress[job.id]
             return DiskJobSnapshot(id: job.id, label: job.label, state: job.cancellation?.cancelled == true ? "Stopping" : value == nil ? "Queued" : "Running", started: value?.started, path: value?.path ?? "", visited: value?.visited ?? 0, canStop: job.cancellation != nil && job.cancellation?.cancelled != true)

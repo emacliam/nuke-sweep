@@ -94,6 +94,8 @@ Expected: `accepted`, `source=Notarized Developer ID`.
 
 Run `./scripts/verify-release.sh --strict path/to/Nuke-Sweep-VERSION.dmg`. It mounts the DMG read-only and verifies the embedded app and widget, matching Developer ID teams, Gatekeeper acceptance, stapled tickets, and the adjacent SHA-256 file. A checksum from a release host can also be supplied as the second path.
 
+For Sparkle releases, the verifier checks that the app pins the production feed and expected public key, requires a signed feed, and verifies updates before extraction. If you intentionally build with a rotated public key, supply the same `NUKE_SPARKLE_PUBLIC_KEY` when verifying the release.
+
 To stage a new version separately, set `NUKE_APP_PATH`, `NUKE_VERSION`, and `NUKE_BUILD_NUMBER` before building the app. Keep `NUKE_APP_PATH` set and use `NUKE_DMG_PATH` for the new DMG. The DMG script writes a sibling checksum and refuses to overwrite either output.
 
 ## Upgrading from 0.8.x to 0.9.0

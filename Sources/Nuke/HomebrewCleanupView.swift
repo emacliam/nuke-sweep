@@ -67,7 +67,7 @@ struct HomebrewCleanupView: View {
         preview = nil
         outcome = nil
         Task {
-            let result = await DiskWork.run("Previewing Homebrew cleanup") {
+            let result = await DiskWork.run("Previewing Homebrew cleanup", lane: .interactive) {
                 HomebrewCleanup.executable().map { ($0, HomebrewCleanup.run($0, preview: true)) }
             }
             busy = false

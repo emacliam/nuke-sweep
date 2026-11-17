@@ -48,6 +48,10 @@ import UserNotifications
     /// The one-button "check this Mac" pass. See `FullCheck.swift`.
     var fullCheck = FullCheckState()
     var personal = PersonalFilesState()
+    var scrollToPersonal = false
+    /// Reference sections under the check. Closed by default; kept for the session.
+    var cleanupDetailsOpen = false
+    @ObservationIgnored var accessWatch: Task<Void, Never>?
     @ObservationIgnored var personalToken = ScanCancellation()
     /// Mirrors the stored preference so the toggle redraws when it changes.
     var fullCheckWeekly = FullCheckHistory.weeklyEnabled
@@ -552,7 +556,7 @@ import UserNotifications
         let running = NSWorkspace.shared.runningApplications.compactMap { $0.bundleURL?.path }
         Log.cleanup.notice("Executing reviewed cleanup: items=\(items.count, privacy: .public) bytes=\(items.reduce(0) { $0 + $1.size }, privacy: .public)")
         Task {
-            let receipt = await DiskWork.run { ReceiptService.moveToTrash(items, proofs: proofs, runningAppPaths: running, allowedRoots: allowedRoots, developerScopes: developerScopes) }
+            let receipt = await DiskWork.run("Moving to Trash", lane: .interactive) { ReceiptService.moveToTrash(items, proofs: proofs, runningAppPaths: running, allowedRoots: allowedRoots, developerScopes: developerScopes) }
             let moved = receipt.items.filter(\.success).count
             Log.cleanup.notice("Cleanup finished: moved=\(moved, privacy: .public) failed=\(receipt.items.count - moved, privacy: .public)")
             features.receipt(receipt)

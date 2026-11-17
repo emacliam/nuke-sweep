@@ -75,11 +75,12 @@ WIDGET="$APP/Contents/PlugIns/NukeWidgets.appex"
 check "mounted app signature" codesign --verify --deep --strict "$APP"
 check "mounted widget signature" codesign --verify --strict "$WIDGET"
 
-check_bundle_id() {
-  [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$1")" == "$2" ]]
+check_plist_value() {
+  [[ "$(/usr/libexec/PlistBuddy -c "Print :$2" "$1")" == "$3" ]]
 }
-check "production app bundle ID" check_bundle_id "$APP/Contents/Info.plist" com.zyncraft.nukesweep
-check "production widget bundle ID" check_bundle_id "$WIDGET/Contents/Info.plist" com.zyncraft.nukesweep.widgets
+app_info="$APP/Contents/Info.plist"
+check "production app bundle ID" check_plist_value "$app_info" CFBundleIdentifier com.zyncraft.nukesweep
+check "production widget bundle ID" check_plist_value "$WIDGET/Contents/Info.plist" CFBundleIdentifier com.zyncraft.nukesweep.widgets
 # A widget linked to start at `main` signs and notarizes cleanly, then traps the
 # first time the system launches it. Only the entry symbol tells them apart.
 if nm -u "$WIDGET/Contents/MacOS/NukeWidgets" 2>/dev/null | grep -q '_NSExtensionMain'; then
@@ -90,19 +91,24 @@ else
 fi
 check "mounted app Gatekeeper assessment" spctl -a -vv "$APP"
 check "mounted app notarization ticket" xcrun stapler validate "$APP"
-check "mounted app architecture" lipo -archs "$APP/Contents/MacOS/Nuke"
-if /usr/libexec/PlistBuddy -c 'Print :SUFeedURL' "$APP/Contents/Info.plist" >/dev/null 2>&1; then
+check "mounted app Apple silicon architecture" lipo -verify_arch arm64 "$APP/Contents/MacOS/Nuke"
+build_number=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$app_info")
+if [[ "$build_number" == <12-> ]] || /usr/libexec/PlistBuddy -c 'Print :SUFeedURL' "$app_info" >/dev/null 2>&1; then
+  expected_key="${NUKE_SPARKLE_PUBLIC_KEY:-AZnxvY+2gXA12ksjhELz5TqmfTBgT7I7f1y8anmlPjY=}"
   check "Sparkle framework signature" codesign --verify --deep --strict "$APP/Contents/Frameworks/Sparkle.framework"
-  check "Sparkle public key" /usr/libexec/PlistBuddy -c 'Print :SUPublicEDKey' "$APP/Contents/Info.plist"
+  check "Sparkle production feed" check_plist_value "$app_info" SUFeedURL https://sweep.zyncraft.com/updates/appcast.xml
+  check "Sparkle public key" check_plist_value "$app_info" SUPublicEDKey "$expected_key"
+  check "Sparkle requires a signed feed" check_plist_value "$app_info" SURequireSignedFeed true
+  check "Sparkle verifies updates before extraction" check_plist_value "$app_info" SUVerifyUpdateBeforeExtraction true
 fi
 
 dmg_team=$(developer_id_team "$DMG") || dmg_team=""
 app_team=$(developer_id_team "$APP") || app_team=""
 widget_team=$(developer_id_team "$WIDGET") || widget_team=""
-if [[ -n "$app_team" && "$dmg_team" == "$app_team" && "$widget_team" == "$app_team" ]]; then
+if [[ "$app_team" == MS3CH542QN && "$dmg_team" == "$app_team" && "$widget_team" == "$app_team" ]]; then
   echo "ok   Developer ID team matches across DMG, app and widget ($app_team)"
 else
-  echo "FAIL Developer ID team is missing or inconsistent across DMG, app and widget"
+  echo "FAIL Expected Developer ID team MS3CH542QN on the DMG, app and widget"
   problems=$((problems+1))
 fi
 

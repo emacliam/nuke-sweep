@@ -239,8 +239,8 @@ struct TrashReview: View {
     @Environment(AISettings.self) var ai
     @Environment(\.dismiss) var dismiss
     @State private var aiTarget: AIExplainTarget?
-    @State private var blockedExpanded = true
-    @State private var acknowledged = false
+    @State private var blockedExpanded = false
+    @State private var restoreExpanded = false
     @State private var openHandlesReviewed = false
     @State private var restoreReport: RestorePreflight.Report?
     var body: some View {
@@ -268,19 +268,18 @@ struct TrashReview: View {
                                     else { model.pendingTrashSelection.remove(item.id) }
                                 }
                             )).toggleStyle(.checkbox).font(.system(size: 13, weight: .medium))
-                            Text(item.url.path).font(.system(size: 10, design: .monospaced)).foregroundStyle(Theme.secondary).textSelection(.enabled)
                             if let evidence = model.pendingEvidence[item.id] {
                                 let assessment = CandidateAssessment.make(item, evidence: evidence)
-                                Text(assessment.state.title)
-                                    .font(.system(size: 11, weight: .semibold))
-                                    .foregroundStyle(assessment.state == .needsInspection ? Theme.warning : Theme.ink)
-                                Text(evidence.label + " · " + evidence.detail)
-                                    .font(.system(size: 10, weight: .medium))
-                                    .foregroundStyle(evidence.kind.isBlocked ? Theme.warning : Theme.secondary)
-                                    .fixedSize(horizontal: false, vertical: true)
-                                if let rebuild = evidence.rebuild {
-                                    Text("Rebuild: " + rebuild).font(.system(size: 10)).foregroundStyle(Theme.secondary).fixedSize(horizontal: false, vertical: true)
+                                let caution = assessment.state == .needsInspection || evidence.kind.isBlocked
+                                Text(verbatim: bytes(item.size) + " · " + evidence.label + (evidence.rebuild.map { " · " + $0 } ?? ""))
+                                    .font(.system(size: 10)).foregroundStyle(caution ? Theme.warning : Theme.secondary).lineLimit(1)
+                                    .help(item.url.path + "\n" + evidence.detail)
+                                if caution {
+                                    Text(verbatim: assessment.state.title + ": " + evidence.detail)
+                                        .font(.system(size: 10)).foregroundStyle(Theme.warning).fixedSize(horizontal: false, vertical: true)
                                 }
+                            } else {
+                                Text(verbatim: bytes(item.size)).font(.system(size: 10)).foregroundStyle(Theme.secondary).help(item.url.path)
                             }
                             if ai.enabled, let evidence = model.pendingEvidence[item.id], evidence.kind == .unknown {
                                 Button("Explain with AI…") { aiTarget = AIExplainTarget(item: item, evidence: evidence, scope: nil) }
@@ -290,7 +289,7 @@ struct TrashReview: View {
                         Divider()
                     }
                 }
-            }.frame(maxHeight: 220)
+            }.frame(minHeight: 90, maxHeight: 220).layoutPriority(-1)
             if !model.pendingBlocked.isEmpty {
                 DisclosureGroup("Not included · \(model.pendingBlocked.count) could not be verified", isExpanded: $blockedExpanded) {
                     ScrollView {
@@ -311,13 +310,18 @@ struct TrashReview: View {
                 Text("Only checked, verified items are included.").font(.system(size: 11)).foregroundStyle(Theme.secondary)
             }
             if !model.pendingWarnings.isEmpty {
-                Notice.measured(model.pendingWarnings.prefix(3).joined(separator: "\n") + (model.pendingWarnings.count > 3 ? "\nAnd \(model.pendingWarnings.count - 3) more open-file warnings." : ""), symbol: "exclamationmark.triangle")
+                Notice.measured(model.pendingWarnings.prefix(3).joined(separator: "\n"), symbol: "exclamationmark.triangle")
+                if model.pendingWarnings.count > 3 {
+                    Text("And \(model.pendingWarnings.count - 3) more open-file warnings.")
+                        .font(.system(size: 11)).foregroundStyle(Theme.warning)
+                }
             }
             let restore = restoreReport.flatMap { $0.findings.map(\.item) == selected ? $0 : nil }
             if let restore, !restore.allRestorable {
+                // Collapsed by default so the warning never pushes the
+                // Move button out of the sheet.
+                DisclosureGroup(isExpanded: $restoreExpanded) {
                 VStack(alignment: .leading, spacing: 6) {
-                    Label("Put Back will not work for \(restore.manualOnly.count) of these", systemImage: "arrow.uturn.backward.circle")
-                        .font(.system(size: 12, weight: .semibold)).foregroundStyle(Theme.warning)
                     ForEach(restore.manualOnly.prefix(3)) { finding in
                         VStack(alignment: .leading, spacing: 1) {
                             Text(verbatim: finding.item.name).font(.system(size: 11, weight: .medium))
@@ -332,13 +336,17 @@ struct TrashReview: View {
                     }
                     Text("These still move to Trash and can be dragged back by hand. Only the one-click restore is unavailable.")
                         .font(.system(size: 10)).foregroundStyle(Theme.secondary).fixedSize(horizontal: false, vertical: true)
+                }.padding(.top, 4)
+                } label: {
+                    Label("Put Back will not work for \(restore.manualOnly.count) of these", systemImage: "arrow.uturn.backward.circle")
+                        .font(.system(size: 12, weight: .semibold)).foregroundStyle(Theme.warning)
                 }
                 .padding(12).frame(maxWidth: .infinity, alignment: .leading)
                 .background(Theme.warning.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
             }
             if !model.pendingTrash.isEmpty {
-                Notice(text: "Checked items move to macOS Trash with their verified contents. Moving them to Trash does not immediately free disk space. The cleanup result will show restore options for eligible items.", symbol: "exclamationmark.triangle")
-                Toggle("I reviewed these items and stopped tools using them.", isOn: $acknowledged).font(.system(size: 12))
+                Text("They go to Trash, not straight to deletion. History can put each one back.")
+                    .font(.system(size: 11)).foregroundStyle(Theme.secondary)
                 if !model.pendingWarnings.isEmpty {
                     Toggle("I closed the apps or builds listed above.", isOn: $openHandlesReviewed).font(.system(size: 12))
                 }
@@ -347,24 +355,28 @@ struct TrashReview: View {
                 Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
                 Button("Export plan…") { model.exportPendingPlan() }.buttonStyle(QuietButton()).disabled(selected.isEmpty)
                 Spacer()
-                if !selected.isEmpty && restore == nil {
-                    BusyLine(text: "Checking restore options…")
-                }
-                Button("Move to Trash") { model.trashReviewed() }.buttonStyle(PrimaryButton()).disabled(selected.isEmpty || restore == nil || !acknowledged || (!model.pendingWarnings.isEmpty && !openHandlesReviewed) || model.actionBusy)
+                // The restore check only adds a warning when it finds one; it
+                // never holds the button.
+                Button(selected.isEmpty ? "Move to Trash" : "Move \(bytes(selected.reduce(0) { $0 + $1.size })) to Trash") { model.trashReviewed() }
+                    .buttonStyle(PrimaryButton()).keyboardShortcut(.defaultAction)
+                    .disabled(selected.isEmpty || (!model.pendingWarnings.isEmpty && !openHandlesReviewed) || model.actionBusy)
             }
-        }.padding(30).frame(width: 580)
+        }.padding(30).frame(width: 580).frame(maxHeight: 680)
             .task(id: selected) {
                 guard !selected.isEmpty else { restoreReport = nil; return }
                 let token = ScanCancellation()
                 await withTaskCancellationHandler {
-                    let report = await DiskWork.run("Checking restore options", cancellation: token) {
-                        RestorePreflight.inspect(selected, token: token)
-                    }
+                    // A few stat calls per item: run it on its own, outside
+                    // the disk queue, so it never waits behind scans or holds
+                    // up other work.
+                    let trash = TrashService.current.root
+                    let report = await Task.detached(priority: .userInitiated) {
+                        RestorePreflight.inspect(selected, token: token, systemTrash: trash)
+                    }.value
                     if !Task.isCancelled { restoreReport = report }
                 } onCancel: { token.cancel() }
             }
             .onChange(of: model.pendingTrashSelection) {
-                acknowledged = false
                 openHandlesReviewed = false
             }
             .sheet(item: $aiTarget) { (target: AIExplainTarget) in AIExplainSheet(target: target, previewBeforeSending: true) }

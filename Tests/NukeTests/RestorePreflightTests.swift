@@ -32,6 +32,18 @@ final class RestorePreflightTests: XCTestCase {
         XCTAssertNil(report.findings.first?.reason)
     }
 
+    func testUnavailableTrashRequiresManualRestoreForItemsOnThatVolume() throws {
+        let item = try make("project/output", directory: false)
+        let measured = try XCTUnwrap(InventoryService.measure(item.url))
+        let trash = root.appendingPathComponent("fixture-trash")
+        let report = RestorePreflight.inspect([measured], systemTrash: trash)
+        XCTAssertFalse(report.allRestorable)
+        XCTAssertTrue(report.findings.first?.reason?.contains("could not open Trash") ?? false)
+
+        try FileManager.default.createDirectory(at: trash, withIntermediateDirectories: false)
+        XCTAssertTrue(RestorePreflight.inspect([measured], systemTrash: trash).allRestorable)
+    }
+
     /// The case worth catching: trashing a folder and something inside it in the
     /// same pass leaves the inner item with nowhere to go back to.
     func testAnItemWhoseAncestorIsAlsoBeingCleanedIsNotRestorable() throws {
