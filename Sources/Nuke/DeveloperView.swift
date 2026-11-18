@@ -161,7 +161,7 @@ struct DeveloperView: View {
                     if let item = measurement?.item {
                         if item.incomplete { Text(model.cacheOutcome.hasPrefix("Stopped") ? "Stopped while inspecting this location. Browse smaller folders or scan again before cleanup." : (measurement?.skipped ?? 0) > 0 ? "Access incomplete. Resolve folder permissions and scan again before cleanup." : "Scan limit reached. Browse smaller folders to review cleanup.").font(.system(size: 11)).foregroundStyle(Theme.warning) }
                         if (measurement?.skipped ?? 0) > 0 { Button("Review folder access") { model.page = .permissions }.buttonStyle(QuietButton()) }
-                        HStack { Button("Browse tree") { model.browseTree(item.url) }.buttonStyle(QuietButton()); Spacer(); Button("Review contents…") { model.reviewTrash([], cacheContents: rule) }.buttonStyle(QuietButton()).disabled(model.actionBusy || model.cacheScanning); Button("Review whole folder…") { model.reviewTrash([item]) }.buttonStyle(PrimaryButton()).disabled(model.actionBusy || model.cacheScanning || item.incomplete || item.size == 0) }
+                        HStack { Button("Browse tree") { model.browseTree(item.url) }.buttonStyle(QuietButton()); Spacer(); Button("Move the whole folder…") { model.reviewTrash([item]) }.buttonStyle(QuietButton()).help("Clear… on the row keeps the folder and moves what is inside; this moves the folder itself.").disabled(model.actionBusy || model.cacheScanning || item.incomplete || item.size == 0) }
                     }
                 }.padding(.leading, 34).padding(.bottom, 16)
             }

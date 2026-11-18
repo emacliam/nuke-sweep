@@ -11,6 +11,8 @@ struct BulkEntry {
     var name: String
     var isDirectory: Bool
     var isSymlink: Bool
+    var type: UInt32 = 0
+    var permissions: UInt32 = 0
     var device: Int32
     var inode: UInt64
     var links: UInt32
@@ -21,6 +23,7 @@ struct BulkEntry {
     /// filesystem does not report it.
     var privateSize: Int64?
     var modified: timespec
+    var changed = timespec()
     var accessed: timespec
     var error: Int32
 
@@ -38,10 +41,13 @@ enum BulkDirectory {
         list.bitmapcount = u_short(ATTR_BIT_MAP_COUNT)
         list.commonattr = attrgroup_t(ATTR_CMN_RETURNED_ATTRS) | attrgroup_t(bitPattern: ATTR_CMN_ERROR)
             | attrgroup_t(ATTR_CMN_NAME) | attrgroup_t(ATTR_CMN_DEVID) | attrgroup_t(ATTR_CMN_OBJTYPE)
-            | attrgroup_t(ATTR_CMN_MODTIME) | attrgroup_t(ATTR_CMN_ACCTIME) | attrgroup_t(ATTR_CMN_FILEID)
+            | attrgroup_t(ATTR_CMN_MODTIME) | attrgroup_t(ATTR_CMN_CHGTIME) | attrgroup_t(ATTR_CMN_ACCTIME)
+            | attrgroup_t(ATTR_CMN_ACCESSMASK) | attrgroup_t(ATTR_CMN_FILEID)
         list.fileattr = attrgroup_t(ATTR_FILE_LINKCOUNT) | attrgroup_t(ATTR_FILE_DATALENGTH) | attrgroup_t(ATTR_FILE_DATAALLOCSIZE)
-        list.forkattr = attrgroup_t(ATTR_CMNEXT_PRIVATESIZE)
-        let options = UInt64(FSOPT_ATTR_CMN_EXTENDED)
+        // APFS private (clone-aware) size is not requested: on some folders it
+        // made the read about three times slower (browser caches: 18 s against
+        // 5.6 s). Sizes count clones in full, as Finder does.
+        let options: UInt64 = 0
         let buffer = UnsafeMutableRawPointer.allocate(byteCount: bufferSize, alignment: 16)
         defer { buffer.deallocate() }
         while true {
@@ -75,11 +81,14 @@ enum BulkDirectory {
         if common & attrgroup_t(ATTR_CMN_DEVID) != 0 { result.device = cursor.loadUnaligned(as: Int32.self); cursor += 4 }
         if common & attrgroup_t(ATTR_CMN_OBJTYPE) != 0 {
             let type = cursor.loadUnaligned(as: UInt32.self); cursor += 4
+            result.type = type
             result.isDirectory = type == VDIR.rawValue
             result.isSymlink = type == VLNK.rawValue
         }
         if common & attrgroup_t(ATTR_CMN_MODTIME) != 0 { result.modified = cursor.loadUnaligned(as: timespec.self); cursor += MemoryLayout<timespec>.size }
+        if common & attrgroup_t(ATTR_CMN_CHGTIME) != 0 { result.changed = cursor.loadUnaligned(as: timespec.self); cursor += MemoryLayout<timespec>.size }
         if common & attrgroup_t(ATTR_CMN_ACCTIME) != 0 { result.accessed = cursor.loadUnaligned(as: timespec.self); cursor += MemoryLayout<timespec>.size }
+        if common & attrgroup_t(ATTR_CMN_ACCESSMASK) != 0 { result.permissions = cursor.loadUnaligned(as: UInt32.self) & 0o7777; cursor += 4 }
         if common & attrgroup_t(ATTR_CMN_FILEID) != 0 { result.inode = cursor.loadUnaligned(as: UInt64.self); cursor += 8 }
         let file = returned.fileattr
         if file & attrgroup_t(ATTR_FILE_LINKCOUNT) != 0 { result.links = cursor.loadUnaligned(as: UInt32.self); cursor += 4 }
@@ -158,6 +167,7 @@ final class ParallelWalk: @unchecked Sendable {
         var ignored: Set<String>
         var excluding: ((URL) -> Bool)?
         var observing: ((URL) -> Void)?
+        var visit: (@Sendable (String, BulkEntry) -> Void)?
         var reuse: ScanReuse?
         var workers: Int
     }
@@ -305,6 +315,7 @@ final class ParallelWalk: @unchecked Sendable {
         let child = node.path + "/" + entry.name
         if let observing = options.observing { observing(URL(fileURLWithPath: child)) }
         if entry.error != 0 { skip(child, String(cString: strerror(entry.error))); totals.incomplete = true; return }
+        options.visit?(child, entry)
         if entry.isDirectory {
             if entry.device != options.device { skip(nil, nil); totals.incomplete = true; return }
             children.append(WalkNode(path: child, parent: node.index, depth: node.depth + 1, inherited: category))
@@ -339,7 +350,7 @@ final class ScanReuse: @unchecked Sendable {
         return dirty(path) ? nil : totals
     }
 
-    private func dirty(_ path: String) -> Bool {
+    func dirty(_ path: String) -> Bool {
         let prefix = path + "/"
         var low = 0, high = changed.count
         while low < high { let mid = (low + high) / 2; if changed[mid] < path { low = mid + 1 } else { high = mid } }
@@ -480,7 +491,17 @@ enum FSEventsHistory {
     }
 
     /// Nil when the history cannot be trusted: dropped, wrapped, or not confirmed in time.
+    static func canonical(_ path: String) -> String {
+        guard let resolved = realpath(path, nil) else { return path }
+        defer { free(resolved) }
+        return String(cString: resolved)
+    }
+
     static func changes(since eventID: UInt64, under root: String, timeout: TimeInterval = 3) -> [String]? {
+        changes(since: eventID, under: [root], timeout: timeout)
+    }
+
+    static func changes(since eventID: UInt64, under roots: [String], timeout: TimeInterval = 3) -> [String]? {
         let markerDirectory = Self.markerDirectory
         try? FileManager.default.createDirectory(at: markerDirectory, withIntermediateDirectories: true)
         guard let resolvedMarker = realpath(markerDirectory.path, nil) else { return nil }
@@ -510,7 +531,7 @@ enum FSEventsHistory {
             }
         }
         let flags = FSEventStreamCreateFlags(kFSEventStreamCreateFlagUseCFTypes | kFSEventStreamCreateFlagNoDefer | kFSEventStreamCreateFlagFileEvents)
-        guard let stream = FSEventStreamCreate(nil, callback, &context, [root, markerPath] as CFArray, eventID, 0, flags) else { return nil }
+        guard let stream = FSEventStreamCreate(nil, callback, &context, (roots + [markerPath]) as CFArray, eventID, 0, flags) else { return nil }
         let queue = DispatchQueue(label: "local.nuke.fsevents.history")
         FSEventStreamSetDispatchQueue(stream, queue)
         defer { FSEventStreamStop(stream); FSEventStreamInvalidate(stream); FSEventStreamRelease(stream) }

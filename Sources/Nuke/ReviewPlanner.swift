@@ -88,23 +88,27 @@ enum ReviewPlanner {
                 let inspectSource = !managed && !rebuildable && ignored != true
                 if inspectSource && isProjectMarker(original.name) { throw SafetyError.projectRoot }
                 var freshItem = original
-                var seal = ReviewSeal.Builder(); seal.observe(original.url)
+                let sealStart = FSEventsGetCurrentEventId()
+                let seal = ReviewSeal.Collector(); seal.observeRoot(original.url)
                 if original.directory && !original.symlink {
-                    var metadata: URL?, protected: URL?, sourceCount = 0, buildCount = 0
-                    let rootComponents = original.url.standardizedFileURL.pathComponents.count
-                    let scan = DiskScanner.scan(original.url, cancellation: token, deadline: deadline, respectIgnored: false, observing: { child in
-                        seal.observe(child)
-                        let name = child.lastPathComponent
-                        if [".git", ".hg", ".svn"].contains(name.lowercased()) { protected = child }
-                        if CleanupSafety.isSensitive(child.standardizedFileURL.path) { protected = child }
+                    // One parallel read feeds both the seal and the content checks.
+                    let state = ReviewWalkState()
+                    let rootPath = original.url.path
+                    let scan = DiskScanner.scan(original.url, cancellation: token, deadline: deadline, respectIgnored: false, visit: { path, entry in
+                        seal.record(path, entry)
+                        let name = entry.name
+                        if [".git", ".hg", ".svn"].contains(name.lowercased()) && !CleanupSafety.isPackageCache(path) { state.protect(path) }
+                        if CleanupSafety.isSensitive(path) { state.protect(path) }
                         guard inspectSource else { return }
-                        let relativeParents = child.deletingLastPathComponent().standardizedFileURL.pathComponents.dropFirst(rootComponents)
-                        guard !relativeParents.contains(where: { rebuildableNames.contains($0.lowercased()) }) else { return }
-                        if isProjectMarker(name) { metadata = child }
-                        if CleanupEvidenceService.isSourceFile(child) { sourceCount += 1 }
-                        if CleanupEvidenceService.isBuildArtifact(child) { buildCount += 1 }
-                    })
-                    if let protected { throw SafetyError.protectedContents(protected.lastPathComponent) }
+                        let relative = path.dropFirst(rootPath.count + 1).split(separator: "/").dropLast()
+                        guard !relative.contains(where: { rebuildableNames.contains($0.lowercased()) }) else { return }
+                        let child = URL(fileURLWithPath: path)
+                        state.note(marker: isProjectMarker(name) ? path : nil,
+                                   source: CleanupEvidenceService.isSourceFile(child),
+                                   build: CleanupEvidenceService.isBuildArtifact(child))
+                    }, reuse: false)
+                    let (protected, metadata, sourceCount, buildCount) = state.result()
+                    if let protected { throw SafetyError.protectedContents(URL(fileURLWithPath: protected).lastPathComponent) }
                     if metadata != nil { throw SafetyError.projectRoot }
                     if token.cancelled { return .cancelled }
                     if scan.skipped > 0 { throw SafetyError.access(scan.accessIssues.first?.path ?? original.url.path) }
@@ -115,9 +119,16 @@ enum ReviewPlanner {
                 } else if let current = InventoryService.measure(original.url), current.identity == original.identity { freshItem = current }
                 else { throw CleanupSafety.SafetyError.changed }
                 let reviewedSeal: String
-                if original.directory && !original.symlink { reviewedSeal = try seal.finish() }
-                else { reviewedSeal = try ReviewSeal.capture(freshItem, token: token, deadline: deadline) }
-                guard try ReviewSeal.capture(freshItem, token: token, deadline: deadline) == reviewedSeal else { throw ReviewSeal.Failure.changed }
+                if original.directory && !original.symlink {
+                    // One read, not two. Anything that changes during or after it
+                    // shows in the change record since `sealStart`, which the move
+                    // consults; a change there means a full read and compare.
+                    reviewedSeal = try seal.finish()
+                    freshItem.reviewEventID = sealStart
+                } else {
+                    reviewedSeal = try ReviewSeal.capture(freshItem, token: token, deadline: deadline)
+                    guard try ReviewSeal.capture(freshItem, token: token, deadline: deadline) == reviewedSeal else { throw ReviewSeal.Failure.changed }
+                }
                 freshItem.reviewSeal = reviewedSeal
                 return .verified(freshItem, CleanupEvidenceService.classify(original.url, gitIgnored: ignored))
             } catch {
@@ -126,7 +137,12 @@ enum ReviewPlanner {
         }
         let outcomes = UnsafeMutableBufferPointer<Outcome>.allocate(capacity: max(1, candidates.count))
         defer { outcomes.deallocate() }
-        DispatchQueue.concurrentPerform(iterations: candidates.count) { index in
+        // Three items at a time. Each folder read already spreads across every
+        // core; running all items at once made those reads fight over the CPU
+        // (43 s on ~/Library/Caches, against 27 s three at a time).
+        let next = ReviewCursor()
+        DispatchQueue.concurrentPerform(iterations: min(3, max(1, candidates.count))) { _ in
+          while let index = next.take(below: candidates.count) {
             let outcome = verify(candidates[index])
             (outcomes.baseAddress! + index).initialize(to: outcome)
             switch outcome {
@@ -134,6 +150,7 @@ enum ReviewPlanner {
             case .failed(let reason): stream?(.blocked(.init(url: candidates[index].url, reason: reason)))
             case .cancelled: break
             }
+          }
         }
         var fresh: [DiskItem] = [], failures: [String] = [], blocked: [ReviewBlockedItem] = []
         var evidence: [String: CleanupEvidence] = [:], warnings: [String] = []
@@ -219,5 +236,37 @@ enum ReviewPlanner {
             case .protectedContents(let name): return "Contains a project or source folder with protected source-control or personal data (\(name)). Open the folder and select generated children outside it."
             }
         }
+    }
+}
+
+/// What a parallel review walk found, gathered safely from many threads.
+final class ReviewWalkState: @unchecked Sendable {
+    private var lock = os_unfair_lock()
+    private var protected: String?
+    private var metadata: String?
+    private var sourceCount = 0
+    private var buildCount = 0
+    func protect(_ path: String) { os_unfair_lock_lock(&lock); if protected == nil { protected = path }; os_unfair_lock_unlock(&lock) }
+    func note(marker: String?, source: Bool, build: Bool) {
+        os_unfair_lock_lock(&lock); defer { os_unfair_lock_unlock(&lock) }
+        if let marker, metadata == nil { metadata = marker }
+        if source { sourceCount += 1 }
+        if build { buildCount += 1 }
+    }
+    func result() -> (String?, String?, Int, Int) {
+        os_unfair_lock_lock(&lock); defer { os_unfair_lock_unlock(&lock) }
+        return (protected, metadata, sourceCount, buildCount)
+    }
+}
+
+/// Hands out item indices to a small pool of review workers.
+final class ReviewCursor: @unchecked Sendable {
+    private var lock = os_unfair_lock()
+    private var value = 0
+    func take(below count: Int) -> Int? {
+        os_unfair_lock_lock(&lock); defer { os_unfair_lock_unlock(&lock) }
+        guard value < count else { return nil }
+        defer { value += 1 }
+        return value
     }
 }

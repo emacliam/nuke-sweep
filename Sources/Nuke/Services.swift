@@ -38,7 +38,7 @@ enum DiskScanner {
     /// A repeat scan of the same root reuses every subtree FSEvents says is
     /// unchanged. With `observing` or `excluding` set, the walk reads every
     /// entry on one thread, because those callers need to see each one.
-    static func scan(_ root: URL, cancellation: ScanCancellation, limit: Int = 2_000_000, deadline: Date = Date().addingTimeInterval(180), excluding: ((URL) -> Bool)? = nil, respectIgnored: Bool = true, observing: ((URL) -> Void)? = nil, reuse allowReuse: Bool = true) -> ScanResult {
+    static func scan(_ root: URL, cancellation: ScanCancellation, limit: Int = 2_000_000, deadline: Date = Date().addingTimeInterval(180), excluding: ((URL) -> Bool)? = nil, respectIgnored: Bool = true, observing: ((URL) -> Void)? = nil, visit: (@Sendable (String, BulkEntry) -> Void)? = nil, reuse allowReuse: Bool = true) -> ScanResult {
         let ignored = respectIgnored ? IgnoredLocations.paths : []
         if excluding?(root) == true || IgnoredLocations.contains(root, in: ignored) { return ScanResult(items: [], skipped: 0, visited: 0, limited: false) }
         var rootStat = stat()
@@ -47,9 +47,9 @@ enum DiskScanner {
         let device = Int32(rootStat.st_dev)
         let rootPath = root.path
         let plain = observing == nil && excluding == nil
-        let memory = plain && allowReuse ? ScanMemory.reuse(for: rootPath, device: rootStat.st_dev, ignored: ignored) : nil
+        let memory = plain && visit == nil && allowReuse ? ScanMemory.reuse(for: rootPath, device: rootStat.st_dev, ignored: ignored) : nil
         let walk = ParallelWalk(.init(device: device, limit: limit, deadline: deadline, cancellation: cancellation, ignored: ignored,
-                                      excluding: excluding, observing: observing, reuse: memory?.0,
+                                      excluding: excluding, observing: observing, visit: visit, reuse: memory?.0,
                                       workers: plain ? ProcessInfo.processInfo.activeProcessorCount : 1))
         func date(_ time: timespec) -> Date { Date(timeIntervalSince1970: Double(time.tv_sec)) }
         func identity(_ entry: BulkEntry) -> FileIdentity { FileIdentity(device: UInt64(UInt32(bitPattern: entry.device)), inode: entry.inode) }
@@ -74,6 +74,7 @@ enum DiskScanner {
                     guard walk.claim(1) == 1 else { return false }
                     observing?(url)
                     if entry.error != 0 { walk.skip(url.path, String(cString: strerror(entry.error))); return true }
+                    visit?(path, entry)
                     if entry.isDirectory {
                         if entry.device != device {
                             walk.skip(nil, nil)
@@ -183,7 +184,23 @@ enum CleanupSafety {
         return [lexical, effective].contains { $0 == protected || $0.hasPrefix(protected + "/") || protected.hasPrefix($0 + "/") }
     }
     /// Source-control metadata and personal/credential stores are never cleanup targets.
+    /// Download caches that hold other people's packages, re-fetchable on demand.
+    static func isPackageCache(_ path: String, home: String = FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL.path) -> Bool {
+        let roots = ["/Library/Caches/Yarn/", "/.npm/_cacache/", "/Library/pnpm/store/", "/Library/Caches/CocoaPods/",
+                     "/.gradle/caches/", "/Library/Caches/pip/", "/Library/Caches/Homebrew/", "/Library/Caches/org.swift.swiftpm/",
+                     "/Library/Caches/go-build/", "/.cargo/registry/", "/.bun/install/cache/", "/.pub-cache/", "/.m2/repository/",
+                     "/.cache/uv/", "/Library/Caches/Yarn"]
+        return roots.contains { root in
+            let full = home + root
+            return path.hasPrefix(full.hasSuffix("/") ? full : full + "/")
+        }
+    }
     static func isSensitive(_ path: String, home: String = FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL.path) -> Bool {
+        // Inside a package manager's download cache, a key-like name is a file
+        // some package shipped (React Native templates carry debug.keystore,
+        // test suites carry .pem fixtures, git-sourced packages carry .git).
+        // It is a copy the tool can fetch again, not the person's secret.
+        if isPackageCache(path, home: home) { return false }
         let name = URL(fileURLWithPath: path).lastPathComponent.lowercased()
         let components = Set(URL(fileURLWithPath: path).pathComponents.map { $0.lowercased() })
         if !components.isDisjoint(with: [".git", ".hg", ".svn", ".ssh", ".gnupg", ".aws"]) { return true }

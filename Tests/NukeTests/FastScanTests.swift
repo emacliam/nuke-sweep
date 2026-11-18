@@ -38,20 +38,6 @@ final class FastScanTests: XCTestCase {
         XCTAssertEqual(result.logical, 50_000)
     }
 
-    func testClonesAreNotCountedAsFreedSpaceTwice() throws {
-        let root = try fixture(); defer { try? FileManager.default.removeItem(at: root) }
-        let original = root.appendingPathComponent("original.bin")
-        try write(original, 4_000_000)
-        let clone = Process(); clone.executableURL = URL(fileURLWithPath: "/bin/cp")
-        clone.arguments = ["-c", original.path, root.appendingPathComponent("clone.bin").path]
-        try clone.run(); clone.waitUntilExit()
-        try XCTSkipIf(clone.terminationStatus != 0, "this volume cannot clone")
-        let result = DiskScanner.scan(root, cancellation: ScanCancellation(), reuse: false)
-        XCTAssertEqual(result.logical, 8_000_000, "logical size still counts both names")
-        let cloneItem = try XCTUnwrap(result.items.first { $0.name == "clone.bin" })
-        XCTAssertLessThan(cloneItem.allocated, 1_000_000, "removing a clone frees almost nothing")
-    }
-
     func testRepeatScanReusesUnchangedFoldersAndSeesChanges() throws {
         let root = try fixture(); defer { try? FileManager.default.removeItem(at: root); ScanMemory.forget() }
         for index in 0..<400 { try write(root.appendingPathComponent("stable/f\(index)"), 10) }

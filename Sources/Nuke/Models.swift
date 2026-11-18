@@ -78,6 +78,9 @@ struct DiskItem: Identifiable, Codable, Equatable, Sendable {
     let identity: FileIdentity?
     let incomplete: Bool
     var reviewSeal: String? = nil
+    /// FSEvents position just before the review read this folder. Lets the move
+    /// ask macOS what changed since, instead of reading the folder again.
+    var reviewEventID: UInt64? = nil
     var measurementPending: Bool? = nil
     var name: String { url.lastPathComponent }
 

@@ -311,7 +311,21 @@ struct TrashReview: View {
                         Divider()
                     }
                 }
-            }.frame(minHeight: 160, maxHeight: .infinity).layoutPriority(1)
+            }
+            .overlay {
+                // A finished review with nothing to move says so, instead of an empty sheet.
+                if model.pendingTrash.isEmpty && !model.reviewPreparing {
+                    VStack(spacing: 6) {
+                        Image(systemName: "checkmark.shield").font(.system(size: 22)).foregroundStyle(Theme.secondary)
+                        Text(model.reviewMoved > 0 ? "Everything that passed its checks has moved to Trash." : "Nothing here can be moved safely.")
+                            .font(.system(size: 13, weight: .medium))
+                        if !model.pendingBlocked.isEmpty {
+                            Text("The reason is below. Show in Finder lets you look for yourself.").font(.system(size: 11)).foregroundStyle(Theme.secondary)
+                        }
+                    }
+                }
+            }
+            .frame(minHeight: 160, maxHeight: .infinity).layoutPriority(1)
             // Notes scroll in their own band, so opening one can never push
             // Cancel and Move out of the sheet.
             ScrollView {
