@@ -561,6 +561,13 @@ struct FullCheckCard: View {
                 if totals.regenerableBytes > 0 {
                     tier("arrow.triangle.2.circlepath", "Comes back by itself", "Rebuilt or re-downloaded the next time it is needed.",
                          totals.regenerableBytes, tint: Theme.green)
+                    // What the figure is made of, biggest first.
+                    let sources = RegenerableSources.top(report.regenerable)
+                    if !sources.isEmpty {
+                        Text(verbatim: sources.map { "\($0.label) \(bytes($0.size))" }.joined(separator: " · "))
+                            .font(.system(size: 11)).foregroundStyle(Theme.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading).padding(.leading, 32).padding(.bottom, 8)
+                    }
                 }
                 if personalBytes > 0 {
                     Divider()
@@ -769,6 +776,40 @@ struct InUseLine: View {
                 Text("Quit the app, build or dev server using them, then check again to include them.")
                     .font(.system(size: 10)).foregroundStyle(Theme.secondary)
             }
+        }
+    }
+}
+
+/// Names the biggest sources inside "comes back by itself" in words a person
+/// recognises: "node_modules in 9 projects", "Xcode DerivedData", "npm cache".
+enum RegenerableSources {
+    static func label(_ url: URL) -> String {
+        let path = url.standardizedFileURL.path
+        let name = url.lastPathComponent
+        if path.contains("/Developer/Xcode/DerivedData") { return "Xcode DerivedData" }
+        if path.contains("/Developer/CoreSimulator") { return "Simulators" }
+        if path.contains("/Library/Caches/") {
+            let after = path.components(separatedBy: "/Library/Caches/")[1]
+            let owner = after.split(separator: "/").first.map(String.init) ?? name
+            return owner.split(separator: ".").last.map(String.init).map { $0 + " cache" } ?? "App caches"
+        }
+        if path.contains("/.npm") { return "npm cache" }
+        if path.contains("/.gradle") { return "Gradle cache" }
+        if path.contains("/.cache/") { return (path.components(separatedBy: "/.cache/")[1].split(separator: "/").first.map(String.init) ?? "Tool") + " cache" }
+        return name
+    }
+
+    static func top(_ items: [DiskItem], count: Int = 3) -> [(label: String, size: Int64)] {
+        var groups: [String: (size: Int64, items: Int)] = [:]
+        for item in items {
+            let key = label(item.url)
+            groups[key, default: (0, 0)].size += item.size
+            groups[key, default: (0, 0)].items += 1
+        }
+        return groups.sorted { $0.value.size > $1.value.size }.prefix(count).map { key, value in
+            let label = value.items > 1 && ["node_modules", "build", "dist", "target", ".next", "Pods", ".gradle"].contains(key)
+                ? "\(key) in \(value.items) projects" : key
+            return (label, value.size)
         }
     }
 }

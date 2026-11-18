@@ -182,7 +182,14 @@ import UserNotifications
     var pendingEvidence: [String: CleanupEvidence] = [:]
     var pendingWarnings: [String] = []
     var pendingBlocked: [ReviewBlockedItem] = []
-    var showTrashReview = false
+    var showTrashReview = false {
+        // Closing the review stops any checks still running for it.
+        didSet { if oldValue && !showTrashReview && reviewPreparing { cancelReview() } }
+    }
+    /// Progress of a review whose items are still being checked.
+    var reviewDone = 0
+    var reviewMoved = 0
+    var reviewTotal = 0
     var quitWhenIdle = false
     var actionBusy = false {
         didSet { if !actionBusy && quitWhenIdle { FilePersistence.flush(); NSApp.reply(toApplicationShouldTerminate: true) }; if !actionBusy && pendingMutationRefresh && !quitWhenIdle { pendingMutationRefresh = false; refreshAfterMutation() } }
@@ -510,11 +517,15 @@ import UserNotifications
     }
 
     func reviewTrash(_ items: [DiskItem], proofs: [DuplicateProof] = [], cacheContents: CacheRule? = nil, folderContents: DiskItem? = nil) {
-        guard !actionBusy else { return }; actionBusy = true
+        guard !actionBusy, !reviewPreparing else { return }; actionBusy = true
         pendingTrash = []; pendingTrashSelection = []; duplicateProofs = []; pendingEvidence = [:]; pendingWarnings = []; pendingBlocked = []
-        reviewPreparing = true; let token = ScanCancellation(); reviewToken = token
+        reviewPreparing = true; reviewMoved = 0; let token = ScanCancellation(); reviewToken = token
         let scopes = FolderAccess.shared.cleanupScopes
         let developerScopes = features.developerScopes
+        if cacheContents == nil && folderContents == nil {
+            streamReview(items, proofs: proofs, scopes: scopes, developerScopes: developerScopes, token: token)
+            return
+        }
         Task {
             let preparation = await DiskWork.run("Preparing cleanup review", cancellation: token) { () -> ReviewPreparation in
                 if let cacheContents {
@@ -545,12 +556,56 @@ import UserNotifications
         }
     }
 
+    /// Opens the review at once and fills it as each item passes its checks.
+    /// Whatever is checked can be moved straight away; the rest keep checking.
+    private func streamReview(_ items: [DiskItem], proofs: [DuplicateProof], scopes: [CleanupScope], developerScopes: [DeveloperScope], token: ScanCancellation) {
+        duplicateProofs = proofs
+        reviewDone = 0; reviewMoved = 0; reviewTotal = ReviewPlanner.topLevel(items).count
+        actionBusy = false
+        showTrashReview = true
+        Task {
+            let preparation = await DiskWork.run("Checking items for cleanup", cancellation: token) {
+                ReviewPlanner.prepare(items, scopes: scopes, token: token, developerScopes: developerScopes, stream: { event in
+                    Task { @MainActor [weak self] in self?.receiveReview(event, token: token) }
+                })
+            }
+            guard reviewToken === token else { return }
+            // Let the last streamed results land before the review is called done.
+            await Task.yield()
+            reviewPreparing = false; reviewTotal = 0
+            guard !token.cancelled else { return }
+            Log.cleanup.info("Review prepared: eligible=\(preparation.items.count, privacy: .public) blocked=\(preparation.blocked.count, privacy: .public)")
+            if pendingTrash.isEmpty && pendingBlocked.isEmpty && !actionBusy {
+                showTrashReview = false
+                if reviewMoved == 0 {
+                    message = preparation.failures.isEmpty ? "Nothing here needed cleaning." : preparation.failures.joined(separator: "\n")
+                }
+            }
+        }
+    }
+
+    private func receiveReview(_ event: ReviewStreamEvent, token: ScanCancellation) {
+        guard reviewToken === token, !token.cancelled else { return }
+        reviewDone += 1
+        switch event {
+        case .verified(let item, let evidence, let warning):
+            pendingTrash.append(item)
+            pendingTrashSelection.insert(item.id)
+            pendingEvidence[item.id] = evidence
+            if let warning { pendingWarnings.append(warning) }
+        case .blocked(let blocked):
+            pendingBlocked.append(blocked)
+        }
+    }
+
     func cancelReview() { reviewToken.cancel(); reviewPreparing = false; actionBusy = false; pendingEvidence = [:]; pendingWarnings = []; pendingBlocked = [] }
     func trashReviewed() {
         guard requireCleanupAccess() else { return }
         let items = selectedPendingTrash
         guard !actionBusy, !items.isEmpty else { return }
-        showTrashReview = false
+        // While items are still being checked the review stays open, so the
+        // rest can be moved as they arrive.
+        if !reviewPreparing { showTrashReview = false }
         actionBusy = true
         let proofs = duplicateProofs.filter { pendingTrashSelection.contains($0.duplicate.id) }
         let allowedRoots = FolderAccess.shared.cleanupScopes
@@ -565,7 +620,18 @@ import UserNotifications
             let detail = receipt.items.map { "\($0.success ? "Moved to Trash" : "Failed"): \($0.originalPath) · \($0.outcome)" }.joined(separator: "\n")
             cleanupBasket.removeMoved(receipt.items.filter(\.success).map(\.originalPath))
             personalFilesMoved(receipt.items.filter(\.success).map(\.originalPath))
-            record("File cleanup", detail: detail); actionBusy = false; pendingTrash = []; pendingTrashSelection = []; pendingEvidence = [:]; pendingWarnings = []; pendingBlocked = []; duplicateProofs = []
+            record("File cleanup", detail: detail)
+            let handled = Set(items.map(\.id))
+            pendingTrash.removeAll { handled.contains($0.id) }
+            pendingTrashSelection.subtract(handled)
+            for id in handled { pendingEvidence[id] = nil }
+            reviewMoved += moved
+            // Everything checked has gone and nothing is left to check: done.
+            if !reviewPreparing && pendingTrash.isEmpty && pendingBlocked.isEmpty { showTrashReview = false }
+            if !reviewPreparing && !showTrashReview {
+                pendingTrash = []; pendingTrashSelection = []; pendingEvidence = [:]; pendingWarnings = []; pendingBlocked = []; duplicateProofs = []
+            }
+            actionBusy = false
 
         }
     }

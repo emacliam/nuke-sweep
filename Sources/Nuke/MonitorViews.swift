@@ -248,8 +248,21 @@ struct TrashReview: View {
         VStack(alignment: .leading, spacing: 18) {
             Label("Review file cleanup", systemImage: "trash").font(.system(size: 22, weight: .semibold))
             HStack {
-                Text("\(selected.count) of \(model.pendingTrash.count) selected · \(bytes(selected.reduce(0) { $0 + $1.size })) to move to Trash")
-                    .font(.system(size: 13)).foregroundStyle(Theme.secondary)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("\(selected.count) of \(model.pendingTrash.count) selected · \(bytes(selected.reduce(0) { $0 + $1.size })) to move to Trash")
+                        .font(.system(size: 13)).foregroundStyle(Theme.secondary)
+                    if model.reviewPreparing && model.reviewTotal > 0 {
+                        // Items join the list as they pass their checks; what is
+                        // here can be moved now.
+                        HStack(spacing: 6) {
+                            ProgressView(value: Double(model.reviewDone), total: Double(model.reviewTotal)).frame(width: 80)
+                            Text("Checking \(model.reviewDone) of \(model.reviewTotal). You can move what's ready now.")
+                                .font(.system(size: 11)).foregroundStyle(Theme.secondary)
+                        }
+                    } else if model.reviewMoved > 0 {
+                        Text("\(model.reviewMoved) already moved to Trash.").font(.system(size: 11)).foregroundStyle(Theme.green)
+                    }
+                }
                 Spacer()
                 if !model.pendingTrash.isEmpty {
                     Button("Select all") { model.pendingTrashSelection = Set(model.pendingTrash.map(\.id)) }

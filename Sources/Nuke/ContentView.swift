@@ -68,7 +68,7 @@ struct ContentView: View {
                 if showsTopbar { topbar; Divider().overlay(Theme.line) }
                 sectionBar
                 if isCurrentSection(.developer) { developerTabs }
-                if model.reviewPreparing { HStack { BusyLine(text: "Preparing cleanup review…"); Spacer(); Button("Cancel review") { model.cancelReview() }.buttonStyle(QuietButton()) }.padding(.horizontal, 24).padding(.vertical, 10) }
+                if model.reviewPreparing && !model.showTrashReview { HStack { BusyLine(text: "Preparing cleanup review…"); Spacer(); Button("Cancel review") { model.cancelReview() }.buttonStyle(QuietButton()) }.padding(.horizontal, 24).padding(.vertical, 10) }
                 DiskQueueNotice()
                 if model.page == .storage {
                     if model.mainWindowVisible { StorageView().padding(24) } else { Spacer() }

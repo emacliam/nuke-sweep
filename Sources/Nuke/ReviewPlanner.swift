@@ -6,6 +6,11 @@ struct ReviewBlockedItem: Identifiable, Sendable {
     let url: URL
     let reason: String
 }
+/// One item's result, reported the moment it is checked.
+enum ReviewStreamEvent: Sendable {
+    case verified(DiskItem, CleanupEvidence, warning: String?)
+    case blocked(ReviewBlockedItem)
+}
 struct ReviewPreparation: Sendable {
     let items: [DiskItem]
     let failures: [String]
@@ -52,7 +57,16 @@ enum ReviewPlanner {
     /// One complete traversal measures and verifies the selected tree. Nested cache
     /// layouts no longer fail an unrelated four-level metadata probe. Time, entry,
     /// access, cancellation, source-control, and identity guards still fail closed.
-    static func prepare(_ items: [DiskItem], scopes: [CleanupScope], token: ScanCancellation = ScanCancellation(), managedCacheRoots: [URL] = CacheRule.all.map(\.url), developerScopes: [DeveloperScope] = [], openFiles: () -> [OpenFileUse] = { FileUseService.snapshot() }) -> ReviewPreparation {
+    static func prepare(_ items: [DiskItem], scopes: [CleanupScope], token: ScanCancellation = ScanCancellation(), managedCacheRoots: [URL] = CacheRule.all.map(\.url), developerScopes: [DeveloperScope] = [], openFiles: () -> [OpenFileUse] = { FileUseService.snapshot() }, stream: (@Sendable (ReviewStreamEvent) -> Void)? = nil) -> ReviewPreparation {
+        // Open files are read once, up front, so each item can be reported
+        // complete, warning included, as soon as it is checked.
+        let uses = openFiles()
+        @Sendable func warning(for item: DiskItem) -> String? {
+            let matching = uses.filter { $0.path == item.url.path || (item.directory && $0.path.hasPrefix(item.url.standardizedFileURL.path + "/")) }
+            guard !matching.isEmpty else { return nil }
+            let apps = Set(matching.map(\.process)).sorted().prefix(4).joined(separator: ", ")
+            return "\(item.name) is open in \(apps). Close those apps or builds before continuing."
+        }
         // Each item is verified on its own budget and in parallel. One shared
         // 45-second budget, spent item by item, used to run out part way through
         // a large review and mark everything after it as unverified.
@@ -111,7 +125,13 @@ enum ReviewPlanner {
         let outcomes = UnsafeMutableBufferPointer<Outcome>.allocate(capacity: max(1, candidates.count))
         defer { outcomes.deallocate() }
         DispatchQueue.concurrentPerform(iterations: candidates.count) { index in
-            (outcomes.baseAddress! + index).initialize(to: verify(candidates[index]))
+            let outcome = verify(candidates[index])
+            (outcomes.baseAddress! + index).initialize(to: outcome)
+            switch outcome {
+            case .verified(let item, let found): stream?(.verified(item, found, warning: warning(for: item)))
+            case .failed(let reason): stream?(.blocked(.init(url: candidates[index].url, reason: reason)))
+            case .cancelled: break
+            }
         }
         var fresh: [DiskItem] = [], failures: [String] = [], blocked: [ReviewBlockedItem] = []
         var evidence: [String: CleanupEvidence] = [:], warnings: [String] = []
@@ -125,16 +145,7 @@ enum ReviewPlanner {
             }
         }
         if candidates.count > 0 { (outcomes.baseAddress!).deinitialize(count: candidates.count) }
-        if !fresh.isEmpty {
-            let uses = openFiles()
-            for item in fresh.prefix(24) {
-                let matching = uses.filter { $0.path == item.url.path || (item.directory && $0.path.hasPrefix(item.url.standardizedFileURL.path + "/")) }
-                if !matching.isEmpty {
-                    let apps = Set(matching.map(\.process)).sorted().prefix(4).joined(separator: ", ")
-                    warnings.append("\(item.name) is open in \(apps). Close those apps or builds before continuing.")
-                }
-            }
-        }
+        warnings = fresh.prefix(24).compactMap(warning(for:))
         if token.cancelled { return .init(items: [], failures: ["Review cancelled. No files were moved."]) }
         return .init(items: fresh, failures: failures, evidence: evidence, warnings: warnings, blocked: blocked)
     }
