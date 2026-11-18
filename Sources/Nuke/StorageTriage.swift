@@ -120,6 +120,9 @@ enum StorageTriage {
 
     /// Ranks measured items. `evidence` is looked up per item; callers that already
     /// computed it should pass it to avoid re-classifying.
+    /// Dependencies touched within this many days belong to a live project.
+    static let activeProjectDays = 30
+
     static func rank(
         _ items: [DiskItem],
         evidence: [String: CleanupEvidence] = [:],
@@ -144,11 +147,22 @@ enum StorageTriage {
         ranked.sort { $0.score == $1.score ? $0.item.id < $1.item.id : $0.score > $1.score }
         withheld.sort { $0.item.size == $1.item.size ? $0.item.id < $1.item.id : $0.item.size > $1.item.size }
         let shortlist = Array(ranked.prefix(max(0, limit)))
+        // What the one-click "Free up" takes: rebuildable, not in use, not
+        // touched in the last two days, and no dependencies from a project
+        // worked on this month. Reinstalling those would cost the person time
+        // for space they will need again next week.
+        func oneClick(_ finding: Finding) -> Bool {
+            guard finding.rebuild.effort <= .slow, finding.driver != .inUse,
+                  finding.driver != .unverified, finding.driver != .recentlyUsed else { return false }
+            if finding.evidence?.kind == .dependency, let days = ageDays(finding.item.lastTouched, now: signals.now),
+               days < activeProjectDays { return false }
+            return true
+        }
         var totals = Totals()
         for finding in ranked {
             totals.candidateBytes += finding.item.size
             totals.candidateCount += 1
-            if finding.rebuild.effort <= .slow && finding.driver != .inUse { totals.regenerableBytes += finding.item.size }
+            if oneClick(finding) { totals.regenerableBytes += finding.item.size }
             if finding.driver == .inUse { totals.inUseCount += 1 }
         }
         for finding in withheld where finding.withheldBecause == .irreplaceableAndUnbacked {
@@ -165,7 +179,7 @@ enum StorageTriage {
         report.totals = totals
         report.irreplaceable = irreplaceable
         report.regenerable = Array(ranked
-            .filter { $0.rebuild.effort <= .slow && $0.driver != .inUse && $0.driver != .unverified }
+            .filter(oneClick)
             .map(\.item).sorted { $0.size > $1.size }.prefix(200))
         report.inUse = Array(ranked.filter { $0.driver == .inUse }.map(\.item).sorted { $0.size > $1.size }.prefix(50))
         report.unattended = Array(ranked
