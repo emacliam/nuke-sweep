@@ -1,14 +1,29 @@
 const views = {
-  cleanup: {title:'A thoughtful place <br>to start.',copy:'Measure common application caches and Trash, then review your next move. You choose what gets selected and what stays.',note:'Nothing selected. Nothing cleaned automatically.',alt:'Actual Nuke Sweep Cleanup screen with common caches and Trash'},
-  developer: {title:'Build things. <br>Leave less behind.',copy:'Inspect familiar tool caches, review generated project storage, and remember frequently used folders with your own exclusions.',note:'Source-looking project roots are refused at review.',alt:'Actual Nuke Sweep Developer screen with Xcode, npm, Python and Gradle caches'},
-  widgets: {title:'The useful things. <br>At a glance.',copy:'Add a Storage widget to your desktop, or use the menu-bar monitor for current storage, CPU, and memory readings.',note:'Widgets are snapshots. macOS controls refresh timing.',alt:'Nuke Sweep desktop storage widget preview and setup instructions'}
+  cleanup: {
+    title: 'Check what’s taking up space',
+    copy: 'Check application caches, developer build output, Trash, and personal files. See which items can be rebuilt and what needs a closer look.',
+    note: 'Scans leave files in place. Automatic cleanup is off by default.',
+    alt: 'Nuke Sweep 0.9.3 Cleanup screen showing the Check This Mac action'
+  },
+  developer: {
+    title: 'Review developer storage',
+    copy: 'Find large project dependencies and build folders, inspect Docker usage, and switch directly to simulator devices and runtimes.',
+    note: 'Review individual items before moving them to Trash.',
+    alt: 'Nuke Sweep 0.9.3 Developer screen with dedicated tabs and cache sizes'
+  },
+  files: {
+    title: 'See what each folder contains',
+    copy: 'Expand folders in the file tree, inspect individual files, and add eligible items to your cleanup basket.',
+    note: 'Use Quick Look to preview supported files before review.',
+    alt: 'Nuke Sweep 0.9.3 Files screen with folder shortcuts, volume selection, and scan controls'
+  }
 };
 const tabs = [...document.querySelectorAll('[data-view]')];
 function selectView(tab) {
   const view = views[tab.dataset.view];
   tabs.forEach(item => { const selected = item === tab; item.setAttribute('aria-selected', String(selected)); item.tabIndex = selected ? 0 : -1; });
   document.querySelector('#product-panel').setAttribute('aria-labelledby',tab.id);
-  document.querySelector('#view-title').innerHTML = view.title;
+  document.querySelector('#view-title').textContent = view.title;
   document.querySelector('#view-copy').textContent = view.copy;
   document.querySelector('#view-note').textContent = view.note;
   const image = document.querySelector('#view-image'); image.src = `/assets/${tab.dataset.view}.png`; image.alt = view.alt;
