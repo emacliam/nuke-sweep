@@ -593,7 +593,15 @@ struct StorageView: View {
         .onChange(of: inspectedID.flatMap { id in model.visibleItems.first { $0.id == id } }) { _, item in
             if !useTree { inspectedItem = item }
         }
-        .onAppear { volumes = MountedVolumeService.list() }
+        .onAppear {
+            volumes = MountedVolumeService.list()
+            // A partial result saved by an earlier run (often under the old
+            // scan limits) is measured again instead of showing a stale warning.
+            if let result = model.result, result.limited || result.skipped > 0, !model.scanning,
+               (model.resultMeasured ?? .distantPast) < model.launchedAt {
+                model.scan(force: true)
+            }
+        }
         .onChange(of: model.finishedReceipt?.id) { _, _ in tree.reset(); treeSelection = [:] }
         .onChange(of: useTree) {
             inspectedID = nil

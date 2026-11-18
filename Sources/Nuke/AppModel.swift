@@ -182,6 +182,8 @@ import UserNotifications
     var pendingEvidence: [String: CleanupEvidence] = [:]
     var pendingWarnings: [String] = []
     var pendingBlocked: [ReviewBlockedItem] = []
+    /// When this run started; tells a restored result from one measured now.
+    let launchedAt = Date()
     var showTrashReview = false {
         // Closing the review stops any checks still running for it.
         didSet { if oldValue && !showTrashReview && reviewPreparing { cancelReview() } }

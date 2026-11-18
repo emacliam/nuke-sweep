@@ -39,6 +39,12 @@ struct DeveloperView: View {
     private var selectedBytes: Int64 { selectedItems.reduce(0) { $0 + $1.size } }
 
     var body: some View {
+        content
+            // Opening the page after a relaunch measures again rather than saying
+            // "Not scanned"; remembered scans make it quick.
+            .onAppear { if model.caches.isEmpty && !model.cacheScanning { model.scanCaches() } }
+    }
+    @ViewBuilder private var content: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack {
                 if !model.cacheScanning {
