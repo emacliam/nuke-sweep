@@ -27,6 +27,10 @@ extension AppModel {
         Task {
             let roots = rootsOverride ?? ([("Application caches", FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Caches"))])
             var candidates: [String: InventoryEntry] = [:]
+            // Trash is measured alongside the caches, not after them.
+            let trashScan: Task<ScanResult, Never>? = includeTrash ? Task {
+                await DiskWork.run("Inspecting Trash", cancellation: token) { DiskScanner.scan(TrashService.current.root, cancellation: token, limit: 12_000, deadline: Date().addingTimeInterval(8)) }
+            } : nil
             for (index, pair) in roots.enumerated() {
                 if token.cancelled { break }
                 quick.step = "\(index + 1) of \(roots.count + (includeTrash ? 1 : 0)) · \(pair.0)"
@@ -47,9 +51,9 @@ extension AppModel {
                 if scan.skipped > 0 || scan.limited { quick.notes.append(pair.0 + ": incomplete or unavailable. This quick pass is bounded to 12,000 entries / 8 seconds per location; use a full folder scan before cleanup.") }
                 quick.entries = candidates.values.sorted { $0.item.size > $1.item.size }
             }
-            if includeTrash && !token.cancelled {
+            if let trashScan, !token.cancelled {
                 quick.step = "Inspecting Trash size…"
-                let scan = await DiskWork.run("Inspecting Trash", cancellation: token) { DiskScanner.scan(TrashService.current.root, cancellation: token, limit: 12_000, deadline: Date().addingTimeInterval(8)) }
+                let scan = await trashScan.value
                 guard isCurrentQuick(token) else { return }
                 quick.trashSize = scan.skipped == 0 && !scan.limited ? scan.logical : nil
                 quick.trashPartial = scan.skipped > 0 || scan.limited
@@ -69,6 +73,7 @@ struct FindSpaceView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             CleanupStorageSummary()
+            SessionGainLine()
             if features.monitor.monitorEnabled, !features.monitor.monitorPaused,
                let days = features.monitor.forecastDays {
                 Text("At this rate, your disk could be full in about \(days) days.")
@@ -85,6 +90,7 @@ struct FindSpaceView: View {
             let personalFirst = ProcessInfo.processInfo.arguments.contains("--capture-personal")
             if personalFirst, model.personal.report != nil { PersonalFilesPanel() }
             FullCheckCard()
+            DevCleanupPanel()
             if !personalFirst, model.personal.running || model.personal.report != nil {
                 ScrollViewReader { proxy in
                     PersonalFilesPanel().id("personal-files")
@@ -288,5 +294,39 @@ struct ReclaimSummaryPanel: View {
                 }
             }
         }
+    }
+}
+
+/// Before and after, on the data volume: what this session actually got back,
+/// and what is still waiting in Trash.
+@MainActor enum SessionBaseline { static var free: Int64? }
+
+struct SessionGainLine: View {
+    @Environment(AppModel.self) var model
+    var body: some View {
+        let free = model.resources.freeDisk
+        let _ = { if SessionBaseline.free == nil, model.resources.totalDisk > 0 { SessionBaseline.free = free } }()
+        let gained = SessionBaseline.free.map { free - $0 } ?? 0
+        let trash = model.quick.trashSize ?? 0
+        if gained > 100_000_000 || trash > 500_000_000 {
+            HStack(spacing: 8) {
+                if gained > 100_000_000, let start = SessionBaseline.free {
+                    Image(systemName: "arrow.up.circle.fill").foregroundStyle(Theme.green)
+                    Text("\(bytes(gained)) freed since you opened Nuke Sweep · \(bytes(start)) → \(bytes(free)) available")
+                        .monospacedDigit()
+                }
+                if trash > 500_000_000 {
+                    if gained > 100_000_000 { Text(verbatim: "·").foregroundStyle(Theme.secondary) }
+                    Text("Trash still holds \(bytes(trash)).").foregroundStyle(Theme.secondary)
+                    Button("Empty Trash…") { model.emptyTrash() }
+                        .buttonStyle(.plain).fontWeight(.medium).foregroundStyle(Theme.orange)
+                        .disabled(model.actionBusy || model.trashLoading)
+                }
+            }
+            .font(.system(size: 11))
+        }
+        // Emptying Trash happens in Finder; coming back should show the result.
+        Color.clear.frame(height: 0)
+            .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in model.refreshResources() }
     }
 }

@@ -191,6 +191,8 @@ import UserNotifications
     var activities: [Activity] = []
     var trashSnapshot: TrashSnapshot?
     var trashLoading = false
+    /// Set by Empty Trash: once the inspection finishes, ask to delete all of it.
+    var emptyTrashPending = false
     var trashError: String?
     var trashSelected = Set<String>()
     var trashUpdated: Date?
@@ -667,6 +669,7 @@ import UserNotifications
             let freeAfter = await Task.detached(priority: .utility) { MachineService.snapshot().freeDisk }.value
             features.receipt(CleanupReceipt(date: Date(), title: "Permanent Trash cleanup", items: entries.enumerated().map { index, entry in let text = outcomes.count == entries.count ? outcomes[index] : (outcomes.first ?? "Cleanup did not return an outcome"); return .init(originalPath: entry.item.url.path, trashPath: nil, size: entry.item.size, success: text.hasPrefix("Permanently deleted:"), outcome: text) }, freeBefore: freeBefore, freeAfter: freeAfter, undo: "Permanent deletion cannot be restored through Trash. Check your own backups if recovery is needed."))
             record("Trash cleanup", detail: detail); actionBusy = false
+            quick.trashSize = nil; refreshResources(); features.monitor.storageDidChange()
 
         }
     }
