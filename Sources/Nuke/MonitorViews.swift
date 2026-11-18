@@ -300,6 +300,16 @@ struct TrashReview: View {
                 DisclosureGroup("Not included · \(model.pendingBlocked.count) could not be verified", isExpanded: $blockedExpanded) {
                     ScrollView {
                         VStack(alignment: .leading, spacing: 12) {
+                            // Why, grouped, before the item-by-item list.
+                            let reasons = Dictionary(grouping: model.pendingBlocked, by: \.reason)
+                                .map { (reason: $0.key, count: $0.value.count) }.sorted { $0.count > $1.count }
+                            VStack(alignment: .leading, spacing: 4) {
+                                ForEach(reasons.prefix(4), id: \.reason) { group in
+                                    Text(verbatim: "\(group.count) × \(group.reason)").font(.system(size: 11, weight: .medium))
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                            }
+                            Divider()
                             ForEach(model.pendingBlocked) { blocked in
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text(blocked.url.lastPathComponent).font(.system(size: 12, weight: .medium))

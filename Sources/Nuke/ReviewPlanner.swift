@@ -53,11 +53,14 @@ enum ReviewPlanner {
     /// layouts no longer fail an unrelated four-level metadata probe. Time, entry,
     /// access, cancellation, source-control, and identity guards still fail closed.
     static func prepare(_ items: [DiskItem], scopes: [CleanupScope], token: ScanCancellation = ScanCancellation(), managedCacheRoots: [URL] = CacheRule.all.map(\.url), developerScopes: [DeveloperScope] = [], openFiles: () -> [OpenFileUse] = { FileUseService.snapshot() }) -> ReviewPreparation {
-        let deadline = Date().addingTimeInterval(45)
-        var fresh: [DiskItem] = [], failures: [String] = [], blocked: [ReviewBlockedItem] = []
-        var evidence: [String: CleanupEvidence] = [:], warnings: [String] = []
-        for original in topLevel(items) {
-            if token.cancelled { return .init(items: [], failures: ["Review cancelled. No files were moved."]) }
+        // Each item is verified on its own budget and in parallel. One shared
+        // 45-second budget, spent item by item, used to run out part way through
+        // a large review and mark everything after it as unverified.
+        let overall = Date().addingTimeInterval(240)
+        let candidates = topLevel(items)
+        enum Outcome { case verified(DiskItem, CleanupEvidence), failed(String), cancelled }
+        func verify(_ original: DiskItem) -> Outcome {
+            let deadline = min(overall, Date().addingTimeInterval(60))
             do {
                 try CleanupSafety.validate(original, allowedRoots: scopes, developerScopes: developerScopes)
                 try EmulatorCleanup.requireAndroidIdle(original.url)
@@ -87,7 +90,7 @@ enum ReviewPlanner {
                     })
                     if let protected { throw SafetyError.protectedContents(protected.lastPathComponent) }
                     if metadata != nil { throw SafetyError.projectRoot }
-                    if token.cancelled { return .init(items: [], failures: ["Review cancelled. No files were moved."]) }
+                    if token.cancelled { return .cancelled }
                     if scan.skipped > 0 { throw SafetyError.access(scan.accessIssues.first?.path ?? original.url.path) }
                     guard !scan.limited else { throw SafetyError.budget }
                     if inspectSource, sourceCount > 0, buildCount == 0 { throw SafetyError.sourceLike }
@@ -100,14 +103,28 @@ enum ReviewPlanner {
                 else { reviewedSeal = try ReviewSeal.capture(freshItem, token: token, deadline: deadline) }
                 guard try ReviewSeal.capture(freshItem, token: token, deadline: deadline) == reviewedSeal else { throw ReviewSeal.Failure.changed }
                 freshItem.reviewSeal = reviewedSeal
-                fresh.append(freshItem)
-                evidence[original.id] = CleanupEvidenceService.classify(original.url, gitIgnored: ignored)
+                return .verified(freshItem, CleanupEvidenceService.classify(original.url, gitIgnored: ignored))
             } catch {
-                let reason = error.localizedDescription
-                failures.append(original.name + ": " + reason)
-                blocked.append(.init(url: original.url, reason: reason))
+                return .failed(error.localizedDescription)
             }
         }
+        let outcomes = UnsafeMutableBufferPointer<Outcome>.allocate(capacity: max(1, candidates.count))
+        defer { outcomes.deallocate() }
+        DispatchQueue.concurrentPerform(iterations: candidates.count) { index in
+            (outcomes.baseAddress! + index).initialize(to: verify(candidates[index]))
+        }
+        var fresh: [DiskItem] = [], failures: [String] = [], blocked: [ReviewBlockedItem] = []
+        var evidence: [String: CleanupEvidence] = [:], warnings: [String] = []
+        for (index, original) in candidates.enumerated() {
+            switch outcomes[index] {
+            case .verified(let item, let found): fresh.append(item); evidence[original.id] = found
+            case .failed(let reason):
+                failures.append(original.name + ": " + reason)
+                blocked.append(.init(url: original.url, reason: reason))
+            case .cancelled: break
+            }
+        }
+        if candidates.count > 0 { (outcomes.baseAddress!).deinitialize(count: candidates.count) }
         if !fresh.isEmpty {
             let uses = openFiles()
             for item in fresh.prefix(24) {
