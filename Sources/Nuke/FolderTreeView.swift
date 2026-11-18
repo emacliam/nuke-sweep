@@ -478,7 +478,10 @@ private struct TreeRowView: View {
         .onHover { hovered = $0 }
         .simultaneousGesture(TapGesture().onEnded { onFocus() })
         .onTapGesture(count: 2) { if folder { store.toggle(row.item) } }
-        .contextMenu { if aiEnabled { Button("Explain with AI…") { onExplain() } } }
+        .contextMenu {
+            Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([row.item.url]) }
+            if aiEnabled { Button("Explain with AI…") { onExplain() } }
+        }
         .accessibilityElement(children: .contain)
     }
 }

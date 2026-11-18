@@ -261,13 +261,19 @@ struct TrashReview: View {
                 LazyVStack(alignment: .leading, spacing: 14) {
                     ForEach(model.pendingTrash) { item in
                         VStack(alignment: .leading, spacing: 5) {
-                            Toggle(item.name, isOn: Binding(
-                                get: { model.pendingTrashSelection.contains(item.id) },
-                                set: { include in
-                                    if include { model.pendingTrashSelection.insert(item.id) }
-                                    else { model.pendingTrashSelection.remove(item.id) }
-                                }
-                            )).toggleStyle(.checkbox).font(.system(size: 13, weight: .medium))
+                            HStack {
+                                Toggle(item.name, isOn: Binding(
+                                    get: { model.pendingTrashSelection.contains(item.id) },
+                                    set: { include in
+                                        if include { model.pendingTrashSelection.insert(item.id) }
+                                        else { model.pendingTrashSelection.remove(item.id) }
+                                    }
+                                )).toggleStyle(.checkbox).font(.system(size: 13, weight: .medium))
+                                Spacer()
+                                Button { model.reveal(item.url) } label: { Image(systemName: "folder") }
+                                    .buttonStyle(.plain).foregroundStyle(Theme.secondary)
+                                    .help("Show in Finder").accessibilityLabel("Show \(item.name) in Finder")
+                            }
                             if let evidence = model.pendingEvidence[item.id] {
                                 let assessment = CandidateAssessment.make(item, evidence: evidence)
                                 let caution = assessment.state == .needsInspection || evidence.kind.isBlocked

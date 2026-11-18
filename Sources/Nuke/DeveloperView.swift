@@ -134,6 +134,17 @@ struct DeveloperView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(rule.name + ", " + (expanded == rule.id ? "hide details" : "show details") + ". " + cost.summary)
+                // The two things people come here to do, on the row itself
+                // rather than behind the disclosure.
+                if let item = measured {
+                    Button { model.reveal(item.url) } label: { Image(systemName: "folder") }
+                        .buttonStyle(.plain).foregroundStyle(Theme.secondary)
+                        .help("Show in Finder").accessibilityLabel("Show \(rule.name) in Finder")
+                    Button("Clear…") { model.reviewTrash([], cacheContents: rule) }
+                        .buttonStyle(QuietButton())
+                        .disabled(model.actionBusy || model.cacheScanning || item.size == 0)
+                        .help("Review the contents and move them to Trash. The folder itself stays.")
+                }
             }
             if expanded == rule.id {
                 VStack(alignment: .leading, spacing: 10) {

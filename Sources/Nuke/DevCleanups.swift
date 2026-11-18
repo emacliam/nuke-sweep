@@ -208,13 +208,13 @@ struct DevCleanupPanel: View {
                         }
                         VStack(spacing: 0) {
                             ForEach(state.tools) { finding in
-                                row(finding.tool.name, finding.tool.effect, detail: finding.tool.command, size: finding.size,
+                                row(finding.tool.name, finding.tool.effect, detail: finding.tool.command, path: DevCleanups.home.appendingPathComponent(finding.tool.cache).path, size: finding.size,
                                     button: "Clear") { confirmTool = finding }
                                 Divider()
                             }
                             ForEach(state.worktrees) { tree in
                                 row("Worktree · \(tree.branch)", "Clean, and its commits exist elsewhere. The branch is kept.",
-                                    detail: tree.path, size: tree.size, button: "Remove") { confirmTree = tree }
+                                    detail: tree.path, path: tree.path, size: tree.size, button: "Remove") { confirmTree = tree }
                                 Divider()
                             }
                         }
@@ -238,7 +238,7 @@ struct DevCleanupPanel: View {
         }
     }
 
-    private func row(_ title: String, _ effect: String, detail: String, size: Int64, button: LocalizedStringKey, action: @escaping () -> Void) -> some View {
+    private func row(_ title: String, _ effect: String, detail: String, path: String, size: Int64, button: LocalizedStringKey, action: @escaping () -> Void) -> some View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(verbatim: title).font(.system(size: 12, weight: .semibold))
@@ -247,6 +247,8 @@ struct DevCleanupPanel: View {
             }
             Spacer(minLength: 12)
             Text(verbatim: bytes(size)).font(.system(size: 13, weight: .medium)).monospacedDigit()
+            Button { model.reveal(URL(fileURLWithPath: path)) } label: { Image(systemName: "folder") }
+                .buttonStyle(.plain).foregroundStyle(Theme.secondary).help("Show in Finder")
             Button(button, action: action).buttonStyle(QuietButton())
                 .disabled(state.running != nil || model.actionBusy)
         }
