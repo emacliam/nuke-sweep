@@ -74,6 +74,8 @@ enum ReviewPlanner {
         let candidates = topLevel(items)
         enum Outcome { case verified(DiskItem, CleanupEvidence), failed(String), cancelled }
         func verify(_ original: DiskItem) -> Outcome {
+            // Closing the review stops the items not started yet.
+            if token.cancelled { return .cancelled }
             let deadline = min(overall, Date().addingTimeInterval(60))
             do {
                 try CleanupSafety.validate(original, allowedRoots: scopes, developerScopes: developerScopes)

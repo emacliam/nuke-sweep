@@ -217,13 +217,13 @@ import UniformTypeIdentifiers
         guard !appLoading else { return }; appLoading = true; selectedApp = nil; appReport = .init(); leftovers = .init(); leftoversScanned = false
         appToken = ScanCancellation(); let token = appToken; appNote = ""
         let generation = storageGeneration
-        Task { let measured = await DiskWork.run("Reading installed apps", cancellation: token) { AppInventory.apps(token: token) }; guard generation == storageGeneration else { return }; apps = measured; appNote = token.cancelled ? "Stopped — partial app inventory." : ""; appMeasured = Date(); appLoading = false }
+        Task { let measured = await DiskWork.run("Reading installed apps", lane: .interactive, cancellation: token) { AppInventory.apps(token: token) }; guard generation == storageGeneration else { return }; apps = measured; appNote = token.cancelled ? "Stopped — partial app inventory." : ""; appMeasured = Date(); appLoading = false }
     }
     func inspectApp(_ app: InstalledApp) {
         guard !appLoading else { return }; appLoading = true; selectedApp = app; appReport = .init(); leftovers = .init(); leftoversScanned = false
         appToken = ScanCancellation(); let token = appToken; appNote = ""
         let generation = storageGeneration
-        Task { let measured = await DiskWork.run("Inspecting app files", cancellation: token) { AppInventory.related(app, token: token) }; guard generation == storageGeneration else { return }; appReport = measured; appNote = token.cancelled ? "Stopped — partial app inspection." : ""; appMeasured = Date(); appLoading = false }
+        Task { let measured = await DiskWork.run("Inspecting app files", lane: .interactive, cancellation: token) { AppInventory.related(app, token: token) }; guard generation == storageGeneration else { return }; appReport = measured; appNote = token.cancelled ? "Stopped — partial app inspection." : ""; appMeasured = Date(); appLoading = false }
     }
     func findLeftovers() {
         guard !appLoading else { return }; appLoading = true; selectedApp = nil; appReport = .init()

@@ -223,17 +223,27 @@ final class ParallelWalk: @unchecked Sendable {
                 stack.append(child.index)
             }
             busy -= 1
-            condition.broadcast()
+            // Wake waiting workers only when there is new work, or when the
+            // walk is over; waking all of them after every folder made them
+            // queue on the lock for nothing.
+            if children.count == 1 { condition.signal() }
+            else if children.count > 1 || (busy == 0 && stack.isEmpty) { condition.broadcast() }
             condition.unlock()
         }
     }
 
     /// Claims `count` entries against the budget; returns how many were granted.
-    func claim(_ count: Int) -> Int {
-        condition.lock(); defer { condition.unlock() }
+    func claim(_ count: Int, at path: String? = nil) -> Int {
+        condition.lock()
+        let before = budgetUsed
         let granted = max(0, min(count, options.limit - budgetUsed))
         budgetUsed += granted
         if granted < count { limited = true }
+        let total = budgetUsed
+        condition.unlock()
+        // Progress every 4,096 entries: per-entry reporting took two locks per
+        // file and kept the workers waiting on each other.
+        if let report, let path, before / 4096 != total / 4096 { report(path, total) }
         return granted
     }
     func skip(_ path: String?, _ reason: String?) {
@@ -265,7 +275,7 @@ final class ParallelWalk: @unchecked Sendable {
         var stopped = false
         func flush() {
             guard !pending.isEmpty else { return }
-            let granted = claim(pending.count)
+            let granted = claim(pending.count, at: node.path)
             for entry in pending.prefix(granted) { account(entry, node: node, category: category, totals: &totals, children: &children) }
             if granted < pending.count { totals.incomplete = true; stopped = true }
             totals.entries += granted
@@ -294,7 +304,6 @@ final class ParallelWalk: @unchecked Sendable {
     private func account(_ entry: BulkEntry, node: WalkNode, category: Int?, totals: inout SubtreeTotals, children: inout [WalkNode]) {
         let child = node.path + "/" + entry.name
         if let observing = options.observing { observing(URL(fileURLWithPath: child)) }
-        if let report, totals.entries % 512 == 0 { report(child, visited) }
         if entry.error != 0 { skip(child, String(cString: strerror(entry.error))); totals.incomplete = true; return }
         if entry.isDirectory {
             if entry.device != options.device { skip(nil, nil); totals.incomplete = true; return }
@@ -374,7 +383,7 @@ enum ScanMemory {
     private static let maxEntries = 400_000
     static var url: URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Nuke/scan-memory.plist")
+            .appendingPathComponent(AppEnvironment.supportName + "/scan-memory.plist")
     }
 
     private static func all() -> [String: Snapshot] {
@@ -454,7 +463,7 @@ enum FSEventsHistory {
 
     static var markerDirectory: URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Nuke/fsevents-marker", isDirectory: true)
+            .appendingPathComponent(AppEnvironment.supportName + "/fsevents-marker", isDirectory: true)
     }
 
     /// Nil when the history cannot be trusted: dropped, wrapped, or not confirmed in time.

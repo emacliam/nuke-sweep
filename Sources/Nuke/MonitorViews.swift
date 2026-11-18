@@ -272,7 +272,10 @@ struct TrashReview: View {
             }
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 14) {
-                    ForEach(model.pendingTrash) { item in
+                    // Largest first once checking is done. While items are still
+                    // arriving they stay in arrival order, so rows do not jump
+                    // under the pointer.
+                    ForEach(model.reviewPreparing ? model.pendingTrash : model.pendingTrash.sorted { $0.size > $1.size }) { item in
                         VStack(alignment: .leading, spacing: 5) {
                             HStack {
                                 Toggle(item.name, isOn: Binding(
@@ -308,7 +311,11 @@ struct TrashReview: View {
                         Divider()
                     }
                 }
-            }.frame(minHeight: 90, maxHeight: 220).layoutPriority(-1)
+            }.frame(minHeight: 160, maxHeight: .infinity).layoutPriority(1)
+            // Notes scroll in their own band, so opening one can never push
+            // Cancel and Move out of the sheet.
+            ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
             if !model.pendingBlocked.isEmpty {
                 DisclosureGroup("Not included · \(model.pendingBlocked.count) could not be verified", isExpanded: $blockedExpanded) {
                     ScrollView {
@@ -351,6 +358,11 @@ struct TrashReview: View {
                 // Move button out of the sheet.
                 DisclosureGroup(isExpanded: $restoreExpanded) {
                 VStack(alignment: .leading, spacing: 6) {
+                    let reasons = Set(restore.manualOnly.compactMap(\.reason))
+                    if reasons.count == 1, let only = reasons.first {
+                        // The same cause for every item (usually Trash access): say it once.
+                        Text(verbatim: only).font(.system(size: 11)).foregroundStyle(Theme.secondary).fixedSize(horizontal: false, vertical: true)
+                    } else {
                     ForEach(restore.manualOnly.prefix(3)) { finding in
                         VStack(alignment: .leading, spacing: 1) {
                             Text(verbatim: finding.item.name).font(.system(size: 11, weight: .medium))
@@ -362,6 +374,7 @@ struct TrashReview: View {
                     }
                     if restore.manualOnly.count > 3 {
                         Text("And \(restore.manualOnly.count - 3) more items").font(.system(size: 10))
+                    }
                     }
                     Text("These still move to Trash and can be dragged back by hand. Only the one-click restore is unavailable.")
                         .font(.system(size: 10)).foregroundStyle(Theme.secondary).fixedSize(horizontal: false, vertical: true)
@@ -380,6 +393,8 @@ struct TrashReview: View {
                     Toggle("I closed the apps or builds listed above.", isOn: $openHandlesReviewed).font(.system(size: 12))
                 }
             }
+            }
+            }.frame(minHeight: 60, maxHeight: 190)
             HStack(spacing: 10) {
                 Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
                 Button("Export plan…") { model.exportPendingPlan() }.buttonStyle(QuietButton()).disabled(selected.isEmpty)
@@ -390,7 +405,7 @@ struct TrashReview: View {
                     .buttonStyle(PrimaryButton()).keyboardShortcut(.defaultAction)
                     .disabled(selected.isEmpty || (!model.pendingWarnings.isEmpty && !openHandlesReviewed) || model.actionBusy)
             }
-        }.padding(30).frame(width: 580).frame(maxHeight: 680)
+        }.padding(30).frame(width: 600, height: 640)
             .task(id: selected) {
                 guard !selected.isEmpty else { restoreReport = nil; return }
                 let token = ScanCancellation()

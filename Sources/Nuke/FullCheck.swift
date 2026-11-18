@@ -443,10 +443,17 @@ struct FullCheckCard: View {
 
     private var invitation: some View {
         VStack(alignment: .leading, spacing: 16) {
-            VStack(alignment: .leading, spacing: 5) {
-                Text("See what you can clear, and what it would cost you").font(.system(size: 17, weight: .semibold))
-                Text("One pass over caches, project build output, Trash, and your own files: installers, repeat downloads, recordings, old backups. Usually a minute or two.")
-                    .font(.system(size: 12)).foregroundStyle(Theme.secondary).fixedSize(horizontal: false, vertical: true)
+            // The action sits beside the title, so it is visible in any window size.
+            HStack(alignment: .top, spacing: 16) {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("See what you can clear, and what it would cost you").font(.system(size: 17, weight: .semibold))
+                    Text("One pass over caches, project build output, Trash, and your own files: installers, repeat downloads, recordings, old backups. Usually a minute or two.")
+                        .font(.system(size: 12)).foregroundStyle(Theme.secondary).fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
+                let checkTitle: LocalizedStringKey = model.diskAccess == .missing ? "Check without it" : "Check this Mac"
+                Button(checkTitle) { model.startFullCheck() }
+                    .buttonStyle(PrimaryButton()).disabled(!model.canStartFullCheck)
             }
             VStack(alignment: .leading, spacing: 9) {
                 promise("arrow.uturn.backward.circle", "Nothing is deleted. Reviewed items move to Trash, with a receipt and a way back.")
@@ -458,12 +465,6 @@ struct FullCheckCard: View {
                 }
             }
             if model.diskAccess == .missing { AccessStep() }
-            HStack {
-                Spacer()
-                let checkTitle: LocalizedStringKey = model.diskAccess == .missing ? "Check without it" : "Check this Mac"
-                Button(checkTitle) { model.startFullCheck() }
-                    .buttonStyle(PrimaryButton()).disabled(!model.canStartFullCheck)
-            }
         }
     }
 
