@@ -98,3 +98,46 @@ private struct PermanentTrashReview: View {
         }.padding(30).frame(width: 560)
     }
 }
+
+extension AppModel {
+    /// One step from anywhere: inspect Trash, then confirm deleting all of it.
+    func emptyTrash() {
+        guard !actionBusy, !trashLoading else { return }
+        emptyTrashPending = true
+        inspectTrash()
+    }
+}
+
+/// The confirmation for Empty Trash. It appears only once the inspection is
+/// complete, names what will go, and says plainly that it cannot be undone.
+struct EmptyTrashConfirmation: ViewModifier {
+    @Environment(AppModel.self) var model
+    func body(content: Content) -> some View {
+        let snapshot = model.trashSnapshot
+        let ready = model.emptyTrashPending && !model.trashLoading
+        content
+            .confirmationDialog(
+                snapshot.map { "Permanently delete \($0.entries.count) items (\(bytes($0.size))) in Trash?" } ?? "Trash could not be read",
+                isPresented: Binding(get: { ready }, set: { if !$0 { model.emptyTrashPending = false } }),
+                titleVisibility: .visible
+            ) {
+                if let snapshot, snapshot.complete, !snapshot.entries.isEmpty {
+                    Button("Empty Trash", role: .destructive) {
+                        model.emptyTrashPending = false
+                        model.permanentlyDeleteTrash(snapshot.entries, rootIdentity: snapshot.rootIdentity)
+                    }
+                }
+                Button("Cancel", role: .cancel) { model.emptyTrashPending = false }
+            } message: {
+                if let snapshot, snapshot.entries.isEmpty {
+                    Text("Trash is already empty.")
+                } else if let snapshot, !snapshot.complete {
+                    Text("Trash could only be read in part, so it is not emptied from here. Review it on the Trash page or in Finder.")
+                } else if snapshot != nil {
+                    Text("This cannot be undone. Items cleaned up earlier can no longer be put back from History.")
+                } else {
+                    Text(model.trashError ?? "Allow Full Disk Access, then try again.")
+                }
+            }
+    }
+}

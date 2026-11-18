@@ -317,8 +317,10 @@ struct SessionGainLine: View {
                 }
                 if trash > 500_000_000 {
                     if gained > 100_000_000 { Text(verbatim: "·").foregroundStyle(Theme.secondary) }
-                    Text("Trash holds \(bytes(trash)). Empty it in Finder to get that space back.")
-                        .foregroundStyle(Theme.secondary)
+                    Text("Trash still holds \(bytes(trash)).").foregroundStyle(Theme.secondary)
+                    Button("Empty Trash…") { model.emptyTrash() }
+                        .buttonStyle(.plain).fontWeight(.medium).foregroundStyle(Theme.orange)
+                        .disabled(model.actionBusy || model.trashLoading)
                 }
             }
             .font(.system(size: 11))

@@ -75,7 +75,15 @@ struct MonitorPopover: View {
                         .font(.system(size: 11)).foregroundStyle(Theme.secondary)
                 }
                 HStack(spacing: 8) {
-                    Button("Review") { model.showMainWindow(.findSpace) }.buttonStyle(PrimaryButton())
+                    if !report.regenerable.isEmpty {
+                        // Straight to the review, everything ticked; nothing moves until confirmed there.
+                        Button("Free up \(bytes(report.totals.regenerableBytes))…") {
+                            model.showMainWindow(.findSpace); model.reviewTrash(report.regenerable)
+                        }.buttonStyle(PrimaryButton()).disabled(model.actionBusy)
+                        Button("Review") { model.showMainWindow(.findSpace) }.buttonStyle(QuietButton())
+                    } else {
+                        Button("Review") { model.showMainWindow(.findSpace) }.buttonStyle(PrimaryButton())
+                    }
                     Button("Check again") { model.startFullCheck() }
                         .buttonStyle(QuietButton()).disabled(!model.canStartFullCheck)
                 }
