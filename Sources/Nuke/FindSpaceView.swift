@@ -73,6 +73,7 @@ struct FindSpaceView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             CleanupStorageSummary()
+            SessionGainLine()
             if features.monitor.monitorEnabled, !features.monitor.monitorPaused,
                let days = features.monitor.forecastDays {
                 Text("At this rate, your disk could be full in about \(days) days.")
@@ -89,6 +90,7 @@ struct FindSpaceView: View {
             let personalFirst = ProcessInfo.processInfo.arguments.contains("--capture-personal")
             if personalFirst, model.personal.report != nil { PersonalFilesPanel() }
             FullCheckCard()
+            DevCleanupPanel()
             if !personalFirst, model.personal.running || model.personal.report != nil {
                 ScrollViewReader { proxy in
                     PersonalFilesPanel().id("personal-files")
@@ -292,5 +294,37 @@ struct ReclaimSummaryPanel: View {
                 }
             }
         }
+    }
+}
+
+/// Before and after, on the data volume: what this session actually got back,
+/// and what is still waiting in Trash.
+@MainActor enum SessionBaseline { static var free: Int64? }
+
+struct SessionGainLine: View {
+    @Environment(AppModel.self) var model
+    var body: some View {
+        let free = model.resources.freeDisk
+        let _ = { if SessionBaseline.free == nil, model.resources.totalDisk > 0 { SessionBaseline.free = free } }()
+        let gained = SessionBaseline.free.map { free - $0 } ?? 0
+        let trash = model.quick.trashSize ?? 0
+        if gained > 100_000_000 || trash > 500_000_000 {
+            HStack(spacing: 8) {
+                if gained > 100_000_000, let start = SessionBaseline.free {
+                    Image(systemName: "arrow.up.circle.fill").foregroundStyle(Theme.green)
+                    Text("\(bytes(gained)) freed since you opened Nuke Sweep · \(bytes(start)) → \(bytes(free)) available")
+                        .monospacedDigit()
+                }
+                if trash > 500_000_000 {
+                    if gained > 100_000_000 { Text(verbatim: "·").foregroundStyle(Theme.secondary) }
+                    Text("Trash holds \(bytes(trash)). Empty it in Finder to get that space back.")
+                        .foregroundStyle(Theme.secondary)
+                }
+            }
+            .font(.system(size: 11))
+        }
+        // Emptying Trash happens in Finder; coming back should show the result.
+        Color.clear.frame(height: 0)
+            .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in model.refreshResources() }
     }
 }
