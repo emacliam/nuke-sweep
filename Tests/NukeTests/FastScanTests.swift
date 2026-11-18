@@ -64,4 +64,15 @@ final class FastScanTests: XCTestCase {
         XCTAssertEqual(second.items.first { $0.name == "stable" }?.size, 4000)
         XCTAssertEqual(second.logical, 13000)
     }
+
+    func testChildScanReusesParentScanAndSeesChanges() throws {
+        let root = try fixture(); defer { try? FileManager.default.removeItem(at: root); ScanMemory.forget() }
+        for index in 0..<400 { try write(root.appendingPathComponent("tool/a/f\(index)"), 10) }
+        for index in 0..<400 { try write(root.appendingPathComponent("tool/b/f\(index)"), 10) }
+        _ = DiskScanner.scan(root, cancellation: ScanCancellation())
+        try write(root.appendingPathComponent("tool/b/new"), 777)
+        let child = DiskScanner.scan(root.appendingPathComponent("tool"), cancellation: ScanCancellation())
+        XCTAssertEqual(child.items.first { $0.name == "a" }?.size, 4000)
+        XCTAssertEqual(child.items.first { $0.name == "b" }?.size, 4777, "the change made after the parent scan is seen")
+    }
 }

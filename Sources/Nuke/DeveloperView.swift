@@ -53,9 +53,6 @@ struct DeveloperView: View {
                 Button(model.cacheScanning ? "Scanning…" : model.cacheOutcome == "Not scanned" ? "Scan developer caches" : "Scan again") { model.scanCaches() }.buttonStyle(PrimaryButton()).disabled(model.cacheScanning)
             }
             if measuredTotal > 0 { DeveloperTotals(bytes: measuredTotal, locations: measuredCount, reclaimable: quickReclaimTotal) }
-            HomebrewCleanupView()
-            ToolchainInventoryView()
-            TriagePanel(store: model.triage)
             VStack(spacing: 0) {
                 // Largest first, like every other surface. Unmeasured and
                 // not-found locations sort last rather than interleaving with
@@ -67,6 +64,11 @@ struct DeveloperView: View {
                     }.font(.system(size: 12)).padding(.vertical, 4)
                 }
             }
+            // The cache rows come first: they are what people open this page for.
+            // Homebrew, toolchains and the cross-location ranking follow.
+            HomebrewCleanupView()
+            ToolchainInventoryView()
+            TriagePanel(store: model.triage)
             if !selectedRules.isEmpty {
                 DeveloperSelectionBar(
                     count: selectedRules.count,

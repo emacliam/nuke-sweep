@@ -19,6 +19,11 @@ struct ApplicationsView: View {
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Apps").font(.system(size: 22, weight: .semibold)).accessibilityAddTraits(.isHeader)
+                Text("Installed apps with the files they keep elsewhere, and what removed apps left behind.")
+                    .font(.system(size: 12)).foregroundStyle(Theme.secondary)
+            }
             HStack { Button("Inspect installed apps") { features.scanApps() }.buttonStyle(PrimaryButton()).disabled(features.appLoading); Button("Find possible leftovers") { features.findLeftovers() }.buttonStyle(QuietButton()).disabled(features.appLoading); Spacer(); Text("/Applications + ~/Applications").font(.system(size: 10)).foregroundStyle(Theme.secondary) }
             if features.appLoading { BusyLine(text: "Queued or reading app identities and related locations…") }
             if !features.appNote.isEmpty { Text(features.appNote).font(.system(size: 11)).foregroundStyle(Theme.secondary) }
@@ -158,10 +163,9 @@ struct ReceiptsView: View {
             }
             if !receipts.isEmpty {
                 HStack(spacing: 28) {
-                    metric("Receipts", "\(receipts.count)")
-                    metric("Succeeded", "\(movedItems)")
-                    metric("Failed", "\(failedItems)", warn: failedItems > 0)
-                    metric("Latest observed", lastObserved.map { ($0 >= 0 ? "+" : "−") + bytes(abs($0)) } ?? "—")
+                    metric("Cleanups", "\(receipts.count)")
+                    metric("Items moved", "\(movedItems)")
+                    if failedItems > 0 { metric("Failed", "\(failedItems)", warn: true) }
                     metric("Recovered to date", lifetimeReclaimed)
                     Spacer()
                 }

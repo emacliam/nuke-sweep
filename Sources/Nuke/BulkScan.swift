@@ -393,20 +393,33 @@ enum ScanMemory {
         return decoded
     }
 
-    /// A reuse plan for scanning `root`, or nil when nothing trustworthy is remembered.
+    /// A reuse plan for scanning `root`. Totals come from the last scan of
+    /// `root` itself and from scans of any folder containing it, so the Yarn
+    /// cache reuses what a scan of ~/Library/Caches already measured.
     static func reuse(for root: String, device: dev_t, ignored: Set<String>) -> (ScanReuse, UInt64, String)? {
         let now = FSEventsGetCurrentEventId()
         let volume = (FSEventsCopyUUIDForDevice(device)).map { CFUUIDCreateString(nil, $0) as String } ?? ""
-        lock.lock(); let snapshot = all()[root]; lock.unlock()
-        guard let snapshot, !volume.isEmpty, snapshot.volume == volume, Set(snapshot.ignored) == ignored,
-              snapshot.eventID <= now, let changed = FSEventsHistory.changes(since: snapshot.eventID, under: canonical(root)) else {
+        lock.lock(); let snapshots = all(); lock.unlock()
+        let prefix = root + "/"
+        let usable = snapshots.filter { key, snapshot in
+            (key == root || root.hasPrefix(key + "/")) && snapshot.volume == volume && Set(snapshot.ignored) == ignored && snapshot.eventID <= now
+        }
+        guard !volume.isEmpty, let since = usable.values.map(\.eventID).min() else {
+            return (ScanReuse(remembered: [:], changed: []), now, volume)
+        }
+        // Newer snapshots win where two cover the same folder.
+        var remembered: [String: SubtreeTotals] = [:]
+        for snapshot in usable.values.sorted(by: { $0.eventID < $1.eventID }) {
+            for (path, totals) in snapshot.totals where path.hasPrefix(prefix) { remembered[path] = totals }
+        }
+        guard !remembered.isEmpty, let changed = FSEventsHistory.changes(since: since, under: canonical(root)) else {
             return (ScanReuse(remembered: [:], changed: []), now, volume)
         }
         // FSEvents reports resolved paths (/private/var/…); scans may use the
         // symlinked spelling (/var/…). Map events back to the scan's spelling.
         let real = canonical(root)
         let mapped = real == root ? changed : changed.map { $0.hasPrefix(real) ? root + $0.dropFirst(real.count) : $0 }
-        return (ScanReuse(remembered: snapshot.totals, changed: mapped), now, volume)
+        return (ScanReuse(remembered: remembered, changed: mapped), now, volume)
     }
 
     private static func canonical(_ path: String) -> String {

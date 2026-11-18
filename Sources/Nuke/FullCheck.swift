@@ -428,10 +428,10 @@ struct FullCheckCard: View {
         .onAppear {
             model.refreshDiskAccess()
             // Opening Cleanup should land on an answer, not a button to get one.
-            // The check only reads; it reruns at most once an hour.
-            let recent = FullCheckHistory.last.map { Date().timeIntervalSince($0.date) < 3600 } ?? false
-            if !model.fullCheck.running, !model.fullCheckResultIsCurrent, !recent,
-               model.diskAccess != .missing, model.canStartFullCheck {
+            // The check only reads, and remembered scans make a repeat take
+            // seconds, so it runs whenever there is no answer on screen,
+            // including after a relaunch and without Full Disk Access.
+            if !model.fullCheck.running, !model.fullCheckResultIsCurrent, !model.fullCheck.stopped, model.canStartFullCheck {
                 model.startFullCheck()
             }
         }
@@ -480,7 +480,6 @@ struct FullCheckCard: View {
             HStack {
                 Text("Checking this Mac…").font(.system(size: 15, weight: .semibold))
                 Spacer()
-                Button("Stop") { model.stopFullCheck() }.buttonStyle(QuietButton())
             }
             step("Application caches and Trash", active: model.quick.busy, done: model.quick.measured != nil)
             step("Developer caches", active: model.cacheScanning, done: !model.cacheScanning && !model.caches.isEmpty)

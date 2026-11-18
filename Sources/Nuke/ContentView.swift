@@ -178,10 +178,12 @@ struct ContentView: View {
                 coreNav("Cleanup", icon: "sparkle.magnifyingglass", section: .cleanup, destination: .findSpace)
                 coreNav("Files", icon: "folder", section: .files, destination: .storage)
                 coreNav("Apps", icon: "app.badge", section: .apps, destination: .apps)
+                if !model.cleanupBasket.items.isEmpty {
                 Button { model.showCleanupBasket = true } label: {
                     HStack(spacing: 11) { Image(systemName: "tray").frame(width: 19); Text("Basket"); Spacer(); Text(String(model.cleanupBasket.items.count)).monospacedDigit().foregroundStyle(Theme.secondary) }
                         .font(.system(size: 13)).padding(.horizontal, 12).padding(.vertical, 12)
                 }.buttonStyle(.plain).accessibilityLabel("Cleanup basket, \(model.cleanupBasket.items.count) items")
+                }
                 coreNav("History", icon: "clock.arrow.circlepath", section: .history, destination: .history)
             }.padding(.horizontal, 12)
             Spacer(minLength: 12)
@@ -344,8 +346,8 @@ struct StorageToolbar: View {
             Spacer()
             VolumesMenu(volumes: volumes) { model.scan($0) }
             Button("Choose folder…") { model.chooseFolder() }.buttonStyle(QuietButton())
-            Button("Full scan") { model.scan(force: true) }.buttonStyle(QuietButton()).disabled(model.scanning)
-            Button("Refresh folder") { model.scan() }.buttonStyle(PrimaryButton()).disabled(model.scanning)
+            Button("Refresh") { model.scan(force: true) }.buttonStyle(PrimaryButton()).disabled(model.scanning)
+                .help("Measure this folder again. Unchanged folders are reused from the last scan, so this is quick.")
         }
     }
 }

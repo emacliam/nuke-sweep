@@ -186,8 +186,8 @@ struct AccessRecovery: View {
     @Environment(AppModel.self) var model
     var body: some View {
         HStack {
-            if model.page == .trash { Button("Retry Trash scan") { model.inspectTrash() }.buttonStyle(QuietButton()).disabled(model.trashLoading) }
-            else { Button("Choose folder again…") { model.chooseFolder() }.buttonStyle(QuietButton()) }
+            // On the Trash page, Scan Trash above already retries; no second button.
+            if model.page != .trash { Button("Choose folder again…") { model.chooseFolder() }.buttonStyle(QuietButton()) }
             Button("Resolve access for this inspection") { model.prepareRecovery(model.page == .trash ? .trash : .storage(model.scanRoot)) }.buttonStyle(QuietButton())
         }
     }
