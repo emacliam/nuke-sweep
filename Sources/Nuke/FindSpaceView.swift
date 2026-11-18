@@ -27,6 +27,10 @@ extension AppModel {
         Task {
             let roots = rootsOverride ?? ([("Application caches", FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Caches"))])
             var candidates: [String: InventoryEntry] = [:]
+            // Trash is measured alongside the caches, not after them.
+            let trashScan: Task<ScanResult, Never>? = includeTrash ? Task {
+                await DiskWork.run("Inspecting Trash", cancellation: token) { DiskScanner.scan(TrashService.current.root, cancellation: token, limit: 12_000, deadline: Date().addingTimeInterval(8)) }
+            } : nil
             for (index, pair) in roots.enumerated() {
                 if token.cancelled { break }
                 quick.step = "\(index + 1) of \(roots.count + (includeTrash ? 1 : 0)) · \(pair.0)"
@@ -47,9 +51,9 @@ extension AppModel {
                 if scan.skipped > 0 || scan.limited { quick.notes.append(pair.0 + ": incomplete or unavailable. This quick pass is bounded to 12,000 entries / 8 seconds per location; use a full folder scan before cleanup.") }
                 quick.entries = candidates.values.sorted { $0.item.size > $1.item.size }
             }
-            if includeTrash && !token.cancelled {
+            if let trashScan, !token.cancelled {
                 quick.step = "Inspecting Trash size…"
-                let scan = await DiskWork.run("Inspecting Trash", cancellation: token) { DiskScanner.scan(TrashService.current.root, cancellation: token, limit: 12_000, deadline: Date().addingTimeInterval(8)) }
+                let scan = await trashScan.value
                 guard isCurrentQuick(token) else { return }
                 quick.trashSize = scan.skipped == 0 && !scan.limited ? scan.logical : nil
                 quick.trashPartial = scan.skipped > 0 || scan.limited

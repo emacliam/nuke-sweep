@@ -411,6 +411,7 @@ extension FullCheckHistory {
 struct FullCheckCard: View {
     @Environment(AppModel.self) var model
     @Environment(FeatureModel.self) var features
+    @State private var moreOpen = false
 
     var body: some View {
         Surface {
@@ -424,7 +425,16 @@ struct FullCheckCard: View {
                 invitation
             }
         }
-        .onAppear { model.refreshDiskAccess() }
+        .onAppear {
+            model.refreshDiskAccess()
+            // Opening Cleanup should land on an answer, not a button to get one.
+            // The check only reads; it reruns at most once an hour.
+            let recent = FullCheckHistory.last.map { Date().timeIntervalSince($0.date) < 3600 } ?? false
+            if !model.fullCheck.running, !model.fullCheckResultIsCurrent, !recent,
+               model.diskAccess != .missing, model.canStartFullCheck {
+                model.startFullCheck()
+            }
+        }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             model.refreshDiskAccess()
             model.pruneMovedPersonalFiles()
@@ -493,15 +503,33 @@ struct FullCheckCard: View {
 
     @ViewBuilder private func result(_ report: StorageTriage.Report) -> some View {
         let totals = report.totals
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .firstTextBaseline) {
-                let title: LocalizedStringKey = totals.candidateBytes > 0 ? "Here is what you can clear"
-                    : (model.personal.report?.totalBytes ?? 0) > 0 ? "Nothing rebuilds itself here, but your own files are worth a look"
-                    : "Nothing worth clearing was found"
-                Text(title)
-                    .font(.system(size: 17, weight: .semibold))
-                Spacer()
-                Button("Check again") { model.startFullCheck() }.buttonStyle(QuietButton()).disabled(!model.canStartFullCheck)
+        let personalBytes = model.personal.report?.totalBytes ?? 0
+        VStack(alignment: .leading, spacing: 16) {
+            // One sentence and one action: what can go without loss, and the
+            // button that does it. Everything else is supporting detail.
+            HStack(alignment: .center, spacing: 18) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Group {
+                        if totals.regenerableBytes > 0 {
+                            Text("You can free \(bytes(totals.regenerableBytes)) without losing anything")
+                        } else if personalBytes > 0 {
+                            Text("Nothing rebuilds itself here, but your own files are worth a look")
+                        } else {
+                            Text("Nothing worth clearing was found")
+                        }
+                    }
+                    .font(.system(size: 19, weight: .semibold)).fixedSize(horizontal: false, vertical: true)
+                    if totals.regenerableBytes > 0 {
+                        Text("Caches, dependencies and build output nothing is using. They go to Trash first, with a receipt and a way back.")
+                            .font(.system(size: 11)).foregroundStyle(Theme.secondary).fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                Spacer(minLength: 0)
+                if !report.regenerable.isEmpty {
+                    Button("Free up \(bytes(totals.regenerableBytes))…") { model.reviewTrash(report.regenerable) }
+                        .buttonStyle(PrimaryButton()).disabled(model.actionBusy)
+                        .help("Opens the review with these items ticked. Nothing moves until you confirm there.")
+                }
             }
             if model.fullCheck.projectsSkipped && (features.projectRoot.map {
                 IgnoredLocations.contains($0, in: IgnoredLocations.paths)
@@ -529,72 +557,93 @@ struct FullCheckCard: View {
                         .font(.system(size: 11)).foregroundStyle(Theme.secondary)
                 }
             }
-            if totals.candidateBytes > 0 {
-                HStack(alignment: .top, spacing: 26) {
-                    figure(bytes(totals.regenerableBytes), "comes back by itself", "Caches, dependencies and build output nothing is using", tint: Theme.green)
-                    figure(bytes(totals.candidateBytes), "open to review in total", "\(totals.candidateCount) locations with local evidence", tint: Theme.ink)
-                    if totals.exposedCount > 0 {
-                        figure(bytes(totals.exposedBytes), "held back", "No copy exists anywhere else", tint: Theme.error)
-                    }
+            VStack(spacing: 0) {
+                if totals.regenerableBytes > 0 {
+                    tier("arrow.triangle.2.circlepath", "Comes back by itself", "Rebuilt or re-downloaded the next time it is needed.",
+                         totals.regenerableBytes, tint: Theme.green)
                 }
-                if let record = model.fullCheck.record,
-                   let change = FullCheckHistory.change(previous: model.fullCheck.previous, current: record) {
-                    Text(verbatim: change).font(.system(size: 11, weight: .medium)).foregroundStyle(Theme.secondary)
+                if personalBytes > 0 {
+                    Divider()
+                    tier("person.crop.square", "Your own files", "Installers, repeat downloads, recordings and backups. Nothing is ticked for you.",
+                         personalBytes, tint: Theme.orange, action: ("Go through them", { model.showPersonalFiles() }))
                 }
-                if !model.fullCheck.growers.isEmpty, let previous = model.fullCheck.previous {
-                    growth(model.fullCheck.growers, since: previous.date)
-                }
-                if let items = model.fullCheck.autoCleanPreview {
-                    DisclosureGroup("Automatic cleanup preview · \(items.count) locations · \(bytes(items.reduce(0) { $0 + $1.size }))") {
-                        Text("These locations passed review. Files were left in place.")
-                            .foregroundStyle(Theme.secondary)
-                        ScrollView {
-                            LazyVStack(alignment: .leading, spacing: 4) {
-                                ForEach(items) { item in
-                                    Text(verbatim: item.url.path).textSelection(.enabled)
-                                }
-                            }
-                        }.frame(maxHeight: 200)
-                    }.font(.system(size: 11))
-                }
-                if let cleaned = model.fullCheck.autoCleaned, cleaned.movedCount > 0 {
-                    HStack(spacing: 8) {
-                        Image(systemName: "arrow.uturn.backward.circle").font(.system(size: 11)).foregroundStyle(Theme.green)
-                        Text("Automatic cleanup moved \(bytes(cleaned.movedBytes)) to Trash after this check. The figures above were measured before it ran.")
-                            .font(.system(size: 11)).foregroundStyle(Theme.secondary).fixedSize(horizontal: false, vertical: true)
-                        Button("See the receipt") { model.page = .history }
-                            .buttonStyle(.plain).font(.system(size: 11, weight: .medium)).foregroundStyle(Theme.orange)
-                    }
-                }
-                if let personal = model.personal.report, personal.totalBytes > 0 {
-                    HStack(spacing: 8) {
-                        Image(systemName: "person.crop.square").font(.system(size: 11)).foregroundStyle(Theme.orange)
-                        Text("Also found: \(bytes(personal.totalBytes)) in \(personal.findings.count) of your own files. None of it rebuilds itself, so it is not part of these figures.")
-                            .font(.system(size: 11)).foregroundStyle(Theme.secondary).fixedSize(horizontal: false, vertical: true)
-                        Button("Go through them") { model.showPersonalFiles() }
-                            .buttonStyle(.plain).font(.system(size: 11, weight: .medium)).foregroundStyle(Theme.orange)
-                    }
-                }
-                if totals.inUseCount > 0 { InUseLine(items: report.inUse, count: totals.inUseCount) }
-                Toggle("Check weekly and tell me when this has grown", isOn: Binding(
-                    get: { model.fullCheckWeekly },
-                    set: { model.setWeeklyCheck($0) }
-                ))
-                .toggleStyle(.checkbox).font(.system(size: 11))
-                .help(model.autoCleanEnabled
-                      ? "Runs while Nuke Sweep or its menu-bar item is open. Also runs when storage gets low."
-                      : "Measures only, while Nuke Sweep or its menu-bar item is open. It never cleans anything.")
-                if model.fullCheckWeekly { autoCleanControls(report) }
-                HStack(spacing: 10) {
-                    Text("Sizes are measured, not promised: space returns when Trash is emptied.")
-                        .font(.system(size: 10)).foregroundStyle(Theme.secondary)
-                    Spacer()
-                    Button("Review what comes back by itself…") { model.reviewTrash(report.regenerable) }
-                        .buttonStyle(PrimaryButton()).disabled(report.regenerable.isEmpty || model.actionBusy)
-                        .help("Opens the review with these items listed. Nothing moves until you confirm there.")
+                if totals.exposedCount > 0 {
+                    Divider()
+                    tier("exclamationmark.shield", "Held back", "No copy exists anywhere else, so it is never offered.",
+                         totals.exposedBytes, tint: Theme.error)
                 }
             }
+            if totals.inUseCount > 0 { InUseLine(items: report.inUse, count: totals.inUseCount) }
+            if let cleaned = model.fullCheck.autoCleaned, cleaned.movedCount > 0 {
+                HStack(spacing: 8) {
+                    Image(systemName: "arrow.uturn.backward.circle").font(.system(size: 11)).foregroundStyle(Theme.green)
+                    Text("Automatic cleanup moved \(bytes(cleaned.movedBytes)) to Trash after this check. The figures above were measured before it ran.")
+                        .font(.system(size: 11)).foregroundStyle(Theme.secondary).fixedSize(horizontal: false, vertical: true)
+                    Button("See the receipt") { model.page = .history }
+                        .buttonStyle(.plain).font(.system(size: 11, weight: .medium)).foregroundStyle(Theme.orange)
+                }
+            }
+            if totals.candidateBytes > 0 {
+                DisclosureGroup("Schedule and changes since last time", isExpanded: $moreOpen) {
+                    VStack(alignment: .leading, spacing: 12) {
+                        if let record = model.fullCheck.record,
+                           let change = FullCheckHistory.change(previous: model.fullCheck.previous, current: record) {
+                            Text(verbatim: change).font(.system(size: 11, weight: .medium)).foregroundStyle(Theme.secondary)
+                        }
+                        if !model.fullCheck.growers.isEmpty, let previous = model.fullCheck.previous {
+                            growth(model.fullCheck.growers, since: previous.date)
+                        }
+                        if let items = model.fullCheck.autoCleanPreview {
+                            DisclosureGroup("Automatic cleanup preview · \(items.count) locations · \(bytes(items.reduce(0) { $0 + $1.size }))") {
+                                Text("These locations passed review. Files were left in place.")
+                                    .foregroundStyle(Theme.secondary)
+                                ScrollView {
+                                    LazyVStack(alignment: .leading, spacing: 4) {
+                                        ForEach(items) { item in
+                                            Text(verbatim: item.url.path).textSelection(.enabled)
+                                        }
+                                    }
+                                }.frame(maxHeight: 200)
+                            }.font(.system(size: 11))
+                        }
+                        Toggle("Check weekly and tell me when this has grown", isOn: Binding(
+                            get: { model.fullCheckWeekly },
+                            set: { model.setWeeklyCheck($0) }
+                        ))
+                        .toggleStyle(.checkbox).font(.system(size: 11))
+                        .help(model.autoCleanEnabled
+                              ? "Runs while Nuke Sweep or its menu-bar item is open. Also runs when storage gets low."
+                              : "Measures only, while Nuke Sweep or its menu-bar item is open. It never cleans anything.")
+                        if model.fullCheckWeekly { autoCleanControls(report) }
+                    }.padding(.top, 8)
+                }.font(.system(size: 12))
+            }
+            HStack {
+                Text("Sizes are measured, not promised: space returns when Trash is emptied.")
+                    .font(.system(size: 10)).foregroundStyle(Theme.secondary)
+                Spacer()
+                Button("Check again") { model.startFullCheck() }.buttonStyle(QuietButton()).disabled(!model.canStartFullCheck)
+            }
         }
+    }
+
+    private func tier(_ symbol: String, _ title: LocalizedStringKey, _ detail: LocalizedStringKey, _ size: Int64, tint: Color,
+                      action: (LocalizedStringKey, () -> Void)? = nil) -> some View {
+        HStack(alignment: .center, spacing: 12) {
+            Image(systemName: symbol).font(.system(size: 13)).foregroundStyle(tint).frame(width: 20)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.system(size: 12, weight: .semibold))
+                Text(detail).font(.system(size: 10)).foregroundStyle(Theme.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 12)
+            if let action {
+                Button(action.0, action: action.1)
+                    .buttonStyle(.plain).font(.system(size: 11, weight: .medium)).foregroundStyle(Theme.orange)
+            }
+            Text(verbatim: bytes(size)).font(.system(size: 13, weight: .medium)).monospacedDigit().frame(minWidth: 70, alignment: .trailing)
+        }
+        .padding(.vertical, 10)
+        .accessibilityElement(children: .combine)
     }
 
     private func growth(_ growers: [FullCheckGrower], since: Date) -> some View {
@@ -657,14 +706,6 @@ struct FullCheckCard: View {
         }
     }
 
-    private func figure(_ value: String, _ label: LocalizedStringKey, _ detail: LocalizedStringKey, tint: Color) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(verbatim: value).font(.system(size: 26, weight: .semibold)).monospacedDigit().foregroundStyle(tint)
-            Text(label).font(.system(size: 12, weight: .medium))
-            Text(detail).font(.system(size: 10)).foregroundStyle(Theme.secondary).fixedSize(horizontal: false, vertical: true)
-        }
-        .accessibilityElement(children: .combine)
-    }
 }
 
 /// What a scheduled folder scan found that is worth saying.
