@@ -704,16 +704,38 @@ extension AppModel {
     func refreshAfterMutation() {
         guard !quitWhenIdle else { return }
         scanner.invalidate(); storageDirty = result != nil
-        quickToken.cancel(); _ = newQuickToken(); quick = QuickScanState()
-        cacheToken.cancel(); cacheGeneration = UUID(); cacheScanning = false; caches = []
         trashInspectionToken.cancel(); trashInspectionToken = ScanCancellation(); trashLoading = false; trashSnapshot = nil; trashSelected = []
         features.invalidateStorageInventories()
         refreshResources(); features.monitor.storageDidChange()
-        if result != nil { scan(force: true, automatic: true) }
+        // Drop what a cleanup removed instead of measuring everything again.
+        // A whole-Mac rescan after emptying Trash cost minutes and found
+        // nothing new. The browsed folder is measured again only while it is on screen.
+        pruneAfterMutation()
+        if page == .storage && result != nil { scan(force: true, automatic: true) }
         if page == .developer || page == .overview { scanCaches() }
-        if page == .findSpace { findSpace() }
         if page == .trash { inspectTrash() }
         if page == .docker { inspectDocker() }
         refreshDirtyVisibleInventory()
     }
+
+    /// One lstat per listed item, off the main actor. Gone items leave the
+    /// quick pass and the check's answer, which is recomputed from what is left.
+    func pruneAfterMutation() {
+        let listed = Set(fullCheckItems().map(\.url.path) + quick.entries.map(\.item.url.path))
+        guard !listed.isEmpty else { return }
+        Task {
+            let gone = await Task.detached(priority: .utility) {
+                Set(listed.filter { path in var info = stat(); return lstat(path, &info) != 0 })
+            }.value
+            guard !gone.isEmpty else { return }
+            quick.entries.removeAll { gone.contains($0.item.url.path) }
+            quickSelected.subtract(gone)
+            pruneMovedPersonalFiles()
+            if fullCheckResultIsCurrent {
+                let items = fullCheckItems().filter { !gone.contains($0.url.path) }
+                triage.refresh(items: items, rootName: Self.fullCheckRootName, signals: triageSignals(), keepEmptyResult: true)
+            }
+        }
+    }
 }
+

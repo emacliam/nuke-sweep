@@ -51,7 +51,7 @@ enum LargeAppData {
                 let resolved = url.resolvingSymlinksInPath().standardizedFileURL
                 guard resolved.path == url.standardizedFileURL.path,
                       info.st_mode & S_IFMT == S_IFDIR else { partial = true; continue }
-                let scan = DiskScanner.scan(url, cancellation: token, limit: 20_000,
+                let scan = DiskScanner.scan(url, cancellation: token, limit: 500_000,
                                             deadline: min(deadline, Date().addingTimeInterval(3)))
                 total = (total ?? 0) + scan.allocated
                 partial = partial || scan.limited || scan.skipped > 0 || token.cancelled

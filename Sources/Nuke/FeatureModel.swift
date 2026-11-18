@@ -298,7 +298,7 @@ import UniformTypeIdentifiers
         let token = ScanCancellation(); scopeTokens[current.id] = token
         Task {
             let result = await DiskWork.run("Inspecting \(current.displayName)", cancellation: token) {
-                DiskScanner.scan(current.url, cancellation: token, limit: 60_000, deadline: Date().addingTimeInterval(15), excluding: current.isExcluded)
+                DiskScanner.scan(current.url, cancellation: token, limit: 1_000_000, deadline: Date().addingTimeInterval(90), excluding: current.isExcluded)
             }
             guard scopeTokens[current.id] === token else { return }
             scopeTokens[current.id] = nil; measuringScopes.remove(current.id)

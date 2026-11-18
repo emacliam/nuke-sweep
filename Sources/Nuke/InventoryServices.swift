@@ -114,7 +114,7 @@ enum AppInventory {
                 if Date() >= deadline { report.notes.append("Time limit reached; results are partial."); return report }
                 let id = url.pathExtension == "plist" ? url.deletingPathExtension().lastPathComponent : url.lastPathComponent
                 guard id.hasPrefix("com.") || id.hasPrefix("org.") || id.hasPrefix("io."), !id.hasPrefix("com.apple."), !ids.contains(id) else { continue }
-                if let item = InventoryService.measure(url, token: token, limit: 12_000, deadline: min(deadline, Date().addingTimeInterval(2))) { report.entries.append(InventoryEntry(item: item, category: "Unmatched app identifier", owner: id, explanation: "No exact identifier in the scanned Applications folders. An app elsewhere, helper, or shared vendor service may still use this item. This is not proof of an orphan.", removable: !reportOnly)) }
+                if let item = InventoryService.measure(url, token: token, limit: 100_000, deadline: min(deadline, Date().addingTimeInterval(5))) { report.entries.append(InventoryEntry(item: item, category: "Unmatched app identifier", owner: id, explanation: "No exact identifier in the scanned Applications folders. An app elsewhere, helper, or shared vendor service may still use this item. This is not proof of an orphan.", removable: !reportOnly)) }
                 if report.entries.count >= 100 { report.notes.append("Stopped at 100 unmatched candidates; inspect remaining items in Finder."); return report }
             }
         }

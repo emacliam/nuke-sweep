@@ -41,7 +41,8 @@ final class FreshnessTests: XCTestCase {
         model.actionBusy = false
         for _ in 0..<80 where model.result?.logical != 0 || model.features.monitor.sample == nil { try await Task.sleep(for: .milliseconds(50)) }
         XCTAssertEqual(model.result?.logical, 0); XCTAssertNotNil(model.features.monitor.sample)
-        XCTAssertTrue(model.features.monitor.monitorPaused); XCTAssertNil(model.quick.measured)
+        XCTAssertTrue(model.features.monitor.monitorPaused)
+        XCTAssertNotNil(model.quick.measured, "the quick pass is pruned, not thrown away and rerun")
         XCTAssertTrue(model.features.receipts.isEmpty) // callback seam never writes fixture receipts to user history
     }
     @MainActor func testInvalidationDiscardsQueuedOldModelInventory() async throws {
