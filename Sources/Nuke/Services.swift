@@ -32,134 +32,79 @@ enum DiskScanner {
     /// Measures everything under `root` without following symlinks or leaving
     /// its volume.
     ///
-    /// Each directory is read with `getattrlistbulk`, so sizes and identities
-    /// for a whole batch of entries arrive in one call, and separate subtrees
-    /// are measured in parallel near the top of the tree. With `observing` set,
-    /// the walk stays on one thread, because observers keep their own state.
-    static func scan(_ root: URL, cancellation: ScanCancellation, limit: Int = 2_000_000, deadline: Date = Date().addingTimeInterval(180), excluding: ((URL) -> Bool)? = nil, respectIgnored: Bool = true, observing: ((URL) -> Void)? = nil) -> ScanResult {
+    /// Directories are read with `getattrlistbulk` and walked by every core
+    /// from one shared queue (see `ParallelWalk`). Hard links count once, and
+    /// sizes on APFS are what removal frees, so clones are not counted twice.
+    /// A repeat scan of the same root reuses every subtree FSEvents says is
+    /// unchanged. With `observing` or `excluding` set, the walk reads every
+    /// entry on one thread, because those callers need to see each one.
+    static func scan(_ root: URL, cancellation: ScanCancellation, limit: Int = 2_000_000, deadline: Date = Date().addingTimeInterval(180), excluding: ((URL) -> Bool)? = nil, respectIgnored: Bool = true, observing: ((URL) -> Void)? = nil, reuse allowReuse: Bool = true) -> ScanResult {
         let ignored = respectIgnored ? IgnoredLocations.paths : []
         if excluding?(root) == true || IgnoredLocations.contains(root, in: ignored) { return ScanResult(items: [], skipped: 0, visited: 0, limited: false) }
         var rootStat = stat()
         guard lstat(root.path, &rootStat) == 0 else { return ScanResult(items: [], skipped: 1, visited: 0, limited: false, accessIssues: [.init(path: root.path, reason: String(cString: strerror(errno)))]) }
         guard rootStat.st_mode & mode_t(S_IFMT) == mode_t(S_IFDIR) else { return ScanResult(items: [], skipped: 1, visited: 0, limited: false) }
         let device = Int32(rootStat.st_dev)
-        let tally = ScanTally(limit: limit)
-        let report = DiskWork.reporter()
-        let parallel = observing == nil
-        let checkIgnored = !ignored.isEmpty
-
-        func stopping() -> Bool { cancellation.cancelled || Date() > deadline }
-        func date(_ time: timespec) -> Date { Date(timeIntervalSince1970: Double(time.tv_sec)) }
-
-        /// Admits one entry: exclusions, ignored locations, the budget and the
-        /// observer. Nil means skip it silently; false means count it as missing.
-        func admit(_ path: String, seen: inout Int) -> Bool? {
-            if let excluding, excluding(URL(fileURLWithPath: path)) { return nil }
-            if checkIgnored && ignored.contains(path) { return false }
-            guard tally.take() else { return false }
-            seen += 1
-            observing?(URL(fileURLWithPath: path))
-            if seen % 256 == 1 { report?(path, tally.visited) }
-            return true
-        }
-
-        /// Totals for one directory's subtree: logical, allocated, incomplete.
-        func walk(_ path: String, inherited: String?, depth: Int) -> (Int64, Int64, Bool) {
-            if stopping() { tally.markLimited(); return (0, 0, true) }
-            let fd = open(path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
-            guard fd >= 0 else { tally.skip(path, String(cString: strerror(errno))); return (0, 0, true) }
-            defer { close(fd) }
-            let category = FastCategory.forDirectory(path) ?? inherited
-            var logical: Int64 = 0, allocated: Int64 = 0, incomplete = false, seen = 0
-            var local: [String: Int64] = [:]
-            var subdirectories: [String] = []
-            do {
-                let complete = try BulkDirectory.read(fd) { entry in
-                    if seen % 512 == 511 && stopping() { tally.markLimited(); return false }
-                    let child = path + "/" + entry.name
-                    guard let admitted = admit(child, seen: &seen) else { return true }
-                    guard admitted else { incomplete = true; return !tally.limited }
-                    if entry.error != 0 { tally.skip(child, String(cString: strerror(entry.error))); incomplete = true; return true }
-                    if entry.isDirectory {
-                        if entry.device != device { tally.skip(nil, nil); incomplete = true } else { subdirectories.append(child) }
-                    } else {
-                        logical += entry.logical; allocated += entry.allocated
-                        if !entry.isSymlink { local[FastCategory.forFile(named: entry.name, inherited: category), default: 0] += entry.logical }
-                    }
-                    return true
-                }
-                if !complete { incomplete = true }
-            } catch { tally.skip(path, error.localizedDescription); incomplete = true }
-            tally.merge(local)
-            let totals = measure(subdirectories, inherited: category, depth: depth + 1)
-            return (logical + totals.0, allocated + totals.1, incomplete || totals.2)
-        }
-
-        func measure(_ directories: [String], inherited: String?, depth: Int) -> (Int64, Int64, Bool) {
-            if parallel && depth <= 2 && directories.count > 1 {
-                let results = UnsafeMutableBufferPointer<(Int64, Int64, Bool)>.allocate(capacity: directories.count)
-                defer { results.deallocate() }
-                DispatchQueue.concurrentPerform(iterations: directories.count) { index in
-                    results[index] = walk(directories[index], inherited: inherited, depth: depth)
-                }
-                return results.reduce((0, 0, false)) { ($0.0 + $1.0, $0.1 + $1.1, $0.2 || $1.2) }
-            }
-            return directories.reduce((0, 0, false)) { sum, directory in
-                let value = walk(directory, inherited: inherited, depth: depth)
-                return (sum.0 + value.0, sum.1 + value.1, sum.2 || value.2)
-            }
-        }
-
-        // The root's own children become items; everything below is totals.
         let rootPath = root.path
+        let plain = observing == nil && excluding == nil
+        let memory = plain && allowReuse ? ScanMemory.reuse(for: rootPath, device: rootStat.st_dev, ignored: ignored) : nil
+        let walk = ParallelWalk(.init(device: device, limit: limit, deadline: deadline, cancellation: cancellation, ignored: ignored,
+                                      excluding: excluding, observing: observing, reuse: memory?.0,
+                                      workers: plain ? ProcessInfo.processInfo.activeProcessorCount : 1))
+        func date(_ time: timespec) -> Date { Date(timeIntervalSince1970: Double(time.tv_sec)) }
+        func identity(_ entry: BulkEntry) -> FileIdentity { FileIdentity(device: UInt64(UInt32(bitPattern: entry.device)), inode: entry.inode) }
+
+        // The root's own children become items; everything below them is totals.
         let rootCategory = FastCategory.forDirectory(rootPath)
         var files: [DiskItem] = []
         var directories: [(url: URL, entry: BulkEntry)] = []
-        var seen = 0
+        var rootCategories = [Int64](repeating: 0, count: FastCategory.names.count)
         let fd = open(rootPath, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
         if fd < 0 {
-            tally.skip(rootPath, String(cString: strerror(errno)))
+            walk.skip(rootPath, String(cString: strerror(errno)))
         } else {
             defer { close(fd) }
             do {
-                var rootLocal: [String: Int64] = [:]
                 let complete = try BulkDirectory.read(fd) { entry in
-                    if stopping() { tally.markLimited(); return false }
+                    if cancellation.cancelled || Date() > deadline { walk.markLimited(); return false }
                     let url = root.appendingPathComponent(entry.name)
-                    guard let admitted = admit(rootPath + "/" + entry.name, seen: &seen) else { return true }
-                    guard admitted else { return !tally.limited }
-                    if entry.error != 0 { tally.skip(url.path, String(cString: strerror(entry.error))); return true }
-                    let identity = FileIdentity(device: UInt64(UInt32(bitPattern: entry.device)), inode: entry.inode)
+                    let path = rootPath + "/" + entry.name
+                    if let excluding, excluding(URL(fileURLWithPath: path)) { return true }
+                    if !ignored.isEmpty && ignored.contains(path) { return true }
+                    guard walk.claim(1) == 1 else { return false }
+                    observing?(url)
+                    if entry.error != 0 { walk.skip(url.path, String(cString: strerror(entry.error))); return true }
                     if entry.isDirectory {
-                        directories.append((url, entry))
-                    } else {
-                        if !entry.isSymlink { rootLocal[FastCategory.forFile(named: entry.name, inherited: rootCategory), default: 0] += entry.logical }
-                        files.append(DiskItem(url: url, size: entry.logical, allocated: entry.allocated, directory: false, symlink: entry.isSymlink, modified: date(entry.modified), accessed: date(entry.accessed), identity: identity, incomplete: false))
+                        if entry.device != device {
+                            walk.skip(nil, nil)
+                            files.append(DiskItem(url: url, size: 0, allocated: 0, directory: true, symlink: false, modified: date(entry.modified), accessed: date(entry.accessed), identity: identity(entry), incomplete: true))
+                        } else {
+                            directories.append((url, entry))
+                        }
+                        return true
                     }
+                    if entry.links > 1 && !entry.isSymlink && !walk.firstLink(entry.inode) { return true }
+                    if !entry.isSymlink { rootCategories[FastCategory.forFile(named: entry.name, inherited: rootCategory)] += entry.logical }
+                    files.append(DiskItem(url: url, size: entry.logical, allocated: entry.reclaimable, directory: false, symlink: entry.isSymlink, modified: date(entry.modified), accessed: date(entry.accessed), identity: identity(entry), incomplete: false))
                     return true
                 }
-                if !complete { tally.markLimited() }
-                tally.merge(rootLocal)
-            } catch { tally.skip(rootPath, error.localizedDescription) }
+                if !complete { walk.markLimited() }
+            } catch { walk.skip(rootPath, error.localizedDescription) }
         }
-        let measured = UnsafeMutableBufferPointer<(Int64, Int64, Bool)>.allocate(capacity: max(1, directories.count))
-        defer { measured.deallocate() }
-        func measureTop(_ index: Int) {
-            let (url, entry) = directories[index]
-            if entry.device != device { tally.skip(nil, nil); measured[index] = (0, 0, true); return }
-            measured[index] = walk(url.path, inherited: rootCategory, depth: 1)
-        }
-        if parallel && directories.count > 1 {
-            DispatchQueue.concurrentPerform(iterations: directories.count, execute: measureTop)
-        } else {
-            for index in directories.indices { measureTop(index) }
-        }
+        let totals = walk.measure(directories.map { ($0.url.path, rootCategory) })
         let folders = directories.indices.map { index -> DiskItem in
             let (url, entry) = directories[index]
-            let totals = measured[index]
-            return DiskItem(url: url, size: totals.0, allocated: totals.1, directory: true, symlink: false, modified: date(entry.modified), accessed: date(entry.accessed), identity: FileIdentity(device: UInt64(UInt32(bitPattern: entry.device)), inode: entry.inode), incomplete: totals.2)
+            let value = totals[index]
+            return DiskItem(url: url, size: value.logical, allocated: value.allocated, directory: true, symlink: false, modified: date(entry.modified), accessed: date(entry.accessed), identity: identity(entry), incomplete: value.incomplete)
         }
-        return ScanResult(items: (files + folders).sorted { $0.size > $1.size }, skipped: tally.skipped, visited: tally.visited, limited: tally.limited, categories: tally.categories, accessIssues: tally.issues)
+        var categoryTotals = rootCategories
+        for value in totals { for index in categoryTotals.indices { categoryTotals[index] += value.categories[index] } }
+        var categories: [String: Int64] = [:]
+        for (index, name) in FastCategory.names.enumerated() where categoryTotals[index] > 0 { categories[name] = categoryTotals[index] }
+        if let memory, !walk.limited, !cancellation.cancelled {
+            ScanMemory.remember(rootPath, reuse: memory.0, eventID: memory.1, volume: memory.2, ignored: ignored)
+        }
+        return ScanResult(items: (files + folders).sorted { $0.size > $1.size }, skipped: walk.skipped, visited: walk.visited, limited: walk.limited, categories: categories, accessIssues: walk.issues)
     }
     static func cache(_ rule: CacheRule, cancellation: ScanCancellation) -> CacheMeasurement {
         guard FileManager.default.fileExists(atPath: rule.url.path) else { return .init(rule: rule, item: nil, skipped: 0) }
