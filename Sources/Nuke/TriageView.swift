@@ -138,7 +138,7 @@ private struct TriageRow: View {
                             // Only shown when the app can positively say a backup
                             // will not hold this. Unknown stays silent rather than
                             // implying either answer.
-                            if finding.backup.isUnprotected {
+                            if finding.backup.isUnprotected && finding.rebuild.effort > .slow {
                                 Label(finding.backup.title, systemImage: "externaldrive.badge.xmark")
                                     .foregroundStyle(Theme.error)
                             }

@@ -39,6 +39,12 @@ struct DeveloperView: View {
     private var selectedBytes: Int64 { selectedItems.reduce(0) { $0 + $1.size } }
 
     var body: some View {
+        content
+            // Opening the page after a relaunch measures again rather than saying
+            // "Not scanned"; remembered scans make it quick.
+            .onAppear { if model.caches.isEmpty && !model.cacheScanning { model.scanCaches() } }
+    }
+    @ViewBuilder private var content: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack {
                 if !model.cacheScanning {
@@ -53,9 +59,6 @@ struct DeveloperView: View {
                 Button(model.cacheScanning ? "Scanning…" : model.cacheOutcome == "Not scanned" ? "Scan developer caches" : "Scan again") { model.scanCaches() }.buttonStyle(PrimaryButton()).disabled(model.cacheScanning)
             }
             if measuredTotal > 0 { DeveloperTotals(bytes: measuredTotal, locations: measuredCount, reclaimable: quickReclaimTotal) }
-            HomebrewCleanupView()
-            ToolchainInventoryView()
-            TriagePanel(store: model.triage)
             VStack(spacing: 0) {
                 // Largest first, like every other surface. Unmeasured and
                 // not-found locations sort last rather than interleaving with
@@ -67,6 +70,11 @@ struct DeveloperView: View {
                     }.font(.system(size: 12)).padding(.vertical, 4)
                 }
             }
+            // The cache rows come first: they are what people open this page for.
+            // Homebrew, toolchains and the cross-location ranking follow.
+            HomebrewCleanupView()
+            ToolchainInventoryView()
+            TriagePanel(store: model.triage)
             if !selectedRules.isEmpty {
                 DeveloperSelectionBar(
                     count: selectedRules.count,
@@ -134,6 +142,17 @@ struct DeveloperView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(rule.name + ", " + (expanded == rule.id ? "hide details" : "show details") + ". " + cost.summary)
+                // The two things people come here to do, on the row itself
+                // rather than behind the disclosure.
+                if let item = measured {
+                    Button { model.reveal(item.url) } label: { Image(systemName: "folder") }
+                        .buttonStyle(.plain).foregroundStyle(Theme.secondary)
+                        .help("Show in Finder").accessibilityLabel("Show \(rule.name) in Finder")
+                    Button("Clear…") { model.reviewTrash([], cacheContents: rule) }
+                        .buttonStyle(QuietButton())
+                        .disabled(model.actionBusy || model.cacheScanning || item.size == 0)
+                        .help("Review the contents and move them to Trash. The folder itself stays.")
+                }
             }
             if expanded == rule.id {
                 VStack(alignment: .leading, spacing: 10) {
@@ -142,7 +161,7 @@ struct DeveloperView: View {
                     if let item = measurement?.item {
                         if item.incomplete { Text(model.cacheOutcome.hasPrefix("Stopped") ? "Stopped while inspecting this location. Browse smaller folders or scan again before cleanup." : (measurement?.skipped ?? 0) > 0 ? "Access incomplete. Resolve folder permissions and scan again before cleanup." : "Scan limit reached. Browse smaller folders to review cleanup.").font(.system(size: 11)).foregroundStyle(Theme.warning) }
                         if (measurement?.skipped ?? 0) > 0 { Button("Review folder access") { model.page = .permissions }.buttonStyle(QuietButton()) }
-                        HStack { Button("Browse tree") { model.browseTree(item.url) }.buttonStyle(QuietButton()); Spacer(); Button("Review contents…") { model.reviewTrash([], cacheContents: rule) }.buttonStyle(QuietButton()).disabled(model.actionBusy || model.cacheScanning); Button("Review whole folder…") { model.reviewTrash([item]) }.buttonStyle(PrimaryButton()).disabled(model.actionBusy || model.cacheScanning || item.incomplete || item.size == 0) }
+                        HStack { Button("Browse tree") { model.browseTree(item.url) }.buttonStyle(QuietButton()); Spacer(); Button("Move the whole folder…") { model.reviewTrash([item]) }.buttonStyle(QuietButton()).help("Clear… on the row keeps the folder and moves what is inside; this moves the folder itself.").disabled(model.actionBusy || model.cacheScanning || item.incomplete || item.size == 0) }
                     }
                 }.padding(.leading, 34).padding(.bottom, 16)
             }

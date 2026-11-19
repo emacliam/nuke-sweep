@@ -178,7 +178,7 @@ struct ScheduledScan: Identifiable, Codable, Equatable, Sendable {
         note = "Scheduled scan running: \(schedule.name)"
         Task {
             let result = await DiskWork.run("Scheduled scan: \(schedule.name)", priority: .background, cancellation: token) {
-                DiskScanner.scan(url, cancellation: token, limit: 60_000, deadline: Date().addingTimeInterval(30))
+                DiskScanner.scan(url, cancellation: token, limit: 1_000_000, deadline: Date().addingTimeInterval(90))
             }
             guard runningID == id else { return }
             self.token = nil

@@ -30,9 +30,8 @@ struct NukeApp: App {
 
     var body: some Scene {
         Window("Nuke Sweep", id: "main") {
-            ContentView().environment(model).environment(model.features).environment(model.features.monitor).environment(model.ai).environment(model.scheduledScans).frame(minWidth: 980, minHeight: 650)
+            ContentView().modifier(EmptyTrashConfirmation()).environment(model).environment(model.features).environment(model.features.monitor).environment(model.ai).environment(model.scheduledScans).frame(minWidth: 980, minHeight: 650)
                 .disclosureGroupStyle(TitleTogglesDisclosure())
-                .modifier(EmptyTrashConfirmation())
                 .preferredColorScheme(appearance == "dark" ? .dark : appearance == "light" ? .light : nil)
         }
         .windowStyle(.hiddenTitleBar).defaultSize(width: 1180, height: 790)

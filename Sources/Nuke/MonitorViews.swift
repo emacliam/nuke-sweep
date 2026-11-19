@@ -248,8 +248,21 @@ struct TrashReview: View {
         VStack(alignment: .leading, spacing: 18) {
             Label("Review file cleanup", systemImage: "trash").font(.system(size: 22, weight: .semibold))
             HStack {
-                Text("\(selected.count) of \(model.pendingTrash.count) selected · \(bytes(selected.reduce(0) { $0 + $1.size })) to move to Trash")
-                    .font(.system(size: 13)).foregroundStyle(Theme.secondary)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("\(selected.count) of \(model.pendingTrash.count) selected · \(bytes(selected.reduce(0) { $0 + $1.size })) to move to Trash")
+                        .font(.system(size: 13)).foregroundStyle(Theme.secondary)
+                    if model.reviewPreparing && model.reviewTotal > 0 {
+                        // Items join the list as they pass their checks; what is
+                        // here can be moved now.
+                        HStack(spacing: 6) {
+                            ProgressView(value: Double(model.reviewDone), total: Double(model.reviewTotal)).frame(width: 80)
+                            Text("Checking \(model.reviewDone) of \(model.reviewTotal). You can move what's ready now.")
+                                .font(.system(size: 11)).foregroundStyle(Theme.secondary)
+                        }
+                    } else if model.reviewMoved > 0 {
+                        Text("\(model.reviewMoved) already moved to Trash.").font(.system(size: 11)).foregroundStyle(Theme.green)
+                    }
+                }
                 Spacer()
                 if !model.pendingTrash.isEmpty {
                     Button("Select all") { model.pendingTrashSelection = Set(model.pendingTrash.map(\.id)) }
@@ -259,15 +272,24 @@ struct TrashReview: View {
             }
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 14) {
-                    ForEach(model.pendingTrash) { item in
+                    // Largest first once checking is done. While items are still
+                    // arriving they stay in arrival order, so rows do not jump
+                    // under the pointer.
+                    ForEach(model.reviewPreparing ? model.pendingTrash : model.pendingTrash.sorted { $0.size > $1.size }) { item in
                         VStack(alignment: .leading, spacing: 5) {
-                            Toggle(item.name, isOn: Binding(
-                                get: { model.pendingTrashSelection.contains(item.id) },
-                                set: { include in
-                                    if include { model.pendingTrashSelection.insert(item.id) }
-                                    else { model.pendingTrashSelection.remove(item.id) }
-                                }
-                            )).toggleStyle(.checkbox).font(.system(size: 13, weight: .medium))
+                            HStack {
+                                Toggle(item.name, isOn: Binding(
+                                    get: { model.pendingTrashSelection.contains(item.id) },
+                                    set: { include in
+                                        if include { model.pendingTrashSelection.insert(item.id) }
+                                        else { model.pendingTrashSelection.remove(item.id) }
+                                    }
+                                )).toggleStyle(.checkbox).font(.system(size: 13, weight: .medium))
+                                Spacer()
+                                Button { model.reveal(item.url) } label: { Image(systemName: "folder") }
+                                    .buttonStyle(.plain).foregroundStyle(Theme.secondary)
+                                    .help("Show in Finder").accessibilityLabel("Show \(item.name) in Finder")
+                            }
                             if let evidence = model.pendingEvidence[item.id] {
                                 let assessment = CandidateAssessment.make(item, evidence: evidence)
                                 let caution = assessment.state == .needsInspection || evidence.kind.isBlocked
@@ -289,11 +311,39 @@ struct TrashReview: View {
                         Divider()
                     }
                 }
-            }.frame(minHeight: 90, maxHeight: 220).layoutPriority(-1)
+            }
+            .overlay {
+                // A finished review with nothing to move says so, instead of an empty sheet.
+                if model.pendingTrash.isEmpty && !model.reviewPreparing {
+                    VStack(spacing: 6) {
+                        Image(systemName: "checkmark.shield").font(.system(size: 22)).foregroundStyle(Theme.secondary)
+                        Text(model.reviewMoved > 0 ? "Everything that passed its checks has moved to Trash." : "Nothing here can be moved safely.")
+                            .font(.system(size: 13, weight: .medium))
+                        if !model.pendingBlocked.isEmpty {
+                            Text("The reason is below. Show in Finder lets you look for yourself.").font(.system(size: 11)).foregroundStyle(Theme.secondary)
+                        }
+                    }
+                }
+            }
+            .frame(minHeight: 160, maxHeight: .infinity).layoutPriority(1)
+            // Notes scroll in their own band, so opening one can never push
+            // Cancel and Move out of the sheet.
+            ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
             if !model.pendingBlocked.isEmpty {
                 DisclosureGroup("Not included · \(model.pendingBlocked.count) could not be verified", isExpanded: $blockedExpanded) {
                     ScrollView {
                         VStack(alignment: .leading, spacing: 12) {
+                            // Why, grouped, before the item-by-item list.
+                            let reasons = Dictionary(grouping: model.pendingBlocked, by: \.reason)
+                                .map { (reason: $0.key, count: $0.value.count) }.sorted { $0.count > $1.count }
+                            VStack(alignment: .leading, spacing: 4) {
+                                ForEach(reasons.prefix(4), id: \.reason) { group in
+                                    Text(verbatim: "\(group.count) × \(group.reason)").font(.system(size: 11, weight: .medium))
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                            }
+                            Divider()
                             ForEach(model.pendingBlocked) { blocked in
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text(blocked.url.lastPathComponent).font(.system(size: 12, weight: .medium))
@@ -322,6 +372,11 @@ struct TrashReview: View {
                 // Move button out of the sheet.
                 DisclosureGroup(isExpanded: $restoreExpanded) {
                 VStack(alignment: .leading, spacing: 6) {
+                    let reasons = Set(restore.manualOnly.compactMap(\.reason))
+                    if reasons.count == 1, let only = reasons.first {
+                        // The same cause for every item (usually Trash access): say it once.
+                        Text(verbatim: only).font(.system(size: 11)).foregroundStyle(Theme.secondary).fixedSize(horizontal: false, vertical: true)
+                    } else {
                     ForEach(restore.manualOnly.prefix(3)) { finding in
                         VStack(alignment: .leading, spacing: 1) {
                             Text(verbatim: finding.item.name).font(.system(size: 11, weight: .medium))
@@ -333,6 +388,7 @@ struct TrashReview: View {
                     }
                     if restore.manualOnly.count > 3 {
                         Text("And \(restore.manualOnly.count - 3) more items").font(.system(size: 10))
+                    }
                     }
                     Text("These still move to Trash and can be dragged back by hand. Only the one-click restore is unavailable.")
                         .font(.system(size: 10)).foregroundStyle(Theme.secondary).fixedSize(horizontal: false, vertical: true)
@@ -351,6 +407,8 @@ struct TrashReview: View {
                     Toggle("I closed the apps or builds listed above.", isOn: $openHandlesReviewed).font(.system(size: 12))
                 }
             }
+            }
+            }.frame(minHeight: 60, maxHeight: 190)
             HStack(spacing: 10) {
                 Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
                 Button("Export plan…") { model.exportPendingPlan() }.buttonStyle(QuietButton()).disabled(selected.isEmpty)
@@ -361,7 +419,7 @@ struct TrashReview: View {
                     .buttonStyle(PrimaryButton()).keyboardShortcut(.defaultAction)
                     .disabled(selected.isEmpty || (!model.pendingWarnings.isEmpty && !openHandlesReviewed) || model.actionBusy)
             }
-        }.padding(30).frame(width: 580).frame(maxHeight: 680)
+        }.padding(30).frame(width: 600, height: 640)
             .task(id: selected) {
                 guard !selected.isEmpty else { restoreReport = nil; return }
                 let token = ScanCancellation()

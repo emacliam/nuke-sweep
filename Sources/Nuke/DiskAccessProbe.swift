@@ -66,21 +66,23 @@ struct AccessStep: View {
                         .font(.system(size: 11)).foregroundStyle(Theme.secondary).fixedSize(horizontal: false, vertical: true)
                 }
             }
-            VStack(alignment: .leading, spacing: 5) {
-                numbered(1, "Open Full Disk Access in System Settings.")
-                numbered(2, "Switch on Nuke Sweep. If it is not listed, press + and choose it.")
-                numbered(3, "Come back here. macOS may ask to quit and reopen Nuke Sweep.")
-            }
-            .padding(.leading, 25)
+            // One action up front; the step-by-step only for those who need it.
             HStack(spacing: 10) {
-                Button("Open Full Disk Access settings") { PermissionSettings.openPrivacy() }.buttonStyle(QuietButton())
-                Button("Show Nuke Sweep in Finder") { model.reveal(Bundle.main.bundleURL) }.buttonStyle(QuietButton())
-                    .help("Useful for step 2 if the app is not in the list")
+                Button("Allow Full Disk Access…") { PermissionSettings.openPrivacy() }.buttonStyle(QuietButton())
+                    .help("Opens System Settings. Reading is all this allows; nothing is removed without a review.")
+                DisclosureGroup("How") {
+                    VStack(alignment: .leading, spacing: 5) {
+                        numbered(1, "Open Full Disk Access in System Settings.")
+                        numbered(2, "Switch on Nuke Sweep. If it is not listed, press + and choose it.")
+                        numbered(3, "Come back here. macOS may ask to quit and reopen Nuke Sweep.")
+                        Button("Show Nuke Sweep in Finder") { model.reveal(Bundle.main.bundleURL) }
+                            .buttonStyle(.plain).font(.system(size: 11, weight: .medium)).foregroundStyle(Theme.orange)
+                            .help("Useful for step 2 if the app is not in the list")
+                    }.padding(.top, 4)
+                }.font(.system(size: 11))
                 Spacer()
             }
             .padding(.leading, 25)
-            Text("Reading is all this allows. It does not let Nuke Sweep remove anything without a review.")
-                .font(.system(size: 10)).foregroundStyle(Theme.secondary).padding(.leading, 25)
         }
         .padding(12)
         .background(Theme.warning.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))

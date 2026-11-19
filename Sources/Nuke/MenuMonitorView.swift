@@ -17,28 +17,25 @@ struct MonitorPopover: View {
                 Button { monitor.monitorPaused.toggle(); monitor.configureMonitor() } label: { Image(systemName: monitor.monitorPaused ? "play.fill" : "pause.fill").frame(width: 22, height: 22) }.buttonStyle(.plain).accessibilityLabel(monitor.monitorPaused ? "Resume monitoring" : "Pause monitoring")
                 Button { monitor.refreshMonitor() } label: { Image(systemName: "arrow.clockwise").frame(width: 22, height: 22) }.buttonStyle(.plain).disabled(monitor.monitorPaused || monitor.sleeping).help("Refresh measurements").accessibilityLabel("Refresh monitor measurements")
             }
+            // Storage and what to do about it come first; that is why people
+            // open this. CPU and memory follow as context.
+            if let sample = monitor.sample { storageSection(sample) } else { Text("Collecting measurements…").font(.system(size: 12)) }
+            quickCheck
+            Divider()
             if let sample = monitor.sample {
-                storageSection(sample)
                 HStack(alignment: .top, spacing: 22) {
                     metric("CPU", value: sample.cpu.map { String(format: "%.1f%%", $0) } ?? "Measuring…")
                     Rectangle().fill(Theme.line).frame(width: 1, height: 36)
                     metric("VM MEMORY", value: sample.memory.map(bytes) ?? "Unavailable")
+                        .help("VM memory is active + wired + compressed, not memory pressure.")
                 }
                 HStack { Text("Updated " + sample.date.formatted(date: .omitted, time: .standard)); Spacer(); Text("Every \(Int(monitor.monitorInterval))s") }.font(.system(size: 10)).foregroundStyle(Theme.secondary)
-            } else { Text("Collecting measurements…").font(.system(size: 12)) }
+            }
             if !monitor.monitorHistory.isEmpty {
                 MenuCPUChart(interval: monitor.monitorInterval, samples: Array(monitor.monitorHistory.suffix(25)))
             }
-            if model.features.observedFreed > 0 {
-                Text(FreedSpaceLabel.text(model.features.observedFreed))
-                    .font(.system(size: 11)).foregroundStyle(Theme.secondary)
-                    .help("Observed gains after permanent Trash cleanup, capped by the size of successfully deleted files. Other disk activity can affect the estimate.")
-            }
             if let receipt = model.features.receipts.first { LastCleanupNote(receipt: receipt, compact: true) }
             if monitor.monitorPaused || monitor.sleeping { Text("Readings are the last measurements; sampling is suspended.").font(.system(size: 10)).foregroundStyle(Theme.secondary).fixedSize(horizontal: false, vertical: true) }
-            Text("VM memory is active + wired + compressed, not memory pressure.").font(.system(size: 10)).foregroundStyle(Theme.secondary).fixedSize(horizontal: false, vertical: true)
-            Divider()
-            quickCheck
             HStack { Button("Open Nuke Sweep") { model.showMainWindow() }; Spacer(); Button { model.showMainWindow(.monitor) } label: { Image(systemName: "gearshape") }.accessibilityLabel("Monitor & alert settings"); Button { NSApp.terminate(nil) } label: { Image(systemName: "power") }.accessibilityLabel("Quit Nuke Sweep") }.buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(Theme.secondary)
         }.padding(20).frame(width: 330).background(Theme.paper).foregroundStyle(Theme.ink)
             .preferredColorScheme(appearance == "dark" ? .dark : appearance == "light" ? .light : nil)

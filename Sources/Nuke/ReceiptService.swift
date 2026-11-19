@@ -17,13 +17,15 @@ enum ReceiptService {
         } catch {
             return CleanupReceipt(date: Date(), title: "Duplicate cleanup refused", items: items.map { .init(originalPath: $0.url.path, trashPath: nil, size: $0.size, success: false, outcome: error.localizedDescription) }, freeBefore: before, freeAfter: MachineService.snapshot().freeDisk, undo: "No files were moved.")
         }
+        // One change-record query for every reviewed folder, instead of reading each again.
+        let unchanged = ReviewSeal.unchangedSinceReview(items)
         let outcomes = items.enumerated().map { index, item -> ReceiptItem in
             // Shows which item is moving in the activity bar, so a long move never looks stuck.
             DiskWork.report(path: "\(index + 1) of \(items.count) · " + item.url.lastPathComponent, visited: index)
             do {
                 try CleanupSafety.validate(item, allowedRoots: allowedRoots, developerScopes: developerScopes)
                 try EmulatorCleanup.requireAndroidIdle(item.url)
-                try ReviewSeal.validate(item)
+                try ReviewSeal.validate(item, unchangedSinceReview: unchanged.contains(item.id))
                 if item.url.pathExtension == "app", runningAppPaths.contains(where: { $0 == item.url.path || $0.hasPrefix(item.url.path + "/") }) { throw DuplicateFailure(message: "The application is running. Quit it and review again.") }
                 for proof in proofs where covers(item, proof.duplicate.url) {
                     if try !DuplicateFinder.sameContents(proof.keeper, proof.duplicate) { throw DuplicateFailure(message: "Duplicate contents changed. Run detection again.") }

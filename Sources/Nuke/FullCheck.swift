@@ -428,10 +428,10 @@ struct FullCheckCard: View {
         .onAppear {
             model.refreshDiskAccess()
             // Opening Cleanup should land on an answer, not a button to get one.
-            // The check only reads; it reruns at most once an hour.
-            let recent = FullCheckHistory.last.map { Date().timeIntervalSince($0.date) < 3600 } ?? false
-            if !model.fullCheck.running, !model.fullCheckResultIsCurrent, !recent,
-               model.diskAccess != .missing, model.canStartFullCheck {
+            // The check only reads, and remembered scans make a repeat take
+            // seconds, so it runs whenever there is no answer on screen,
+            // including after a relaunch and without Full Disk Access.
+            if !model.fullCheck.running, !model.fullCheckResultIsCurrent, !model.fullCheck.stopped, model.canStartFullCheck {
                 model.startFullCheck()
             }
         }
@@ -443,10 +443,17 @@ struct FullCheckCard: View {
 
     private var invitation: some View {
         VStack(alignment: .leading, spacing: 16) {
-            VStack(alignment: .leading, spacing: 5) {
-                Text("See what you can clear, and what it would cost you").font(.system(size: 17, weight: .semibold))
-                Text("One pass over caches, project build output, Trash, and your own files: installers, repeat downloads, recordings, old backups. Usually a minute or two.")
-                    .font(.system(size: 12)).foregroundStyle(Theme.secondary).fixedSize(horizontal: false, vertical: true)
+            // The action sits beside the title, so it is visible in any window size.
+            HStack(alignment: .top, spacing: 16) {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("See what you can clear, and what it would cost you").font(.system(size: 17, weight: .semibold))
+                    Text("One pass over caches, project build output, Trash, and your own files: installers, repeat downloads, recordings, old backups. Usually a minute or two.")
+                        .font(.system(size: 12)).foregroundStyle(Theme.secondary).fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
+                let checkTitle: LocalizedStringKey = model.diskAccess == .missing ? "Check without it" : "Check this Mac"
+                Button(checkTitle) { model.startFullCheck() }
+                    .buttonStyle(PrimaryButton()).disabled(!model.canStartFullCheck)
             }
             VStack(alignment: .leading, spacing: 9) {
                 promise("arrow.uturn.backward.circle", "Nothing is deleted. Reviewed items move to Trash, with a receipt and a way back.")
@@ -458,12 +465,6 @@ struct FullCheckCard: View {
                 }
             }
             if model.diskAccess == .missing { AccessStep() }
-            HStack {
-                Spacer()
-                let checkTitle: LocalizedStringKey = model.diskAccess == .missing ? "Check without it" : "Check this Mac"
-                Button(checkTitle) { model.startFullCheck() }
-                    .buttonStyle(PrimaryButton()).disabled(!model.canStartFullCheck)
-            }
         }
     }
 
@@ -479,7 +480,6 @@ struct FullCheckCard: View {
             HStack {
                 Text("Checking this Mac…").font(.system(size: 15, weight: .semibold))
                 Spacer()
-                Button("Stop") { model.stopFullCheck() }.buttonStyle(QuietButton())
             }
             step("Application caches and Trash", active: model.quick.busy, done: model.quick.measured != nil)
             step("Developer caches", active: model.cacheScanning, done: !model.cacheScanning && !model.caches.isEmpty)
@@ -561,6 +561,13 @@ struct FullCheckCard: View {
                 if totals.regenerableBytes > 0 {
                     tier("arrow.triangle.2.circlepath", "Comes back by itself", "Rebuilt or re-downloaded the next time it is needed.",
                          totals.regenerableBytes, tint: Theme.green)
+                    // What the figure is made of, biggest first.
+                    let sources = RegenerableSources.top(report.regenerable)
+                    if !sources.isEmpty {
+                        Text(verbatim: sources.map { "\($0.label) \(bytes($0.size))" }.joined(separator: " · "))
+                            .font(.system(size: 11)).foregroundStyle(Theme.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading).padding(.leading, 32).padding(.bottom, 8)
+                    }
                 }
                 if personalBytes > 0 {
                     Divider()
@@ -769,6 +776,40 @@ struct InUseLine: View {
                 Text("Quit the app, build or dev server using them, then check again to include them.")
                     .font(.system(size: 10)).foregroundStyle(Theme.secondary)
             }
+        }
+    }
+}
+
+/// Names the biggest sources inside "comes back by itself" in words a person
+/// recognises: "node_modules in 9 projects", "Xcode DerivedData", "npm cache".
+enum RegenerableSources {
+    static func label(_ url: URL) -> String {
+        let path = url.standardizedFileURL.path
+        let name = url.lastPathComponent
+        if path.contains("/Developer/Xcode/DerivedData") { return "Xcode DerivedData" }
+        if path.contains("/Developer/CoreSimulator") { return "Simulators" }
+        if path.contains("/Library/Caches/") {
+            let after = path.components(separatedBy: "/Library/Caches/")[1]
+            let owner = after.split(separator: "/").first.map(String.init) ?? name
+            return owner.split(separator: ".").last.map(String.init).map { $0 + " cache" } ?? "App caches"
+        }
+        if path.contains("/.npm") { return "npm cache" }
+        if path.contains("/.gradle") { return "Gradle cache" }
+        if path.contains("/.cache/") { return (path.components(separatedBy: "/.cache/")[1].split(separator: "/").first.map(String.init) ?? "Tool") + " cache" }
+        return name
+    }
+
+    static func top(_ items: [DiskItem], count: Int = 3) -> [(label: String, size: Int64)] {
+        var groups: [String: (size: Int64, items: Int)] = [:]
+        for item in items {
+            let key = label(item.url)
+            groups[key, default: (0, 0)].size += item.size
+            groups[key, default: (0, 0)].items += 1
+        }
+        return groups.sorted { $0.value.size > $1.value.size }.prefix(count).map { key, value in
+            let label = value.items > 1 && ["node_modules", "build", "dist", "target", ".next", "Pods", ".gradle"].contains(key)
+                ? "\(key) in \(value.items) projects" : key
+            return (label, value.size)
         }
     }
 }

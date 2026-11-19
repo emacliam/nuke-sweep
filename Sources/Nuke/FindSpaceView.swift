@@ -29,7 +29,7 @@ extension AppModel {
             var candidates: [String: InventoryEntry] = [:]
             // Trash is measured alongside the caches, not after them.
             let trashScan: Task<ScanResult, Never>? = includeTrash ? Task {
-                await DiskWork.run("Inspecting Trash", cancellation: token) { DiskScanner.scan(TrashService.current.root, cancellation: token, limit: 12_000, deadline: Date().addingTimeInterval(8)) }
+                await DiskWork.run("Inspecting Trash", cancellation: token) { DiskScanner.scan(TrashService.current.root, cancellation: token, limit: 2_000_000, deadline: Date().addingTimeInterval(60)) }
             } : nil
             for (index, pair) in roots.enumerated() {
                 if token.cancelled { break }
@@ -37,7 +37,7 @@ extension AppModel {
                 let measured = await DiskWork.run("Inspecting " + pair.0, cancellation: token) { () -> ScanResult? in
                     var info = stat()
                     if lstat(pair.1.path, &info) != 0 && (errno == ENOENT || errno == ENOTDIR) { return nil }
-                    let result = DiskScanner.scan(pair.1, cancellation: token, limit: 12_000, deadline: Date().addingTimeInterval(8))
+                    let result = DiskScanner.scan(pair.1, cancellation: token, limit: 2_000_000, deadline: Date().addingTimeInterval(60))
                     return result
                 }
                 guard let scan = measured else { continue }
@@ -48,7 +48,7 @@ extension AppModel {
                     let item = DiskItem(url: rule.url, size: scan.logical, allocated: scan.allocated, directory: true, symlink: false, modified: nil, identity: identity, incomplete: scan.skipped > 0 || scan.limited)
                     candidates[item.id] = .init(item: item, category: "Developer artifacts", owner: rule.name, explanation: rule.detail)
                 }
-                if scan.skipped > 0 || scan.limited { quick.notes.append(pair.0 + ": incomplete or unavailable. This quick pass is bounded to 12,000 entries / 8 seconds per location; use a full folder scan before cleanup.") }
+                if scan.skipped > 0 || scan.limited { quick.notes.append(pair.0 + ": incomplete or unavailable. Some entries could not be read; the size shown is a lower bound.") }
                 quick.entries = candidates.values.sorted { $0.item.size > $1.item.size }
             }
             if let trashScan, !token.cancelled {

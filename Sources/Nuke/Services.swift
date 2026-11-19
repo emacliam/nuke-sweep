@@ -29,55 +29,83 @@ enum DirectoryEntries {
 
 // lstat prevents following symlinks. Traversal stays on the selected volume.
 enum DiskScanner {
-    static func scan(_ root: URL, cancellation: ScanCancellation, limit: Int = 250_000, deadline: Date = Date().addingTimeInterval(60), excluding: (URL) -> Bool = { _ in false }, respectIgnored: Bool = true, observing: (URL) -> Void = { _ in }) -> ScanResult {
+    /// Measures everything under `root` without following symlinks or leaving
+    /// its volume.
+    ///
+    /// Directories are read with `getattrlistbulk` and walked by every core
+    /// from one shared queue (see `ParallelWalk`). Hard links count once, and
+    /// sizes on APFS are what removal frees, so clones are not counted twice.
+    /// A repeat scan of the same root reuses every subtree FSEvents says is
+    /// unchanged. With `observing` or `excluding` set, the walk reads every
+    /// entry on one thread, because those callers need to see each one.
+    static func scan(_ root: URL, cancellation: ScanCancellation, limit: Int = 2_000_000, deadline: Date = Date().addingTimeInterval(180), excluding: ((URL) -> Bool)? = nil, respectIgnored: Bool = true, observing: ((URL) -> Void)? = nil, visit: (@Sendable (String, BulkEntry) -> Void)? = nil, reuse allowReuse: Bool = true) -> ScanResult {
         let ignored = respectIgnored ? IgnoredLocations.paths : []
-        if excluding(root) || IgnoredLocations.contains(root, in: ignored) { return ScanResult(items: [], skipped: 0, visited: 0, limited: false) }
-        var visited = 0, skipped = 0, limited = false
-        var categories: [String: Int64] = [:]
-        var issues: [ScanAccessIssue] = []
-        func recordIssue(_ url: URL, _ reason: String) { if issues.count < 12 { issues.append(.init(path: url.path, reason: reason)) } }
+        if excluding?(root) == true || IgnoredLocations.contains(root, in: ignored) { return ScanResult(items: [], skipped: 0, visited: 0, limited: false) }
         var rootStat = stat()
         guard lstat(root.path, &rootStat) == 0 else { return ScanResult(items: [], skipped: 1, visited: 0, limited: false, accessIssues: [.init(path: root.path, reason: String(cString: strerror(errno)))]) }
         guard rootStat.st_mode & mode_t(S_IFMT) == mode_t(S_IFDIR) else { return ScanResult(items: [], skipped: 1, visited: 0, limited: false) }
-        let device = rootStat.st_dev
-        func measure(_ url: URL) -> DiskItem? {
-            if excluding(url) || IgnoredLocations.contains(url, in: ignored) { return nil }
-            if cancellation.cancelled || visited >= limit || Date() > deadline { limited = true; return nil }
-            visited += 1
-            observing(url)
-            if visited == 1 || visited % 256 == 0 { DiskWork.report(path: url.path, visited: visited) }
-            var s = stat()
-            guard lstat(url.path, &s) == 0 else { skipped += 1; recordIssue(url, String(cString: strerror(errno))); return nil }
-            let mode = s.st_mode & mode_t(S_IFMT)
-            let isDir = mode == mode_t(S_IFDIR), link = mode == mode_t(S_IFLNK)
-            var logical = isDir ? Int64(0) : Int64(s.st_size)
-            var allocated = isDir ? Int64(0) : Int64(s.st_blocks) * 512
-            var incomplete = false
-            if isDir {
-                if s.st_dev != device { skipped += 1; incomplete = true }
-                else {
-                    do {
-                        let complete = try DirectoryEntries.visit(url, shouldContinue: { !cancellation.cancelled && visited < limit && Date() <= deadline }) { child in
-                            guard !excluding(child) else { return }
-                            if let item = measure(child) { logical += item.size; allocated += item.allocated; incomplete = incomplete || item.incomplete }
-                            else { incomplete = true }
+        let device = Int32(rootStat.st_dev)
+        let rootPath = root.path
+        let plain = observing == nil && excluding == nil
+        let memory = plain && visit == nil && allowReuse ? ScanMemory.reuse(for: rootPath, device: rootStat.st_dev, ignored: ignored) : nil
+        let walk = ParallelWalk(.init(device: device, limit: limit, deadline: deadline, cancellation: cancellation, ignored: ignored,
+                                      excluding: excluding, observing: observing, visit: visit, reuse: memory?.0,
+                                      workers: plain ? ProcessInfo.processInfo.activeProcessorCount : 1))
+        func date(_ time: timespec) -> Date { Date(timeIntervalSince1970: Double(time.tv_sec)) }
+        func identity(_ entry: BulkEntry) -> FileIdentity { FileIdentity(device: UInt64(UInt32(bitPattern: entry.device)), inode: entry.inode) }
+
+        // The root's own children become items; everything below them is totals.
+        let rootCategory = FastCategory.forDirectory(rootPath)
+        var files: [DiskItem] = []
+        var directories: [(url: URL, entry: BulkEntry)] = []
+        var rootCategories = [Int64](repeating: 0, count: FastCategory.names.count)
+        let fd = open(rootPath, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+        if fd < 0 {
+            walk.skip(rootPath, String(cString: strerror(errno)))
+        } else {
+            defer { close(fd) }
+            do {
+                let complete = try BulkDirectory.read(fd) { entry in
+                    if cancellation.cancelled || Date() > deadline { walk.markLimited(); return false }
+                    let url = root.appendingPathComponent(entry.name)
+                    let path = rootPath + "/" + entry.name
+                    if let excluding, excluding(URL(fileURLWithPath: path)) { return true }
+                    if !ignored.isEmpty && ignored.contains(path) { return true }
+                    guard walk.claim(1) == 1 else { return false }
+                    observing?(url)
+                    if entry.error != 0 { walk.skip(url.path, String(cString: strerror(entry.error))); return true }
+                    visit?(path, entry)
+                    if entry.isDirectory {
+                        if entry.device != device {
+                            walk.skip(nil, nil)
+                            files.append(DiskItem(url: url, size: 0, allocated: 0, directory: true, symlink: false, modified: date(entry.modified), accessed: date(entry.accessed), identity: identity(entry), incomplete: true))
+                        } else {
+                            directories.append((url, entry))
                         }
-                        if !complete { limited = true; incomplete = true }
-                    } catch { skipped += 1; incomplete = true; recordIssue(url, error.localizedDescription) }
+                        return true
+                    }
+                    if entry.links > 1 && !entry.isSymlink && !walk.firstLink(entry.inode) { return true }
+                    if !entry.isSymlink { rootCategories[FastCategory.forFile(named: entry.name, inherited: rootCategory)] += entry.logical }
+                    files.append(DiskItem(url: url, size: entry.logical, allocated: entry.reclaimable, directory: false, symlink: entry.isSymlink, modified: date(entry.modified), accessed: date(entry.accessed), identity: identity(entry), incomplete: false))
+                    return true
                 }
-            }
-            if !isDir && !link { categories[GrowthComparison.category(url), default: 0] += logical }
-            return DiskItem(url: url, size: logical, allocated: allocated, directory: isDir, symlink: link, modified: Date(timeIntervalSince1970: Double(s.st_mtimespec.tv_sec)), accessed: Date(timeIntervalSince1970: Double(s.st_atimespec.tv_sec)), identity: FileIdentity(device: UInt64(s.st_dev), inode: UInt64(s.st_ino)), incomplete: incomplete)
+                if !complete { walk.markLimited() }
+            } catch { walk.skip(rootPath, error.localizedDescription) }
         }
-        var items: [DiskItem] = []
-        do {
-            let complete = try DirectoryEntries.visit(root, shouldContinue: { !cancellation.cancelled && visited < limit && Date() <= deadline }) { child in
-                guard !excluding(child) else { return }
-                if let item = measure(child) { items.append(item) }
-            }
-            if !complete { limited = true }
-        } catch { skipped += 1; recordIssue(root, error.localizedDescription) }
-        return ScanResult(items: items.sorted { $0.size > $1.size }, skipped: skipped, visited: visited, limited: limited, categories: categories, accessIssues: issues)
+        let totals = walk.measure(directories.map { ($0.url.path, rootCategory) })
+        let folders = directories.indices.map { index -> DiskItem in
+            let (url, entry) = directories[index]
+            let value = totals[index]
+            return DiskItem(url: url, size: value.logical, allocated: value.allocated, directory: true, symlink: false, modified: date(entry.modified), accessed: date(entry.accessed), identity: identity(entry), incomplete: value.incomplete)
+        }
+        var categoryTotals = rootCategories
+        for value in totals { for index in categoryTotals.indices { categoryTotals[index] += value.categories[index] } }
+        var categories: [String: Int64] = [:]
+        for (index, name) in FastCategory.names.enumerated() where categoryTotals[index] > 0 { categories[name] = categoryTotals[index] }
+        if let memory, !walk.limited, !cancellation.cancelled {
+            ScanMemory.remember(rootPath, reuse: memory.0, eventID: memory.1, volume: memory.2, ignored: ignored)
+        }
+        return ScanResult(items: (files + folders).sorted { $0.size > $1.size }, skipped: walk.skipped, visited: walk.visited, limited: walk.limited, categories: categories, accessIssues: walk.issues)
     }
     static func cache(_ rule: CacheRule, cancellation: ScanCancellation) -> CacheMeasurement {
         guard FileManager.default.fileExists(atPath: rule.url.path) else { return .init(rule: rule, item: nil, skipped: 0) }
@@ -156,7 +184,23 @@ enum CleanupSafety {
         return [lexical, effective].contains { $0 == protected || $0.hasPrefix(protected + "/") || protected.hasPrefix($0 + "/") }
     }
     /// Source-control metadata and personal/credential stores are never cleanup targets.
+    /// Download caches that hold other people's packages, re-fetchable on demand.
+    static func isPackageCache(_ path: String, home: String = FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL.path) -> Bool {
+        let roots = ["/Library/Caches/Yarn/", "/.npm/_cacache/", "/Library/pnpm/store/", "/Library/Caches/CocoaPods/",
+                     "/.gradle/caches/", "/Library/Caches/pip/", "/Library/Caches/Homebrew/", "/Library/Caches/org.swift.swiftpm/",
+                     "/Library/Caches/go-build/", "/.cargo/registry/", "/.bun/install/cache/", "/.pub-cache/", "/.m2/repository/",
+                     "/.cache/uv/", "/Library/Caches/Yarn"]
+        return roots.contains { root in
+            let full = home + root
+            return path.hasPrefix(full.hasSuffix("/") ? full : full + "/")
+        }
+    }
     static func isSensitive(_ path: String, home: String = FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL.path) -> Bool {
+        // Inside a package manager's download cache, a key-like name is a file
+        // some package shipped (React Native templates carry debug.keystore,
+        // test suites carry .pem fixtures, git-sourced packages carry .git).
+        // It is a copy the tool can fetch again, not the person's secret.
+        if isPackageCache(path, home: home) { return false }
         let name = URL(fileURLWithPath: path).lastPathComponent.lowercased()
         let components = Set(URL(fileURLWithPath: path).pathComponents.map { $0.lowercased() })
         if !components.isDisjoint(with: [".git", ".hg", ".svn", ".ssh", ".gnupg", ".aws"]) { return true }

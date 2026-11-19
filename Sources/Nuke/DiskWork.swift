@@ -99,6 +99,18 @@ enum DiskWork {
         value.last = Date(); value.path = label; value.visited = visited; progress[handle.id] = value
         publish()
     }
+    /// A progress reporter for the job running on this thread, usable from the
+    /// worker threads a parallel scan spreads onto. Nil outside a disk job.
+    static func reporter() -> (@Sendable (String, Int) -> Void)? {
+        guard let handle = Thread.current.threadDictionary[threadKey] as? JobHandle else { return nil }
+        let id = handle.id
+        return { label, visited in
+            lock.lock(); defer { lock.unlock() }
+            guard var value = progress[id], Date().timeIntervalSince(value.last) >= 0.2 else { return }
+            value.last = Date(); value.path = label; value.visited = visited; progress[id] = value
+            publish()
+        }
+    }
     static func run<T: Sendable>(_ label: String = "Disk inspection", priority: Priority = .foreground, lane: Lane = .bulk, cancellation: ScanCancellation? = nil, _ operation: @escaping @Sendable () -> T) async -> T {
         await withCheckedContinuation { continuation in
             let job = Job(label: label, lane: lane, priority: priority, cancellation: cancellation, operation: { continuation.resume(returning: operation()) })

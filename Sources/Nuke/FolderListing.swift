@@ -30,12 +30,12 @@ enum FolderListing {
     }
     /// A shared budget prevents a wide expansion from queuing thousands of full
     /// scans. Remaining folders stay explicitly unmeasured and can be measured on demand.
-    static func measure(_ items: [DiskItem], token: ScanCancellation, excluding: @Sendable (URL) -> Bool, budget: TimeInterval = 6) -> [DiskItem] {
+    static func measure(_ items: [DiskItem], token: ScanCancellation, excluding: @escaping @Sendable (URL) -> Bool, budget: TimeInterval = 6) -> [DiskItem] {
         let deadline = Date().addingTimeInterval(budget)
         return items.map { item in
             guard item.measurementPending == true, !token.cancelled, Date() < deadline,
                   FileIdentity.read(item.url) == item.identity else { return item }
-            let scan = DiskScanner.scan(item.url, cancellation: token, limit: 12_000, deadline: deadline, excluding: excluding)
+            let scan = DiskScanner.scan(item.url, cancellation: token, limit: 200_000, deadline: deadline, excluding: excluding)
             var measured = DiskItem(url: item.url, size: scan.logical, allocated: scan.allocated, directory: true, symlink: false, modified: item.modified, identity: item.identity, incomplete: scan.limited || scan.skipped > 0)
             measured.measurementPending = false
             return measured

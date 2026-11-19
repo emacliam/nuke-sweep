@@ -68,7 +68,7 @@ struct ContentView: View {
                 if showsTopbar { topbar; Divider().overlay(Theme.line) }
                 sectionBar
                 if isCurrentSection(.developer) { developerTabs }
-                if model.reviewPreparing { HStack { BusyLine(text: "Preparing cleanup review…"); Spacer(); Button("Cancel review") { model.cancelReview() }.buttonStyle(QuietButton()) }.padding(.horizontal, 24).padding(.vertical, 10) }
+                if model.reviewPreparing && !model.showTrashReview { HStack { BusyLine(text: "Preparing cleanup review…"); Spacer(); Button("Cancel review") { model.cancelReview() }.buttonStyle(QuietButton()) }.padding(.horizontal, 24).padding(.vertical, 10) }
                 DiskQueueNotice()
                 if model.page == .storage {
                     if model.mainWindowVisible { StorageView().padding(24) } else { Spacer() }
@@ -178,10 +178,12 @@ struct ContentView: View {
                 coreNav("Cleanup", icon: "sparkle.magnifyingglass", section: .cleanup, destination: .findSpace)
                 coreNav("Files", icon: "folder", section: .files, destination: .storage)
                 coreNav("Apps", icon: "app.badge", section: .apps, destination: .apps)
+                if !model.cleanupBasket.items.isEmpty {
                 Button { model.showCleanupBasket = true } label: {
                     HStack(spacing: 11) { Image(systemName: "tray").frame(width: 19); Text("Basket"); Spacer(); Text(String(model.cleanupBasket.items.count)).monospacedDigit().foregroundStyle(Theme.secondary) }
                         .font(.system(size: 13)).padding(.horizontal, 12).padding(.vertical, 12)
                 }.buttonStyle(.plain).accessibilityLabel("Cleanup basket, \(model.cleanupBasket.items.count) items")
+                }
                 coreNav("History", icon: "clock.arrow.circlepath", section: .history, destination: .history)
             }.padding(.horizontal, 12)
             Spacer(minLength: 12)
@@ -344,8 +346,8 @@ struct StorageToolbar: View {
             Spacer()
             VolumesMenu(volumes: volumes) { model.scan($0) }
             Button("Choose folder…") { model.chooseFolder() }.buttonStyle(QuietButton())
-            Button("Full scan") { model.scan(force: true) }.buttonStyle(QuietButton()).disabled(model.scanning)
-            Button("Refresh folder") { model.scan() }.buttonStyle(PrimaryButton()).disabled(model.scanning)
+            Button("Refresh") { model.scan(force: true) }.buttonStyle(PrimaryButton()).disabled(model.scanning)
+                .help("Measure this folder again. Unchanged folders are reused from the last scan, so this is quick.")
         }
     }
 }
@@ -502,11 +504,10 @@ struct StorageView: View {
         VStack(alignment: .leading, spacing: 14) {
             StorageToolbar(volumes: volumes)
             if let result = model.result {
-                if !model.scanning {
+                // Only worth a line when something is off; "Measured now" is noise.
+                if !model.scanning && (model.scanState.hasPrefix("Stopped") || model.scanState.contains("partial") || model.scanState.contains("incomplete") || model.scanState.contains("changed")) {
                     HStack(spacing: 6) {
-                        if model.scanState.hasPrefix("Stopped") || model.scanState.contains("partial") || model.scanState.contains("incomplete") {
-                            Image(systemName: "exclamationmark.triangle").font(.system(size: 10)).foregroundStyle(Theme.warning)
-                        }
+                        Image(systemName: "exclamationmark.triangle").font(.system(size: 10)).foregroundStyle(Theme.warning)
                         // Built outside the ViewBuilder: inferring this concatenation
                         // inline pushes the enclosing expression past the
                         // type-checker's time limit.
@@ -545,27 +546,33 @@ struct StorageView: View {
                             FolderTreeView(store: tree, selection: $treeSelection, items: result.items, blocked: { DeveloperScope.cleanupBlock(for: $0.url.standardizedFileURL.path, in: features.developerScopes) != nil }, onSaveAsScope: savePlanScope, onInspect: { inspectedItem = $0 })
                         } else { fileTable }
                     }.frame(minWidth: 350, maxHeight: .infinity)
-                    Group {
-                        if let inspectedItem {
+                    // Details open when an item is clicked, and close again;
+                    // an empty panel took a third of the width for nothing.
+                    if let inspectedItem {
+                        VStack(alignment: .trailing, spacing: 0) {
+                            Button { self.inspectedItem = nil; inspectedID = nil } label: { Image(systemName: "xmark").padding(8) }
+                                .buttonStyle(.plain).foregroundStyle(Theme.secondary).accessibilityLabel("Close details")
                             ItemDetailsView(item: inspectedItem).id(inspectedItem.id)
-                        } else {
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text("Item details").font(.system(size: 14, weight: .semibold))
-                                Text("Click a file or folder to see its size and cleanup assessment. Use checkboxes to select items for cleanup.")
-                                    .font(.system(size: 12)).foregroundStyle(Theme.secondary)
-                                Spacer()
-                            }.padding(16).frame(maxWidth: .infinity, alignment: .leading)
                         }
-                    }.frame(minWidth: 220, idealWidth: 255, maxWidth: 340, maxHeight: .infinity)
+                        .frame(minWidth: 220, idealWidth: 255, maxWidth: 340, maxHeight: .infinity)
                         .background(Theme.surface)
+                    }
                 }.frame(maxHeight: .infinity)
-                HStack { Text("\(bytes(result.allocated))\(result.limited || result.skipped > 0 ? "+" : "") allocated · APFS sharing and hard links can affect totals. Trash does not immediately free space.").font(.system(size: 10)).foregroundStyle(Theme.secondary); Spacer() }
-                HStack(spacing: 8) {
-                    Text("\(activeItems.count) selected").font(.system(size: 11))
-                    if useTree && !activeItems.isEmpty { Text("· folders move with their contents").font(.system(size: 10)).foregroundStyle(Theme.secondary) }
+                HStack(spacing: 10) {
+                    let chosen = activeItems.reduce(Int64(0)) { $0 + $1.size }
+                    Text(activeItems.isEmpty ? "Tick files or folders to clear them" : "\(activeItems.count) selected · \(bytes(chosen))")
+                        .font(.system(size: 11)).foregroundStyle(activeItems.isEmpty ? Theme.secondary : Theme.ink)
+                        .help("\(bytes(result.allocated)) allocated in this folder. APFS sharing and hard links can affect totals. Space returns when Trash is emptied.")
                     Spacer()
-                    Button("Add to basket") { model.addToBasket(activeItems) }.buttonStyle(QuietButton()).disabled(activeItems.isEmpty || model.actionBusy || model.scanning)
-                    Button("Review selected…") { model.reviewTrash(activeItems) }.buttonStyle(PrimaryButton()).disabled(activeItems.isEmpty || model.actionBusy || model.scanning)
+                    Menu {
+                        Button("Add to basket") { model.addToBasket(activeItems) }
+                        Button("Show in Finder") { activeItems.first.map { model.reveal($0.url) } }
+                    } label: { Image(systemName: "ellipsis.circle") }
+                        .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+                        .disabled(activeItems.isEmpty || model.actionBusy || model.scanning)
+                        .accessibilityLabel("More actions for the selection")
+                    Button(activeItems.isEmpty ? "Move to Trash…" : "Move \(bytes(chosen)) to Trash…") { model.reviewTrash(activeItems) }
+                        .buttonStyle(PrimaryButton()).disabled(activeItems.isEmpty || model.actionBusy || model.scanning)
                 }
             } else if !model.scanning {
                 // These choices already existed as bare buttons under a paragraph.
@@ -586,7 +593,15 @@ struct StorageView: View {
         .onChange(of: inspectedID.flatMap { id in model.visibleItems.first { $0.id == id } }) { _, item in
             if !useTree { inspectedItem = item }
         }
-        .onAppear { volumes = MountedVolumeService.list() }
+        .onAppear {
+            volumes = MountedVolumeService.list()
+            // A partial result saved by an earlier run (often under the old
+            // scan limits) is measured again instead of showing a stale warning.
+            if let result = model.result, result.limited || result.skipped > 0, !model.scanning,
+               (model.resultMeasured ?? .distantPast) < model.launchedAt {
+                model.scan(force: true)
+            }
+        }
         .onChange(of: model.finishedReceipt?.id) { _, _ in tree.reset(); treeSelection = [:] }
         .onChange(of: useTree) {
             inspectedID = nil
