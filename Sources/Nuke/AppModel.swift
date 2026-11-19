@@ -182,6 +182,8 @@ import UserNotifications
     var pendingEvidence: [String: CleanupEvidence] = [:]
     var pendingWarnings: [String] = []
     var pendingBlocked: [ReviewBlockedItem] = []
+    /// Review items that changed on disk after they were checked: unticked until checked again.
+    var pendingChanged = Set<String>()
     /// When this run started; tells a restored result from one measured now.
     let launchedAt = Date()
     /// File watchers that keep Trash and the check's results current while open.
@@ -523,7 +525,7 @@ import UserNotifications
 
     func reviewTrash(_ items: [DiskItem], proofs: [DuplicateProof] = [], cacheContents: CacheRule? = nil, folderContents: DiskItem? = nil) {
         guard !actionBusy, !reviewPreparing else { return }; actionBusy = true
-        pendingTrash = []; pendingTrashSelection = []; duplicateProofs = []; pendingEvidence = [:]; pendingWarnings = []; pendingBlocked = []
+        pendingTrash = []; pendingTrashSelection = []; duplicateProofs = []; pendingEvidence = [:]; pendingWarnings = []; pendingBlocked = []; pendingChanged = []
         reviewPreparing = true; reviewMoved = 0; let token = ScanCancellation(); reviewToken = token
         let scopes = FolderAccess.shared.cleanupScopes
         let developerScopes = features.developerScopes
@@ -603,7 +605,7 @@ import UserNotifications
         }
     }
 
-    func cancelReview() { reviewToken.cancel(); reviewPreparing = false; actionBusy = false; pendingEvidence = [:]; pendingWarnings = []; pendingBlocked = [] }
+    func cancelReview() { reviewToken.cancel(); reviewPreparing = false; actionBusy = false; pendingEvidence = [:]; pendingWarnings = []; pendingBlocked = []; pendingChanged = [] }
     func trashReviewed() {
         guard requireCleanupAccess() else { return }
         let items = selectedPendingTrash
@@ -634,7 +636,7 @@ import UserNotifications
             // Everything checked has gone and nothing is left to check: done.
             if !reviewPreparing && pendingTrash.isEmpty && pendingBlocked.isEmpty { showTrashReview = false }
             if !reviewPreparing && !showTrashReview {
-                pendingTrash = []; pendingTrashSelection = []; pendingEvidence = [:]; pendingWarnings = []; pendingBlocked = []; duplicateProofs = []
+                pendingTrash = []; pendingTrashSelection = []; pendingEvidence = [:]; pendingWarnings = []; pendingBlocked = []; duplicateProofs = []; pendingChanged = []
             }
             actionBusy = false
 

@@ -259,6 +259,12 @@ struct TrashReview: View {
                             Text("Checking \(model.reviewDone) of \(model.reviewTotal). You can move what's ready now.")
                                 .font(.system(size: 11)).foregroundStyle(Theme.secondary)
                         }
+                    } else if !model.pendingChanged.isEmpty {
+                        HStack(spacing: 6) {
+                            Text("\(model.pendingChanged.count) changed since they were checked.").font(.system(size: 11)).foregroundStyle(Theme.warning)
+                            Button("Check again") { model.recheckChangedReviewItems() }
+                                .buttonStyle(HoverPlain()).font(.system(size: 11, weight: .medium)).foregroundStyle(Theme.orange)
+                        }
                     } else if model.reviewMoved > 0 {
                         Text("\(model.reviewMoved) already moved to Trash.").font(.system(size: 11)).foregroundStyle(Theme.green)
                     }
@@ -300,10 +306,15 @@ struct TrashReview: View {
                                         else { model.pendingTrashSelection.remove(item.id) }
                                     }
                                 )).toggleStyle(.checkbox).font(.system(size: 13, weight: .medium))
+                                .disabled(model.pendingChanged.contains(item.id))
                                 Spacer()
                                 Button { model.reveal(item.url) } label: { Image(systemName: "folder") }
                                     .buttonStyle(HoverPlain()).foregroundStyle(Theme.secondary)
                                     .help("Show in Finder").accessibilityLabel("Show \(item.name) in Finder")
+                            }
+                            if model.pendingChanged.contains(item.id) {
+                                Label("Changed since it was checked, so it is left out until checked again.", systemImage: "arrow.triangle.2.circlepath")
+                                    .font(.system(size: 10)).foregroundStyle(Theme.warning)
                             }
                             if let evidence = model.pendingEvidence[item.id] {
                                 let assessment = CandidateAssessment.make(item, evidence: evidence)

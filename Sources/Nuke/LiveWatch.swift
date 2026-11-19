@@ -12,6 +12,7 @@ import Foundation
     private var homePending: DispatchWorkItem?
     private weak var model: AppModel?
     static var lastMeasure = Date.distantPast
+    static var lastCaches = Date.distantPast
 
     func start(_ model: AppModel) {
         guard trash == nil else { return }
@@ -65,14 +66,23 @@ extension AppModel {
     /// listed, drop what is gone and re-measure the rest; when sizes moved
     /// noticeably, say so rather than show figures that are no longer true.
     func filesChangedOutside(all: Bool, paths: Set<String>) {
+        let record = ScanReuse(remembered: [:], changed: Array(paths))
+        func touched(_ url: URL) -> Bool { all || record.dirty(url.standardizedFileURL.path) }
+        // Pages that list folders of their own (tool caches, worktrees) decide for themselves.
+        NotificationCenter.default.post(name: .nukeFilesChanged, object: nil, userInfo: ["all": all, "paths": paths])
+        if showTrashReview && !actionBusy { reviewItemsChanged(pendingTrash.filter { touched($0.url) }) }
+        if page == .developer, !cacheScanning, !caches.isEmpty, Date().timeIntervalSince(LiveWatch.lastCaches) > 30,
+           caches.contains(where: { touched($0.rule.url) }) {
+            LiveWatch.lastCaches = Date()
+            scanCaches()
+        }
         guard !actionBusy, !fullCheck.running, fullCheckResultIsCurrent else { return }
         let listed = fullCheckItems()
         let affected: [DiskItem]
         if all {
             affected = listed
         } else {
-            let record = ScanReuse(remembered: [:], changed: Array(paths))
-            affected = listed.filter { record.dirty($0.url.standardizedFileURL.path) }
+            affected = listed.filter { touched($0.url) }
         }
         guard !affected.isEmpty else { return }
         pruneAfterMutation()
@@ -94,6 +104,55 @@ extension AppModel {
             }
             // Small churn (a browser writing its cache) is not worth a message.
             if drift > 200_000_000 { fullCheck.changedSince = drift }
+        }
+    }
+}
+
+extension Notification.Name {
+    /// Posted with `all` (Bool) and `paths` (Set<String>) when watched files change.
+    static let nukeFilesChanged = Notification.Name("nuke.filesChanged")
+}
+
+extension AppModel {
+    /// Items in the open review that changed on disk after their check. Gone
+    /// ones leave the list; the rest are unticked and marked until checked again.
+    func reviewItemsChanged(_ items: [DiskItem]) {
+        guard !items.isEmpty else { return }
+        for item in items {
+            var info = stat()
+            if lstat(item.url.path, &info) != 0 {
+                pendingTrash.removeAll { $0.id == item.id }
+                pendingTrashSelection.remove(item.id)
+                pendingEvidence[item.id] = nil
+                pendingChanged.remove(item.id)
+            } else {
+                pendingChanged.insert(item.id)
+                pendingTrashSelection.remove(item.id)
+            }
+        }
+    }
+
+    /// Checks the changed review items again, in the background, and puts back
+    /// the ones that pass.
+    func recheckChangedReviewItems() {
+        let items = pendingTrash.filter { pendingChanged.contains($0.id) }
+        guard !items.isEmpty, !actionBusy else { return }
+        let scopes = FolderAccess.shared.cleanupScopes
+        let developerScopes = features.developerScopes
+        let token = ScanCancellation()
+        Task {
+            let result = await DiskWork.run("Checking changed items again", lane: .interactive, cancellation: token) {
+                ReviewPlanner.prepare(items, scopes: scopes, token: token, developerScopes: developerScopes)
+            }
+            let ids = Set(items.map(\.id))
+            pendingTrash.removeAll { ids.contains($0.id) }
+            pendingChanged.subtract(ids)
+            for item in result.items {
+                pendingTrash.append(item)
+                pendingTrashSelection.insert(item.id)
+                if let evidence = result.evidence[item.id] { pendingEvidence[item.id] = evidence }
+            }
+            pendingBlocked.append(contentsOf: result.blocked)
         }
     }
 }
