@@ -6,12 +6,15 @@ struct TrashEntry: Identifiable, Sendable {
     var id: String { item.id }
     let item: DiskItem
     let fingerprint: String
+    /// False when it could not be fingerprinted; it is shown but cannot be deleted from here.
+    var verifiable: Bool { !fingerprint.isEmpty }
 }
 struct TrashSnapshot: Sendable {
     let rootIdentity: FileIdentity
     let entries: [TrashEntry]
     var complete = true
     var size: Int64 { entries.reduce(0) { $0 + $1.item.size } }
+    var verifiable: [TrashEntry] { entries.filter(\.verifiable) }
 }
 /// Only instantiated with ~/.Trash in the application. Tests use isolated disposable directories.
 struct TrashService: Sendable {
@@ -35,43 +38,43 @@ struct TrashService: Sendable {
         guard lstat(root.path, &s) == 0, s.st_mode & mode_t(S_IFMT) == mode_t(S_IFDIR), s.st_uid == getuid() else { throw Failure.inaccessible }
         return FileIdentity(device: UInt64(s.st_dev), inode: UInt64(s.st_ino))
     }
+    /// Identity, type, permissions, size and times of everything in the item,
+    /// read in bulk on every core. Contents are never read. The same function
+    /// runs again just before deletion, so any change in between is caught.
     private func fingerprint(_ url: URL, token: ScanCancellation? = nil, deadline: Date = .distantFuture) throws -> String {
-        var hash = SHA256(), count = 0
-        func visit(_ path: URL) throws {
+        let collector = ReviewSeal.Collector(refuseSensitive: false)
+        collector.observeRoot(url)
+        var info = stat()
+        guard lstat(url.path, &info) == 0 else { throw Failure.inaccessible }
+        if info.st_mode & mode_t(S_IFMT) == mode_t(S_IFDIR) {
+            let scan = DiskScanner.scan(url, cancellation: token ?? ScanCancellation(), deadline: deadline, respectIgnored: false, visit: collector.record, reuse: false)
             if token?.cancelled == true { throw Failure.cancelled }
-            guard Date() < deadline else { throw Failure.inaccessible }
-            count += 1; guard count <= 250_000 else { throw Failure.tooLarge }
-            var s = stat()
-            guard lstat(path.path, &s) == 0 else { throw Failure.inaccessible }
-            let record = "\(path.path)\0\(s.st_dev):\(s.st_ino):\(s.st_mode):\(s.st_size):\(s.st_mtimespec.tv_sec):\(s.st_mtimespec.tv_nsec):\(s.st_ctimespec.tv_sec):\(s.st_ctimespec.tv_nsec)\0"
-            hash.update(data: Data(record.utf8))
-            if s.st_mode & mode_t(S_IFMT) == mode_t(S_IFDIR) {
-                for child in try FileManager.default.contentsOfDirectory(at: path, includingPropertiesForKeys: nil).sorted(by: { $0.path < $1.path }) { try visit(child) }
-            }
+            guard !scan.limited else { throw Failure.tooLarge }
+            guard scan.skipped == 0 else { throw Failure.inaccessible }
         }
-        try visit(url)
-        return hash.finalize().map { String(format: "%02x", $0) }.joined()
+        return try collector.finish()
     }
     func inspect(token: ScanCancellation = ScanCancellation()) throws -> TrashSnapshot {
         guard !token.cancelled else { throw Failure.cancelled }
-        let deadline = Date().addingTimeInterval(60)
         let identity = try rootIdentity()
-        let result = DiskScanner.scan(root, cancellation: token, deadline: deadline)
+        let result = DiskScanner.scan(root, cancellation: token, deadline: Date().addingTimeInterval(120))
         if token.cancelled { throw Failure.cancelled }
         let measuredCompletely = result.skipped == 0 && !result.limited
             && result.items.allSatisfy { $0.identity != nil && !$0.incomplete }
         guard measuredCompletely || !result.items.isEmpty else { throw Failure.inaccessible }
+        // Each item is fingerprinted on its own time budget. One item that
+        // cannot be verified is left unselectable; the rest stay usable.
         var entries: [TrashEntry] = []
         var complete = measuredCompletely
         for item in result.items {
             guard !token.cancelled else { throw Failure.cancelled }
-            let seal = complete ? try? fingerprint(item.url, token: token, deadline: deadline) : nil
+            let seal = item.identity != nil && !item.incomplete
+                ? try? fingerprint(item.url, token: token, deadline: Date().addingTimeInterval(60)) : nil
             if seal == nil { complete = false }
             entries.append(TrashEntry(item: item, fingerprint: seal ?? ""))
         }
         guard !token.cancelled else { throw Failure.cancelled }
         guard try rootIdentity() == identity else { throw Failure.changed }
-        if !complete { entries = entries.map { TrashEntry(item: $0.item, fingerprint: "") } }
         return TrashSnapshot(rootIdentity: identity, entries: entries, complete: complete)
     }
 

@@ -195,6 +195,7 @@ struct DevCleanupPanel: View {
     @State private var state = DevCleanupState()
     @State private var confirmTool: ToolCacheFinding?
     @State private var confirmTree: StaleWorktree?
+    @State private var lastLive = Date.distantPast
 
     var body: some View {
         Group {
@@ -226,6 +227,18 @@ struct DevCleanupPanel: View {
             }
         }
         .task(id: features.projects.count) { state.refresh(repositories: devCleanupRepositories(features)) }
+        // Re-measure when a tool cache or a listed worktree changes on disk,
+        // at most twice a minute, so the sizes here stay true.
+        .onReceive(NotificationCenter.default.publisher(for: .nukeFilesChanged)) { note in
+            guard state.running == nil, !state.measuring, Date().timeIntervalSince(lastLive) > 30 else { return }
+            let all = note.userInfo?["all"] as? Bool ?? true
+            let paths = note.userInfo?["paths"] as? Set<String> ?? []
+            let record = ScanReuse(remembered: [:], changed: Array(paths))
+            let watched = ToolCleaner.all.map { DevCleanups.home.appendingPathComponent($0.cache).path } + state.worktrees.map(\.path)
+            guard !all, watched.contains(where: { record.dirty($0) }) else { return }
+            lastLive = Date()
+            state.refresh(repositories: devCleanupRepositories(features))
+        }
         .confirmationDialog(confirmTool.map { "Clear \($0.tool.name)?" } ?? "", isPresented: Binding(get: { confirmTool != nil }, set: { if !$0 { confirmTool = nil } }), presenting: confirmTool) { finding in
             Button("Run \(finding.tool.command)", role: .destructive) { runTool(finding) }
         } message: { finding in

@@ -22,6 +22,8 @@ struct FullCheckState: Equatable {
     var projectsSkipped = false
     var projectsPartial = false
     var stopped = false
+    /// Bytes that changed in listed locations since this check finished, when worth saying.
+    var changedSince: Int64?
     /// Started by the weekly schedule rather than by the person.
     var automatic = false
     /// The check before this one, kept so the result can say what changed.
@@ -578,6 +580,17 @@ struct FullCheckCard: View {
                     Divider()
                     tier("exclamationmark.shield", "Held back", "No copy exists anywhere else, so it is never offered.",
                          totals.exposedBytes, tint: Theme.error)
+                }
+            }
+            if let changed = model.fullCheck.changedSince {
+                // Watchers saw the listed locations change while the app was open.
+                HStack(spacing: 8) {
+                    Image(systemName: "arrow.triangle.2.circlepath").font(.system(size: 11)).foregroundStyle(Theme.warning)
+                    Text("About \(bytes(changed)) has changed in these locations since this check.")
+                        .font(.system(size: 11)).foregroundStyle(Theme.secondary)
+                    Button("Check again") { model.startFullCheck() }
+                        .buttonStyle(HoverPlain()).font(.system(size: 11, weight: .medium)).foregroundStyle(Theme.orange)
+                        .disabled(!model.canStartFullCheck)
                 }
             }
             if totals.inUseCount > 0 { InUseLine(items: report.inUse, count: totals.inUseCount) }

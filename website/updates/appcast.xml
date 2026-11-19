@@ -6,14 +6,27 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
     <channel>
         <title>Nuke Sweep</title>
         <item>
+            <title>0.9.7</title>
+            <pubDate>Thu, 19 Nov 2026 11:13:07 +0200</pubDate>
+            <sparkle:version>18</sparkle:version>
+            <sparkle:shortVersionString>0.9.7</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <description><![CDATA[<ul><li>Trash items can be selected again; one large or unreadable item no longer locks the whole list.</li><li>The app follows changes on disk while it is open: Trash, the check results, the review, developer caches and worktrees stay current.</li></ul>
+]]></description>
+            <enclosure url="https://sweep.zyncraft.com/downloads/Nuke-Sweep-0.9.7.dmg" length="5381392" type="application/octet-stream" sparkle:edSignature="wv+hC4ASjT4vx0+Y12/9KXtkYtr50g+rVhjhqTOJj2PTIkMl5/cHw30KCv39TulD5YV5oQBaUiU8uAx3WHJIAQ=="/>
+            <sparkle:deltas>
+                <enclosure url="https://sweep.zyncraft.com/downloads/Nuke%20Sweep18-17.delta" sparkle:deltaFrom="17" length="637114" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="OjDUz+rGqHncbNfpehoeLGNVw9MjqxRoJasfgj9g4zwDz3IfPEjOyZ2bqtGWr8MzpJF1eEn9xJiWTHvB82MZAg=="/>
+                <enclosure url="https://sweep.zyncraft.com/downloads/Nuke%20Sweep18-16.delta" sparkle:deltaFrom="16" length="932438" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="GXbl28+LmoH1R1CztSe2eMEyI6aznvxc0jrYDsdUyN0N8TO/pSKzw9A+n2ZRGwaKV8bDK39ONL0G4xzg1vmLCw=="/>
+            </sparkle:deltas>
+        </item>
+        <item>
             <title>0.9.6</title>
             <pubDate>Thu, 19 Nov 2026 08:45:16 +0200</pubDate>
             <sparkle:version>17</sparkle:version>
             <sparkle:shortVersionString>0.9.6</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <description><![CDATA[<ul><li>Very large caches such as Yarn can be reviewed and cleared; reviews of more than 250,000 files no longer stop part way.</li><li>One scroll area per screen instead of small boxes inside it.</li><li>Hover feedback on every button, link and row.</li></ul>
-]]></description>
             <enclosure url="https://sweep.zyncraft.com/downloads/Nuke-Sweep-0.9.6.dmg" length="5351696" type="application/octet-stream" sparkle:edSignature="QU0wouxT0wu/UbkIkutWC/4aiWheHvHhuUm0r1nATsT/yPhx422tjWmbIQjQxSFCJ0QtweA5mP78JpNgHjlDDg=="/>
             <sparkle:deltas>
                 <enclosure url="https://sweep.zyncraft.com/downloads/Nuke%20Sweep17-16.delta" sparkle:deltaFrom="16" length="832238" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="Hg7v1XwcF6nbMCEkVI52ibEHswNwvPZ7xSpHZiNkwTSJevgXSqRUus0srpwe6P/gv+NhbVI3ZLA0/0Slr4HgAg=="/>
@@ -33,22 +46,9 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
                 <enclosure url="https://sweep.zyncraft.com/downloads/Nuke%20Sweep16-14.delta" sparkle:deltaFrom="14" length="1249818" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="U+uHf5BWMXccqtIf2fXpHcj+cqsr8D5HGLrlKJMFBCdzI22LL8yuxdxHm7CXYIbcIjlLZ1rurl4WG+dwyvRBBQ=="/>
             </sparkle:deltas>
         </item>
-        <item>
-            <title>0.9.4</title>
-            <pubDate>Wed, 18 Nov 2026 15:48:46 +0200</pubDate>
-            <sparkle:version>15</sparkle:version>
-            <sparkle:shortVersionString>0.9.4</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <enclosure url="https://sweep.zyncraft.com/downloads/Nuke-Sweep-0.9.4.dmg" length="5255952" type="application/octet-stream" sparkle:edSignature="sy2WzrKsLat4916RWzQDJgMZrpM2rvp7CQxyRGprZLkVNVDoXKVXy7X364IvCrmhPkG8ak6PEcXmeiqbkx7IAQ=="/>
-            <sparkle:deltas>
-                <enclosure url="https://sweep.zyncraft.com/downloads/Nuke%20Sweep15-14.delta" sparkle:deltaFrom="14" length="976958" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="h3o41Hf3lm1Dj7IQPDvwfN7BxQaFAb/slfbei+Kv7NMBT2/eXEVy6TqToNP6IlNFs19QjkblOcrnRsqhsqbkBA=="/>
-                <enclosure url="https://sweep.zyncraft.com/downloads/Nuke%20Sweep15-13.delta" sparkle:deltaFrom="13" length="1049314" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="G9/LIdRiWNbTSpJhzle/Vv8C/GdYTeKNNOvFcWZo2stqrCa5PYZrN0pXYbtbtr98NxXRlZvT+FGlQ2oOF6RHAg=="/>
-            </sparkle:deltas>
-        </item>
     </channel>
 </rss>
 <!-- sparkle-signatures:
-edSignature: WSm0ILoGU/QyO7h9XOJXSbLaxlQ7dTEIX2AHaKy2GgqvyaMCZlfel3iyDRGANHX/ZyHE8JIPtTEzGxVk4XkwBw==
-length: 5188
+edSignature: 3Ja2rgBZzJA1As8S2yGXpHjWp/4TBCFc74T21cmyt1YXwNrebv14cqifMrsJi4qxCwg8YMLlTQieXMsacfnBAQ==
+length: 5181
 -->

@@ -182,8 +182,12 @@ import UserNotifications
     var pendingEvidence: [String: CleanupEvidence] = [:]
     var pendingWarnings: [String] = []
     var pendingBlocked: [ReviewBlockedItem] = []
+    /// Review items that changed on disk after they were checked: unticked until checked again.
+    var pendingChanged = Set<String>()
     /// When this run started; tells a restored result from one measured now.
     let launchedAt = Date()
+    /// File watchers that keep Trash and the check's results current while open.
+    let liveWatch = LiveWatch()
     var showTrashReview = false {
         // Closing the review stops any checks still running for it.
         didSet { if oldValue && !showTrashReview && reviewPreparing { cancelReview() } }
@@ -289,6 +293,7 @@ import UserNotifications
         }
         weeklyCheckTimer?.tolerance = 600
         features.monitor.onLowStorage = { [weak self] free in self?.handleLowStorage(free: free) ?? false }
+        if !ProcessInfo.processInfo.arguments.contains("--no-watch") && NSClassFromString("XCTestCase") == nil { liveWatch.start(self) }
         refreshDiskAccess()
         // Verification hook: lets a capture run show the whole-Mac result screen.
         if ProcessInfo.processInfo.arguments.contains("--run-full-check") {
@@ -520,7 +525,7 @@ import UserNotifications
 
     func reviewTrash(_ items: [DiskItem], proofs: [DuplicateProof] = [], cacheContents: CacheRule? = nil, folderContents: DiskItem? = nil) {
         guard !actionBusy, !reviewPreparing else { return }; actionBusy = true
-        pendingTrash = []; pendingTrashSelection = []; duplicateProofs = []; pendingEvidence = [:]; pendingWarnings = []; pendingBlocked = []
+        pendingTrash = []; pendingTrashSelection = []; duplicateProofs = []; pendingEvidence = [:]; pendingWarnings = []; pendingBlocked = []; pendingChanged = []
         reviewPreparing = true; reviewMoved = 0; let token = ScanCancellation(); reviewToken = token
         let scopes = FolderAccess.shared.cleanupScopes
         let developerScopes = features.developerScopes
@@ -600,7 +605,7 @@ import UserNotifications
         }
     }
 
-    func cancelReview() { reviewToken.cancel(); reviewPreparing = false; actionBusy = false; pendingEvidence = [:]; pendingWarnings = []; pendingBlocked = [] }
+    func cancelReview() { reviewToken.cancel(); reviewPreparing = false; actionBusy = false; pendingEvidence = [:]; pendingWarnings = []; pendingBlocked = []; pendingChanged = [] }
     func trashReviewed() {
         guard requireCleanupAccess() else { return }
         let items = selectedPendingTrash
@@ -631,7 +636,7 @@ import UserNotifications
             // Everything checked has gone and nothing is left to check: done.
             if !reviewPreparing && pendingTrash.isEmpty && pendingBlocked.isEmpty { showTrashReview = false }
             if !reviewPreparing && !showTrashReview {
-                pendingTrash = []; pendingTrashSelection = []; pendingEvidence = [:]; pendingWarnings = []; pendingBlocked = []; duplicateProofs = []
+                pendingTrash = []; pendingTrashSelection = []; pendingEvidence = [:]; pendingWarnings = []; pendingBlocked = []; duplicateProofs = []; pendingChanged = []
             }
             actionBusy = false
 
@@ -727,7 +732,7 @@ import UserNotifications
     }
     func permanentlyDeleteTrash(_ entries: [TrashEntry], rootIdentity: FileIdentity) {
         guard requireCleanupAccess() else { return }
-        guard !actionBusy, !entries.isEmpty, let snapshot = trashSnapshot, snapshot.complete, snapshot.rootIdentity == rootIdentity,
+        guard !actionBusy, !entries.isEmpty, let snapshot = trashSnapshot, entries.allSatisfy(\.verifiable), snapshot.rootIdentity == rootIdentity,
               entries.allSatisfy({ entry in snapshot.entries.contains { $0.id == entry.id && $0.fingerprint == entry.fingerprint } }) else { return }
         actionBusy = true
         Task {

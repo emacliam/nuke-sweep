@@ -21,7 +21,10 @@ struct TrashCleanupView: View {
                 AccessRecovery()
             } else if let snapshot = model.trashSnapshot {
                 if !snapshot.complete {
-                    Notice(text: "Only part of Trash could be inspected. You can see the items found so far. Scan again or use Finder before permanently deleting items.", symbol: "exclamationmark.triangle")
+                    let blocked = snapshot.entries.count - snapshot.verifiable.count
+                    Notice(text: blocked > 0
+                           ? "\(blocked) items could not be checked completely and cannot be deleted from here. Everything else can. Use Finder for those."
+                           : "Only part of Trash could be read. Items not listed are untouched.", symbol: "exclamationmark.triangle")
                 }
                 if snapshot.entries.isEmpty {
                     EmptyPanel(symbol: "trash", title: "Nothing to empty", detail: "This Trash folder is empty. Items you move to Trash will appear after the next scan.")
@@ -32,15 +35,17 @@ struct TrashCleanupView: View {
                         if let updated = model.trashUpdated { Text("Scanned \(updated.formatted(date: .omitted, time: .shortened))").font(.system(size: 10)).foregroundStyle(Theme.secondary) }
                     }
                     HStack {
-                        Button(model.trashSelected.count == snapshot.entries.count ? "Deselect all" : "Select all") {
-                            model.trashSelected = model.trashSelected.count == snapshot.entries.count ? [] : Set(snapshot.entries.map(\.id))
-                        }.buttonStyle(.borderless).disabled(!snapshot.complete)
+                        let selectable = Set(snapshot.verifiable.map(\.id))
+                        Button(!selectable.isEmpty && model.trashSelected == selectable ? "Deselect all" : "Select all") {
+                            model.trashSelected = model.trashSelected == selectable ? [] : selectable
+                        }.buttonStyle(.borderless).disabled(selectable.isEmpty)
                         Spacer(); Text("Largest first").foregroundStyle(Theme.secondary)
                     }.font(.system(size: 11))
                     LazyVStack(spacing: 0) {
                         ForEach(snapshot.entries) { entry in
                             HStack(spacing: 12) {
-                                Toggle("Select \(entry.item.name)", isOn: Binding(get: { model.trashSelected.contains(entry.id) }, set: { if $0 { model.trashSelected.insert(entry.id) } else { model.trashSelected.remove(entry.id) } })).labelsHidden().toggleStyle(.checkbox).disabled(!snapshot.complete)
+                                Toggle("Select \(entry.item.name)", isOn: Binding(get: { model.trashSelected.contains(entry.id) }, set: { if $0 { model.trashSelected.insert(entry.id) } else { model.trashSelected.remove(entry.id) } })).labelsHidden().toggleStyle(.checkbox).disabled(!entry.verifiable)
+                                    .help(entry.verifiable ? "" : "Could not be checked completely, so it cannot be deleted from here. Use Finder.")
                                 Image(systemName: entry.item.symlink ? "link" : entry.item.directory ? "folder" : "doc").foregroundStyle(Theme.secondary)
                                 Text(entry.item.name).font(.system(size: 12, weight: .medium)).lineLimit(1).truncationMode(.middle)
                                 Spacer()
@@ -54,9 +59,9 @@ struct TrashCleanupView: View {
                     HStack {
                         Text("\(model.trashSelected.count) selected").font(.system(size: 11))
                         Spacer()
-                        Button(model.trashSelected.count == snapshot.entries.count ? "Review emptying Trash…" : "Review selected…") {
+                        Button(model.trashSelected.count == snapshot.verifiable.count && snapshot.complete ? "Review emptying Trash…" : "Review selected…") {
                             review = TrashDeletionPlan(entries: snapshot.entries.filter { model.trashSelected.contains($0.id) }, rootIdentity: snapshot.rootIdentity)
-                        }.buttonStyle(PrimaryButton()).disabled(!snapshot.complete || model.trashSelected.isEmpty || model.actionBusy)
+                        }.buttonStyle(PrimaryButton()).disabled(model.trashSelected.isEmpty || model.actionBusy)
                     }
                 }
             }
@@ -117,24 +122,25 @@ struct EmptyTrashConfirmation: ViewModifier {
         let ready = model.emptyTrashPending && !model.trashLoading
         content
             .confirmationDialog(
-                snapshot.map { "Permanently delete \($0.entries.count) items (\(bytes($0.size))) in Trash?" } ?? "Trash could not be read",
+                snapshot.map { "Permanently delete \($0.verifiable.count) items (\(bytes($0.verifiable.reduce(0) { $0 + $1.item.size }))) in Trash?" } ?? "Trash could not be read",
                 isPresented: Binding(get: { ready }, set: { if !$0 { model.emptyTrashPending = false } }),
                 titleVisibility: .visible
             ) {
-                if let snapshot, snapshot.complete, !snapshot.entries.isEmpty {
+                if let snapshot, !snapshot.verifiable.isEmpty {
                     Button("Empty Trash", role: .destructive) {
                         model.emptyTrashPending = false
-                        model.permanentlyDeleteTrash(snapshot.entries, rootIdentity: snapshot.rootIdentity)
+                        model.permanentlyDeleteTrash(snapshot.verifiable, rootIdentity: snapshot.rootIdentity)
                     }
                 }
                 Button("Cancel", role: .cancel) { model.emptyTrashPending = false }
             } message: {
                 if let snapshot, snapshot.entries.isEmpty {
                     Text("Trash is already empty.")
-                } else if let snapshot, !snapshot.complete {
+                } else if let snapshot, snapshot.verifiable.isEmpty {
                     Text("Trash could only be read in part, so it is not emptied from here. Review it on the Trash page or in Finder.")
-                } else if snapshot != nil {
-                    Text("This cannot be undone. Items cleaned up earlier can no longer be put back from History.")
+                } else if let snapshot {
+                    let skipped = snapshot.entries.count - snapshot.verifiable.count
+                    Text("This cannot be undone. Items cleaned up earlier can no longer be put back from History." + (skipped > 0 ? " \(skipped) items that could not be checked are left alone." : ""))
                 } else {
                     Text(model.trashError ?? "Allow Full Disk Access, then try again.")
                 }
