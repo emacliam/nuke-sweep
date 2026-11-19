@@ -77,7 +77,7 @@ struct SimilarMediaView: View {
             Button(keeper == item.id ? "Keeping this file" : "Keep this file") { keeper = item.id }
                 .buttonStyle(QuietButton())
                 .accessibilityLabel("Keep \(item.name)")
-            Button("Show in Finder") { model.reveal(item.url) }.buttonStyle(.plain)
+            Button("Show in Finder") { model.reveal(item.url) }.buttonStyle(HoverPlain())
         }.frame(maxWidth: .infinity, alignment: .leading)
     }
 

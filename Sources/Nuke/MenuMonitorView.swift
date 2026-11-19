@@ -14,8 +14,8 @@ struct MonitorPopover: View {
                 HStack(spacing: 8) { SweepMark().frame(width: 22, height: 19); Text("Nuke Sweep") }.font(.system(size: 16, weight: .semibold))
                 Spacer()
                 Text(monitor.sleeping ? "Sleeping" : monitor.monitorPaused ? "Paused" : "Live").font(.system(size: 10, weight: .medium)).foregroundStyle(monitor.monitorPaused ? Theme.secondary : Theme.green)
-                Button { monitor.monitorPaused.toggle(); monitor.configureMonitor() } label: { Image(systemName: monitor.monitorPaused ? "play.fill" : "pause.fill").frame(width: 22, height: 22) }.buttonStyle(.plain).accessibilityLabel(monitor.monitorPaused ? "Resume monitoring" : "Pause monitoring")
-                Button { monitor.refreshMonitor() } label: { Image(systemName: "arrow.clockwise").frame(width: 22, height: 22) }.buttonStyle(.plain).disabled(monitor.monitorPaused || monitor.sleeping).help("Refresh measurements").accessibilityLabel("Refresh monitor measurements")
+                Button { monitor.monitorPaused.toggle(); monitor.configureMonitor() } label: { Image(systemName: monitor.monitorPaused ? "play.fill" : "pause.fill").frame(width: 22, height: 22) }.buttonStyle(HoverPlain()).accessibilityLabel(monitor.monitorPaused ? "Resume monitoring" : "Pause monitoring")
+                Button { monitor.refreshMonitor() } label: { Image(systemName: "arrow.clockwise").frame(width: 22, height: 22) }.buttonStyle(HoverPlain()).disabled(monitor.monitorPaused || monitor.sleeping).help("Refresh measurements").accessibilityLabel("Refresh monitor measurements")
             }
             // Storage and what to do about it come first; that is why people
             // open this. CPU and memory follow as context.
@@ -36,7 +36,7 @@ struct MonitorPopover: View {
             }
             if let receipt = model.features.receipts.first { LastCleanupNote(receipt: receipt, compact: true) }
             if monitor.monitorPaused || monitor.sleeping { Text("Readings are the last measurements; sampling is suspended.").font(.system(size: 10)).foregroundStyle(Theme.secondary).fixedSize(horizontal: false, vertical: true) }
-            HStack { Button("Open Nuke Sweep") { model.showMainWindow() }; Spacer(); Button { model.showMainWindow(.monitor) } label: { Image(systemName: "gearshape") }.accessibilityLabel("Monitor & alert settings"); Button { NSApp.terminate(nil) } label: { Image(systemName: "power") }.accessibilityLabel("Quit Nuke Sweep") }.buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(Theme.secondary)
+            HStack { Button("Open Nuke Sweep") { model.showMainWindow() }; Spacer(); Button { model.showMainWindow(.monitor) } label: { Image(systemName: "gearshape") }.accessibilityLabel("Monitor & alert settings"); Button { NSApp.terminate(nil) } label: { Image(systemName: "power") }.accessibilityLabel("Quit Nuke Sweep") }.buttonStyle(HoverPlain()).font(.system(size: 11)).foregroundStyle(Theme.secondary)
         }.padding(20).frame(width: 330).background(Theme.paper).foregroundStyle(Theme.ink)
             .preferredColorScheme(appearance == "dark" ? .dark : appearance == "light" ? .light : nil)
             .onAppear { if !monitor.monitorPaused { monitor.refreshMonitor() } }

@@ -51,7 +51,7 @@ struct AIAssistSettingsView: View {
                                 Text("\(record.milliseconds) ms").font(.system(size: 9)).monospacedDigit().foregroundStyle(Theme.secondary)
                             }
                         }
-                        Button("Clear request log") { ai.clearLog() }.buttonStyle(.plain).font(.system(size: 10, weight: .medium)).foregroundStyle(Theme.orange)
+                        Button("Clear request log") { ai.clearLog() }.buttonStyle(HoverPlain()).font(.system(size: 10, weight: .medium)).foregroundStyle(Theme.orange)
                     }
                 }
             }
@@ -117,7 +117,7 @@ struct AIAssistSettingsView: View {
                 Text("Explain uses the active provider. Plan can use a different provider or model; same metadata rules apply.").font(.system(size: 10)).foregroundStyle(Theme.secondary)
                 Spacer()
                 if let planID = ai.planProviderID, planID != ai.activeProviderID {
-                    Button("Edit plan provider") { ai.setActive(planID) }.buttonStyle(.plain).font(.system(size: 10, weight: .medium)).foregroundStyle(Theme.orange)
+                    Button("Edit plan provider") { ai.setActive(planID) }.buttonStyle(HoverPlain()).font(.system(size: 10, weight: .medium)).foregroundStyle(Theme.orange)
                 }
             }
             if !ai.providerReady(for: .plan) {

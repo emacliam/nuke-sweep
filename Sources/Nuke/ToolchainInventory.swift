@@ -88,7 +88,7 @@ struct ToolchainInventoryView: View {
                         .disabled(cancellation != nil)
                     if let cancellation {
                         ProgressView().controlSize(.small)
-                        Button("Stop") { cancellation.cancel() }.buttonStyle(.plain)
+                        Button("Stop") { cancellation.cancel() }.buttonStyle(HoverPlain())
                     }
                 }
                 if let installations {
@@ -104,7 +104,7 @@ struct ToolchainInventoryView: View {
                             if let date = tool.lastUsed {
                                 Text("Last used: \(date.formatted(date: .abbreviated, time: .omitted))")
                             } else { Text("Last used: Unknown") }
-                            Button("Show in Finder") { model.reveal(tool.url) }.buttonStyle(.plain)
+                            Button("Show in Finder") { model.reveal(tool.url) }.buttonStyle(HoverPlain())
                         }
                     }
                 }

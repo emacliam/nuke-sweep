@@ -45,7 +45,7 @@ struct TrashCleanupView: View {
                                 Text(entry.item.name).font(.system(size: 12, weight: .medium)).lineLimit(1).truncationMode(.middle)
                                 Spacer()
                                 Text(bytes(entry.item.size)).font(.system(size: 11)).monospacedDigit()
-                                Button { model.reveal(entry.item.url) } label: { Image(systemName: "arrow.up.forward.square") }.buttonStyle(.plain).help("Reveal in Finder").accessibilityLabel("Reveal item in Finder")
+                                Button { model.reveal(entry.item.url) } label: { Image(systemName: "arrow.up.forward.square") }.buttonStyle(HoverPlain()).help("Reveal in Finder").accessibilityLabel("Reveal item in Finder")
                             }.padding(14)
                             Divider()
                         }
@@ -83,7 +83,7 @@ private struct PermanentTrashReview: View {
                 LazyVStack(alignment: .leading, spacing: 10) {
                     ForEach(plan.entries) { entry in Text(entry.item.name).font(.system(size: 12)); Divider() }
                 }.frame(maxWidth: .infinity, alignment: .leading)
-            }.frame(maxHeight: 170)
+            }.frame(maxHeight: 380)
             Notice(text: "This cannot be undone through Trash. Every selected folder and its contents will be permanently removed. Items changed since the scan are refused. Files can still change during deletion; stop apps using these items first.", symbol: "exclamationmark.triangle")
             Text("Type EMPTY to confirm permanent deletion.").font(.system(size: 12, weight: .medium))
             TextField("EMPTY", text: $confirmation).textFieldStyle(.roundedBorder).accessibilityLabel("Type EMPTY to confirm permanent deletion")

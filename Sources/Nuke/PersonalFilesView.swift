@@ -86,6 +86,7 @@ extension AppModel {
 struct PersonalFilesPanel: View {
     @Environment(AppModel.self) var model
     @State private var previewURL: URL?
+    @State private var shownCount: [String: Int] = [:]
     private static let preview = 6
 
     var body: some View {
@@ -160,31 +161,25 @@ struct PersonalFilesPanel: View {
                 }
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(HoverPlain())
             .accessibilityLabel(Text(verbatim: category.title))
             .accessibilityValue(Text("\(findings.count) items, \(chosen) selected, \(bytes(total)), \(category.recovery.title)"))
             .accessibilityAddTraits(.isHeader)
             .accessibilityHint(Text(open ? "Collapses this group" : "Shows the files in this group"))
             if open {
-                let all = model.personal.showingAll.contains(category.rawValue)
-                let shown = all ? Array(findings.prefix(300)) : Array(findings.prefix(Self.preview))
+                // Rows grow in steps of 50 with the page, rather than in a
+                // small scroll box of their own.
+                let limit = min(300, shownCount[category.rawValue] ?? Self.preview)
+                let shown = Array(findings.prefix(limit))
                 VStack(alignment: .leading, spacing: 6) {
                     Text(verbatim: category.explanation).font(.system(size: 11)).foregroundStyle(Theme.secondary).fixedSize(horizontal: false, vertical: true)
-                    if all {
-                        // A long list scrolls in place instead of stretching the page.
-                        ScrollView {
-                            LazyVStack(alignment: .leading, spacing: 6) { ForEach(shown) { finding in row(finding) } }
-                        }.frame(maxHeight: 340)
-                    } else {
-                        ForEach(shown) { finding in row(finding) }
-                    }
+                    LazyVStack(alignment: .leading, spacing: 6) { ForEach(shown) { finding in row(finding) } }
                     HStack(spacing: 14) {
-                        if findings.count > shown.count {
-                            let title: LocalizedStringKey = all ? "First 300 shown" : "Show all \(findings.count)"
-                            Button(title) { model.personal.showingAll.insert(category.rawValue) }
-                                .disabled(all)
-                        } else if all, findings.count > Self.preview {
-                            Button("Show fewer") { model.personal.showingAll.remove(category.rawValue) }
+                        if findings.count > shown.count && limit < 300 {
+                            Button("Show \(min(50, findings.count - shown.count)) more") { shownCount[category.rawValue] = limit + 50 }
+                        }
+                        if limit > Self.preview {
+                            Button("Show fewer") { shownCount[category.rawValue] = nil }
                         }
                         let ids = Set(findings.filter { !$0.item.incomplete }.prefix(300).map(\.id))
                         if !ids.isEmpty, ids.isSubset(of: model.personal.selected) {
@@ -198,7 +193,7 @@ struct PersonalFilesPanel: View {
                         }
                         Spacer()
                     }
-                    .buttonStyle(.plain).font(.system(size: 11, weight: .medium)).foregroundStyle(Theme.orange)
+                    .buttonStyle(HoverPlain()).font(.system(size: 11, weight: .medium)).foregroundStyle(Theme.orange)
                 }
                 .padding(.leading, 38).padding(.bottom, 4)
             }
@@ -235,13 +230,13 @@ struct PersonalFilesPanel: View {
                 } label: {
                     Image(systemName: "eye")
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(HoverPlain())
                 .onKeyPress(.space) { previewURL = finding.item.url; return .handled }
                 .accessibilityLabel("Preview \(finding.item.name)")
                 .help("Quick Look")
             }
             Button("Show") { model.reveal(finding.item.url) }
-                .buttonStyle(.plain).font(.system(size: 10, weight: .medium)).foregroundStyle(Theme.orange)
+                .buttonStyle(HoverPlain()).font(.system(size: 10, weight: .medium)).foregroundStyle(Theme.orange)
                 .accessibilityLabel("Show \(finding.item.name) in Finder")
                 .help(finding.item.url.path)
         }
@@ -277,7 +272,7 @@ struct PersonalFilesPanel: View {
                 Text("Tick what you no longer need, then review it.").font(.system(size: 11)).foregroundStyle(Theme.secondary)
             } else {
                 Text("\(items.count) ticked · \(bytes(items.reduce(0) { $0 + $1.size }))").font(.system(size: 11, weight: .medium)).monospacedDigit()
-                Button("Untick all") { model.personal.selected = [] }.buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(Theme.secondary)
+                Button("Untick all") { model.personal.selected = [] }.buttonStyle(HoverPlain()).font(.system(size: 11)).foregroundStyle(Theme.secondary)
             }
             Spacer()
             Button("Review ticked files…") { model.reviewPersonalSelection() }

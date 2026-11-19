@@ -248,7 +248,7 @@ struct DevCleanupPanel: View {
             Spacer(minLength: 12)
             Text(verbatim: bytes(size)).font(.system(size: 13, weight: .medium)).monospacedDigit()
             Button { model.reveal(URL(fileURLWithPath: path)) } label: { Image(systemName: "folder") }
-                .buttonStyle(.plain).foregroundStyle(Theme.secondary).help("Show in Finder")
+                .buttonStyle(HoverPlain()).foregroundStyle(Theme.secondary).help("Show in Finder")
             Button(button, action: action).buttonStyle(QuietButton())
                 .disabled(state.running != nil || model.actionBusy)
         }

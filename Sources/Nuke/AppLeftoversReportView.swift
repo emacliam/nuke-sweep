@@ -15,7 +15,7 @@ struct AppLeftoversReportView: View {
                         .buttonStyle(QuietButton()).disabled(cancellation != nil)
                     if let cancellation {
                         ProgressView().controlSize(.small)
-                        Button("Stop") { cancellation.cancel() }.buttonStyle(.plain)
+                        Button("Stop") { cancellation.cancel() }.buttonStyle(HoverPlain())
                     }
                 }
                 if let report {
@@ -30,7 +30,7 @@ struct AppLeftoversReportView: View {
                             Spacer()
                             Text(bytes(entry.item.allocated) + (entry.item.incomplete ? " · partial" : ""))
                                 .monospacedDigit()
-                            Button("Show in Finder") { model.reveal(entry.item.url) }.buttonStyle(.plain)
+                            Button("Show in Finder") { model.reveal(entry.item.url) }.buttonStyle(HoverPlain())
                         }
                     }
                     ForEach(Array(report.notes.enumerated()), id: \.offset) { _, note in

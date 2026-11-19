@@ -23,8 +23,8 @@ struct InventoryList: View {
                             if entry.item.incomplete { Text("Incomplete · cleanup unavailable").font(.system(size: 11, weight: .medium)).foregroundStyle(Theme.warning) }
                             DisclosureGroup("Ownership & cleanup details") { Text(entry.explanation).font(.system(size: 11)).foregroundStyle(Theme.secondary).fixedSize(horizontal: false, vertical: true) }.font(.system(size: 11))
                             HStack(spacing: 18) {
-                                Button("Reveal in Finder") { model.reveal(entry.item.url) }.buttonStyle(.plain)
-                                Button("Check file use") { features.inspectUse(entry.item.url) }.buttonStyle(.plain).disabled(features.useLoading)
+                                Button("Reveal in Finder") { model.reveal(entry.item.url) }.buttonStyle(HoverPlain())
+                                Button("Check file use") { features.inspectUse(entry.item.url) }.buttonStyle(HoverPlain()).disabled(features.useLoading)
                             }.font(.system(size: 10, weight: .medium)).foregroundStyle(Theme.secondary).padding(.top, 3)
                         }
                     }.padding(.vertical, 17)
@@ -83,7 +83,7 @@ struct GrowthView: View {
                     HStack {
                         if ai.enabled {
                             Button { growthTarget = AIGrowthTarget(context: AIGrowthContext(before: previous, after: latest, rows: rows, rootName: URL(fileURLWithPath: selectedRoot).lastPathComponent)) } label: { Label("Explain growth", systemImage: "sparkles") }
-                                .buttonStyle(.plain).font(.system(size: 11, weight: .medium)).foregroundStyle(Theme.orange)
+                                .buttonStyle(HoverPlain()).font(.system(size: 11, weight: .medium)).foregroundStyle(Theme.orange)
                                 .help("Summarise the two stored scans; nothing is moved or deleted")
                         }
                         Spacer()
@@ -177,7 +177,7 @@ struct ProjectsView: View {
                             .background(Theme.surface, in: RoundedRectangle(cornerRadius: 8))
                             .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.line, lineWidth: 1))
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(HoverPlain())
                         .accessibilityLabel("Scan \(candidate.name), \(candidate.projectCount) projects inside")
                     }
                 }
@@ -281,7 +281,7 @@ private struct ProjectGroupSection: View {
                 Spacer()
                 Text(bytes(group.size)).font(.system(size: 11)).monospacedDigit().foregroundStyle(Theme.secondary)
                 Button("Reveal") { model.reveal(group.root) }
-                    .buttonStyle(.plain).font(.system(size: 10, weight: .medium)).foregroundStyle(Theme.orange)
+                    .buttonStyle(HoverPlain()).font(.system(size: 10, weight: .medium)).foregroundStyle(Theme.orange)
                     .accessibilityLabel("Reveal \(group.root.lastPathComponent) in Finder")
             }
             Text(group.rebuildGuidance).font(.system(size: 10)).foregroundStyle(Theme.secondary).fixedSize(horizontal: false, vertical: true)
