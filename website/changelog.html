@@ -14,6 +14,10 @@
       <h2 id="v095">0.9.5</h2>
       <ul>
         <li>Fixes 0.9.4 closing immediately after it opens. If you installed 0.9.4, download 0.9.5 from this site.</li>
+        <li>Much faster scanning: folders are read in bulk across every core, and a repeat check reads only what changed since last time.</li>
+        <li>The cleanup review opens at once and fills as each item is checked. Move what is ready while the rest is checked; Cancel stops it.</li>
+        <li>Package caches such as Yarn are no longer refused because a package ships a file that looks like a key.</li>
+        <li>Clear and Show in Finder on every cache row, a simpler Browse page, Empty Trash in the app, and fixes across every screen.</li>
       </ul>
     </section>
     <section aria-labelledby="v094">
