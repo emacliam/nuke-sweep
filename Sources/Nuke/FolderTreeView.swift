@@ -235,15 +235,15 @@ struct FolderTreeView: View {
                 Spacer()
                 if let planUndoSelection {
                     Button { selection = planUndoSelection; self.planUndoSelection = nil } label: { Label("Undo AI plan", systemImage: "arrow.uturn.backward") }
-                        .buttonStyle(.plain).font(.system(size: 11, weight: .medium)).foregroundStyle(Theme.secondary)
+                        .buttonStyle(HoverPlain()).font(.system(size: 11, weight: .medium)).foregroundStyle(Theme.secondary)
                         .help("Restore the selection from before the last AI plan")
                 }
                 if ai.enabled && selectionEnabled && !items.isEmpty {
                     Button { showPlan = true } label: { Label("Draft with AI", systemImage: "sparkles") }
-                        .buttonStyle(.plain).font(.system(size: 11, weight: .medium)).foregroundStyle(Theme.orange)
+                        .buttonStyle(HoverPlain()).font(.system(size: 11, weight: .medium)).foregroundStyle(Theme.orange)
                         .help("Turn a sentence into a top-level selection; nothing is moved")
                 }
-                if !store.expanded.isEmpty { Button("Collapse all") { store.collapseAll() }.buttonStyle(.plain).font(.system(size: 11, weight: .medium)).foregroundStyle(Theme.secondary) }
+                if !store.expanded.isEmpty { Button("Collapse all") { store.collapseAll() }.buttonStyle(HoverPlain()).font(.system(size: 11, weight: .medium)).foregroundStyle(Theme.secondary) }
             }.padding(.horizontal, 12).padding(.vertical, 9)
             Divider().overlay(Theme.line)
             if outline.entries.isEmpty {
@@ -427,7 +427,7 @@ private struct TreeRowView: View {
                     .frame(width: 14, height: 18)
                     .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(HoverPlain())
             .opacity(folder ? 1 : 0)
             .disabled(!folder)
             .accessibilityLabel(row.expanded ? "Collapse \(row.item.name)" : "Expand \(row.item.name)")
@@ -454,7 +454,7 @@ private struct TreeRowView: View {
             if aiEnabled && (hovered || row.evidence.kind == .unknown || row.evidence.kind == .sourceLike) {
                 Button { onExplain() } label: {
                     Image(systemName: "sparkles").font(.system(size: 10)).foregroundStyle(Theme.orange)
-                }.buttonStyle(.plain).help("Explain with AI — metadata only")
+                }.buttonStyle(HoverPlain()).help("Explain with AI — metadata only")
             }
             if row.loading { ProgressView().controlSize(.mini) }
             if row.checking { Text("Checking…").font(.system(size: 10)).foregroundStyle(Theme.secondary) }
@@ -463,7 +463,7 @@ private struct TreeRowView: View {
             if row.empty { Text("Empty").font(.system(size: 10)).foregroundStyle(Theme.secondary) }
             Spacer(minLength: 12)
             if row.item.measurementPending == true {
-                Button("Measure") { store.measure(row.item) }.buttonStyle(.plain).font(.system(size: 11)).disabled(row.loading)
+                Button("Measure") { store.measure(row.item) }.buttonStyle(HoverPlain()).font(.system(size: 11)).disabled(row.loading)
             }
             Text(row.item.measurementPending == true ? "Not measured" : bytes(row.item.size) + (row.item.incomplete || row.partial ? "+" : ""))
                 .font(.system(size: 11)).monospacedDigit().foregroundStyle(Theme.secondary)

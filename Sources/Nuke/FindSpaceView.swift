@@ -168,9 +168,9 @@ struct FindSpaceView: View {
                                     Text(entry.item.url.path).font(.system(size: 10)).foregroundStyle(Theme.secondary).textSelection(.enabled)
                                 }.font(.system(size: 11))
                                 HStack {
-                                    Button("Reveal") { model.reveal(entry.item.url) }.buttonStyle(.plain)
-                                    Button("Full folder scan") { model.browseTree(entry.item.url) }.buttonStyle(.plain).help("Measure the whole folder and open it as a tree")
-                                    Button("Check running use") { features.inspectUse(entry.item.url) }.buttonStyle(.plain).disabled(features.useLoading)
+                                    Button("Reveal") { model.reveal(entry.item.url) }.buttonStyle(HoverPlain())
+                                    Button("Full folder scan") { model.browseTree(entry.item.url) }.buttonStyle(HoverPlain()).help("Measure the whole folder and open it as a tree")
+                                    Button("Check running use") { features.inspectUse(entry.item.url) }.buttonStyle(HoverPlain()).disabled(features.useLoading)
                                 }.font(.system(size: 11)).foregroundStyle(Theme.orange)
                                 if features.useURL == entry.item.url, let report = features.useReport { Text(report.uses.isEmpty ? "No open uses detected within visibility; this is not proof of inactivity." : "Detected: " + Array(Set(report.uses.map(\.process))).sorted().joined(separator: ", ")).font(.system(size: 11)).foregroundStyle(Theme.secondary) }
                                 if entry.item.incomplete { Text("Incomplete measurement — full scan or access recovery required.").font(.system(size: 11)).foregroundStyle(Theme.warning) }
@@ -225,7 +225,7 @@ struct CleanupStorageSummary: View {
                 }
             }
             Spacer(minLength: 12)
-            Button { model.refreshResources() } label: { Image(systemName: "arrow.clockwise").font(.system(size: 11)) }.buttonStyle(.plain).help("Refresh storage reading").accessibilityLabel("Refresh storage reading")
+            Button { model.refreshResources() } label: { Image(systemName: "arrow.clockwise").font(.system(size: 11)) }.buttonStyle(HoverPlain()).help("Refresh storage reading").accessibilityLabel("Refresh storage reading")
         }.padding(.vertical, 4)
     }
 }
@@ -263,7 +263,7 @@ struct ReclaimSummaryPanel: View {
                 }
                 .padding(.vertical, 8).contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(HoverPlain())
             .accessibilityLabel(area.measured
                 ? "\(area.name), \(bytes(area.bytes)) measured"
                 : "\(area.name), not measured yet")
@@ -319,7 +319,7 @@ struct SessionGainLine: View {
                     if gained > 100_000_000 { Text(verbatim: "·").foregroundStyle(Theme.secondary) }
                     Text("Trash still holds \(bytes(trash)).").foregroundStyle(Theme.secondary)
                     Button("Empty Trash…") { model.emptyTrash() }
-                        .buttonStyle(.plain).fontWeight(.medium).foregroundStyle(Theme.orange)
+                        .buttonStyle(HoverPlain()).fontWeight(.medium).foregroundStyle(Theme.orange)
                         .disabled(model.actionBusy || model.trashLoading)
                 }
             }

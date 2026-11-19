@@ -61,7 +61,7 @@ struct ReceiptFinishView: View {
                         }; Divider()
                     }
                 }
-            }.frame(maxHeight: 250)
+            }.frame(maxHeight: 440)
             Text(receipt.undo).font(.system(size: 12)).foregroundStyle(Theme.secondary)
             HStack {
                 Button("View receipt history") { dismiss(); model.page = .history }.buttonStyle(QuietButton())

@@ -140,13 +140,13 @@ struct DeveloperView: View {
                         Image(systemName: expanded == rule.id ? "chevron.down" : "chevron.right").font(.system(size: 10)).frame(width: 12)
                     }.font(.system(size: 12)).padding(.vertical, 14).contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(HoverPlain())
                 .accessibilityLabel(rule.name + ", " + (expanded == rule.id ? "hide details" : "show details") + ". " + cost.summary)
                 // The two things people come here to do, on the row itself
                 // rather than behind the disclosure.
                 if let item = measured {
                     Button { model.reveal(item.url) } label: { Image(systemName: "folder") }
-                        .buttonStyle(.plain).foregroundStyle(Theme.secondary)
+                        .buttonStyle(HoverPlain()).foregroundStyle(Theme.secondary)
                         .help("Show in Finder").accessibilityLabel("Show \(rule.name) in Finder")
                     Button("Clear…") { model.reviewTrash([], cacheContents: rule) }
                         .buttonStyle(QuietButton())
@@ -211,7 +211,7 @@ struct DeveloperSelectionBar: View {
     var body: some View {
         HStack(spacing: 10) {
             Text("\(count) selected · \(Nuke.bytes(bytes))").font(.system(size: 12, weight: .medium))
-            Button("Clear", action: clear).buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(Theme.orange)
+            Button("Clear", action: clear).buttonStyle(HoverPlain()).font(.system(size: 11)).foregroundStyle(Theme.orange)
             Spacer()
             Button("Add to basket", action: addToBasket).buttonStyle(QuietButton())
             Button("Review selected…", action: review).buttonStyle(PrimaryButton())

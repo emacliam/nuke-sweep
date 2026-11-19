@@ -94,7 +94,7 @@ struct StorageTreemap: View {
         if !stack.isEmpty {
             HStack(spacing: 4) {
                 Button("Scan root") { pop(to: nil) }
-                    .buttonStyle(.plain).foregroundStyle(Theme.orange)
+                    .buttonStyle(HoverPlain()).foregroundStyle(Theme.orange)
                 ForEach(Array(stack.enumerated()), id: \.element.id) { index, level in
                     Image(systemName: "chevron.right").font(.system(size: 8)).foregroundStyle(Theme.secondary)
                     Button {
@@ -102,7 +102,7 @@ struct StorageTreemap: View {
                     } label: {
                         Text(verbatim: level.name).lineLimit(1)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(HoverPlain())
                     .foregroundStyle(index == stack.count - 1 ? Theme.ink : Theme.orange)
                     .disabled(index == stack.count - 1)
                 }
@@ -170,7 +170,7 @@ struct StorageTreemap: View {
                     }.font(.system(size: 11)).foregroundStyle(.white).padding(10)
                 }
             }.overlay(Rectangle().strokeBorder(Color.white, lineWidth: inspected == tile.id ? 3 : 1))
-        }.buttonStyle(.plain).frame(width: tile.rect.width, height: tile.rect.height)
+        }.buttonStyle(HoverPlain()).frame(width: tile.rect.width, height: tile.rect.height)
         .offset(x: tile.rect.minX, y: tile.rect.minY)
         .simultaneousGesture(TapGesture(count: 2).onEnded {
             if let item = tile.block.item { drill(into: item) }
@@ -461,7 +461,7 @@ struct SuggestedStart: View {
                             .background(Theme.surface, in: RoundedRectangle(cornerRadius: 8))
                             .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.line, lineWidth: 1))
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(HoverPlain())
                         .accessibilityLabel("\(choice.name). \(choice.detail)")
                     }
                 }.frame(maxWidth: 460, alignment: .leading)

@@ -91,7 +91,7 @@ struct DockerView: View {
                             Text(verbatim: String(preview.output.prefix(3_000)))
                                 .font(.system(size: 11, design: .monospaced)).textSelection(.enabled)
                                 .frame(maxWidth: .infinity, alignment: .leading)
-                        }.frame(maxHeight: 130)
+                        }.frame(maxHeight: 280)
                         if preview.output.count > 3_000 {
                             Text("Showing the first part of the Docker inventory.").font(.caption)
                         }
@@ -178,7 +178,7 @@ struct WatchlistView: View {
                                 Toggle("Enabled", isOn: Binding(get: { scan.enabled }, set: { scheduled.toggle(scan.id, enabled: $0) })).labelsHidden().accessibilityLabel("Enable scheduled scan for \(scan.name)")
                                 Button("Run now") { scheduled.runNow(scan.id) }.buttonStyle(QuietButton()).disabled(scheduled.runningID != nil)
                                 if scheduled.runningID == scan.id { Button("Cancel") { scheduled.cancelRunning() }.buttonStyle(QuietButton()) }
-                                Button("Remove") { scheduled.remove(scan.id) }.buttonStyle(.plain).font(.system(size: 10, weight: .medium)).foregroundStyle(Theme.secondary)
+                                Button("Remove") { scheduled.remove(scan.id) }.buttonStyle(HoverPlain()).font(.system(size: 10, weight: .medium)).foregroundStyle(Theme.secondary)
                             }
                             HStack(spacing: 16) {
                                 Text(scan.lastRun.map { "Last: \($0.formatted(date: .abbreviated, time: .shortened))" } ?? "Never run").font(.system(size: 10)).foregroundStyle(Theme.secondary)
@@ -229,7 +229,7 @@ struct HistoryView: View {
                 TableColumn("Detail") { activity in Text(activity.detail).font(.system(size: 10)).foregroundStyle(Theme.secondary).lineLimit(2) }
             }
             .tableStyle(.inset(alternatesRowBackgrounds: false))
-            .frame(minHeight: 120, maxHeight: 180)
+            .frame(height: CGFloat(min(max(model.activities.count, 3), 15)) * 26 + 32)
             .accessibilityLabel("Earlier Nuke Sweep activity")
         }
     }
@@ -270,7 +270,22 @@ struct TrashReview: View {
                     Button("Clear") { model.pendingTrashSelection.removeAll() }.disabled(selected.isEmpty)
                 }
             }
+            // One scroll area for the items and every note below them; only
+            // Cancel and Move stay fixed. Separate small scroll boxes inside
+            // the sheet were hard to read and to scroll.
             ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                if model.pendingTrash.isEmpty && !model.reviewPreparing {
+                    // A finished review with nothing to move says so.
+                    VStack(spacing: 6) {
+                        Image(systemName: "checkmark.shield").font(.system(size: 22)).foregroundStyle(Theme.secondary)
+                        Text(model.reviewMoved > 0 ? "Everything that passed its checks has moved to Trash." : "Nothing here can be moved safely.")
+                            .font(.system(size: 13, weight: .medium))
+                        if !model.pendingBlocked.isEmpty {
+                            Text("The reason is below. Show in Finder lets you look for yourself.").font(.system(size: 11)).foregroundStyle(Theme.secondary)
+                        }
+                    }.frame(maxWidth: .infinity).padding(.vertical, 30)
+                }
                 LazyVStack(alignment: .leading, spacing: 14) {
                     // Largest first once checking is done. While items are still
                     // arriving they stay in arrival order, so rows do not jump
@@ -287,7 +302,7 @@ struct TrashReview: View {
                                 )).toggleStyle(.checkbox).font(.system(size: 13, weight: .medium))
                                 Spacer()
                                 Button { model.reveal(item.url) } label: { Image(systemName: "folder") }
-                                    .buttonStyle(.plain).foregroundStyle(Theme.secondary)
+                                    .buttonStyle(HoverPlain()).foregroundStyle(Theme.secondary)
                                     .help("Show in Finder").accessibilityLabel("Show \(item.name) in Finder")
                             }
                             if let evidence = model.pendingEvidence[item.id] {
@@ -305,34 +320,14 @@ struct TrashReview: View {
                             }
                             if ai.enabled, let evidence = model.pendingEvidence[item.id], evidence.kind == .unknown {
                                 Button("Explain with AI…") { aiTarget = AIExplainTarget(item: item, evidence: evidence, scope: nil) }
-                                    .buttonStyle(.plain).font(.system(size: 10, weight: .medium)).foregroundStyle(Theme.orange)
+                                    .buttonStyle(HoverPlain()).font(.system(size: 10, weight: .medium)).foregroundStyle(Theme.orange)
                             }
                         }
                         Divider()
                     }
                 }
-            }
-            .overlay {
-                // A finished review with nothing to move says so, instead of an empty sheet.
-                if model.pendingTrash.isEmpty && !model.reviewPreparing {
-                    VStack(spacing: 6) {
-                        Image(systemName: "checkmark.shield").font(.system(size: 22)).foregroundStyle(Theme.secondary)
-                        Text(model.reviewMoved > 0 ? "Everything that passed its checks has moved to Trash." : "Nothing here can be moved safely.")
-                            .font(.system(size: 13, weight: .medium))
-                        if !model.pendingBlocked.isEmpty {
-                            Text("The reason is below. Show in Finder lets you look for yourself.").font(.system(size: 11)).foregroundStyle(Theme.secondary)
-                        }
-                    }
-                }
-            }
-            .frame(minHeight: 160, maxHeight: .infinity).layoutPriority(1)
-            // Notes scroll in their own band, so opening one can never push
-            // Cancel and Move out of the sheet.
-            ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
             if !model.pendingBlocked.isEmpty {
                 DisclosureGroup("Not included · \(model.pendingBlocked.count) could not be verified", isExpanded: $blockedExpanded) {
-                    ScrollView {
                         VStack(alignment: .leading, spacing: 12) {
                             // Why, grouped, before the item-by-item list.
                             let reasons = Dictionary(grouping: model.pendingBlocked, by: \.reason)
@@ -355,7 +350,6 @@ struct TrashReview: View {
                                 }
                             }
                         }
-                    }.frame(maxHeight: 150)
                 }.font(.system(size: 12)).foregroundStyle(Theme.warning)
                 Text("Only checked, verified items are included.").font(.system(size: 11)).foregroundStyle(Theme.secondary)
             }
@@ -408,7 +402,8 @@ struct TrashReview: View {
                 }
             }
             }
-            }.frame(minHeight: 60, maxHeight: 190)
+            }
+            .frame(maxHeight: .infinity)
             HStack(spacing: 10) {
                 Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
                 Button("Export plan…") { model.exportPendingPlan() }.buttonStyle(QuietButton()).disabled(selected.isEmpty)
@@ -470,7 +465,7 @@ struct LastCleanupNote: View {
                         .help("Observed volume change after cleanup; other activity can affect it.")
                 }
                 Spacer()
-                Button("History") { model.page = .history }.buttonStyle(.plain).font(.system(size: 10, weight: .medium)).foregroundStyle(Theme.orange)
+                Button("History") { model.page = .history }.buttonStyle(HoverPlain()).font(.system(size: 10, weight: .medium)).foregroundStyle(Theme.orange)
             }
         }
     }

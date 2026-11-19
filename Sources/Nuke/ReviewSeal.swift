@@ -13,7 +13,7 @@ enum ReviewSeal {
             if CleanupSafety.isSensitive(url.standardizedFileURL.path) { failure = CleanupSafety.SafetyError.sensitive; return }
             var info = stat()
             guard lstat(url.path, &info) == 0 else { failure = Failure.unreadable; return }
-            guard leaves.count < 250_001 else { failure = Failure.incomplete; return }
+            guard leaves.count < 3_000_000 else { failure = Failure.incomplete; return }
             let record = "\(url.standardizedFileURL.path)\0\(info.st_dev):\(info.st_ino):\(info.st_mode):\(info.st_size):\(info.st_mtimespec.tv_sec):\(info.st_mtimespec.tv_nsec):\(info.st_ctimespec.tv_sec):\(info.st_ctimespec.tv_nsec)\0"
             leaves.append(Data(SHA256.hash(data: Data(record.utf8))))
         }
@@ -47,7 +47,7 @@ enum ReviewSeal {
         private func append(_ record: String) {
             let leaf = Data(SHA256.hash(data: Data(record.utf8)))
             os_unfair_lock_lock(&lock); defer { os_unfair_lock_unlock(&lock) }
-            guard leaves.count < 250_001 else { failure = failure ?? Failure.incomplete; return }
+            guard leaves.count < 3_000_000 else { failure = failure ?? Failure.incomplete; return }
             leaves.append(leaf)
         }
         private func fail(_ error: Error) {

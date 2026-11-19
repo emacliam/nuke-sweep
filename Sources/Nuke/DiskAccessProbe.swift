@@ -50,7 +50,7 @@ struct AccessStep: View {
             Text("These figures are a lower bound: macOS kept Trash and some application data private.")
                 .font(.system(size: 11)).foregroundStyle(Theme.secondary).fixedSize(horizontal: false, vertical: true)
             Button("Allow Full Disk Access…") { PermissionSettings.openPrivacy() }
-                .buttonStyle(.plain).font(.system(size: 11, weight: .medium)).foregroundStyle(Theme.orange)
+                .buttonStyle(HoverPlain()).font(.system(size: 11, weight: .medium)).foregroundStyle(Theme.orange)
                 .help("Opens System Settings. Switch on Nuke Sweep there, then check again. Reading is all this allows.")
         }
     }
@@ -76,7 +76,7 @@ struct AccessStep: View {
                         numbered(2, "Switch on Nuke Sweep. If it is not listed, press + and choose it.")
                         numbered(3, "Come back here. macOS may ask to quit and reopen Nuke Sweep.")
                         Button("Show Nuke Sweep in Finder") { model.reveal(Bundle.main.bundleURL) }
-                            .buttonStyle(.plain).font(.system(size: 11, weight: .medium)).foregroundStyle(Theme.orange)
+                            .buttonStyle(HoverPlain()).font(.system(size: 11, weight: .medium)).foregroundStyle(Theme.orange)
                             .help("Useful for step 2 if the app is not in the list")
                     }.padding(.top, 4)
                 }.font(.system(size: 11))

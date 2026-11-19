@@ -36,18 +36,59 @@ enum Theme {
     static let onPrimary = Color.white
 }
 struct PrimaryButton: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View { PrimaryButtonBody(configuration: configuration) }
+}
+private struct PrimaryButtonBody: View {
+    let configuration: ButtonStyleConfiguration
     @Environment(\.isEnabled) private var isEnabled
-    func makeBody(configuration: Configuration) -> some View {
+    @State private var hovered = false
+    var body: some View {
         configuration.label.font(.system(size: 12, weight: .semibold)).padding(.horizontal, 15).padding(.vertical, 10)
-            .foregroundStyle(Theme.onPrimary).background(Theme.primaryFill.opacity(configuration.isPressed ? 0.8 : 1), in: RoundedRectangle(cornerRadius: 7)).opacity(isEnabled ? 1 : 0.4)
+            .foregroundStyle(Theme.onPrimary)
+            .background(Theme.primaryFill.opacity(configuration.isPressed ? 0.8 : 1), in: RoundedRectangle(cornerRadius: 7))
+            // Hover lightens the fill slightly; pressing darkens it.
+            .overlay(RoundedRectangle(cornerRadius: 7).fill(Color.white.opacity(hovered && isEnabled && !configuration.isPressed ? 0.1 : 0)))
+            .opacity(isEnabled ? 1 : 0.4)
+            .onHover { hovered = $0 }
+            .animation(.easeOut(duration: 0.12), value: hovered)
     }
 }
 struct QuietButton: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View { QuietButtonBody(configuration: configuration) }
+}
+private struct QuietButtonBody: View {
+    let configuration: ButtonStyleConfiguration
     @Environment(\.isEnabled) private var isEnabled
-    func makeBody(configuration: Configuration) -> some View {
+    @State private var hovered = false
+    var body: some View {
         configuration.label.font(.system(size: 12, weight: .medium)).padding(.horizontal, 12).padding(.vertical, 9)
-            .foregroundStyle(Theme.ink).background(configuration.isPressed ? Theme.line : Theme.surface, in: RoundedRectangle(cornerRadius: 7))
-            .overlay(RoundedRectangle(cornerRadius: 7).stroke(Theme.line, lineWidth: 1)).opacity(isEnabled ? 1 : 0.4)
+            .foregroundStyle(Theme.ink)
+            .background(configuration.isPressed ? Theme.line : hovered && isEnabled ? Theme.line.opacity(0.55) : Theme.surface, in: RoundedRectangle(cornerRadius: 7))
+            .overlay(RoundedRectangle(cornerRadius: 7).stroke(hovered && isEnabled ? Theme.secondary.opacity(0.5) : Theme.line, lineWidth: 1))
+            .opacity(isEnabled ? 1 : 0.4)
+            .onHover { hovered = $0 }
+            .animation(.easeOut(duration: 0.12), value: hovered)
+    }
+}
+/// For text links, icons and rows: dims a little under the pointer, or with
+/// `fill`, draws a soft background, so everything clickable answers the hover.
+struct HoverPlain: ButtonStyle {
+    var fill = false
+    func makeBody(configuration: Configuration) -> some View { HoverPlainBody(configuration: configuration, fill: fill) }
+}
+private struct HoverPlainBody: View {
+    let configuration: ButtonStyleConfiguration
+    let fill: Bool
+    @Environment(\.isEnabled) private var isEnabled
+    @State private var hovered = false
+    var body: some View {
+        let active = hovered && isEnabled
+        configuration.label
+            .contentShape(Rectangle())
+            .background(fill && active ? Theme.line.opacity(0.45) : .clear, in: RoundedRectangle(cornerRadius: 7))
+            .opacity(configuration.isPressed ? 0.55 : (!fill && active ? 0.72 : 1))
+            .onHover { hovered = $0 }
+            .animation(.easeOut(duration: 0.12), value: hovered)
     }
 }
 struct ContentView: View {
@@ -182,7 +223,7 @@ struct ContentView: View {
                 Button { model.showCleanupBasket = true } label: {
                     HStack(spacing: 11) { Image(systemName: "tray").frame(width: 19); Text("Basket"); Spacer(); Text(String(model.cleanupBasket.items.count)).monospacedDigit().foregroundStyle(Theme.secondary) }
                         .font(.system(size: 13)).padding(.horizontal, 12).padding(.vertical, 12)
-                }.buttonStyle(.plain).accessibilityLabel("Cleanup basket, \(model.cleanupBasket.items.count) items")
+                }.buttonStyle(HoverPlain()).accessibilityLabel("Cleanup basket, \(model.cleanupBasket.items.count) items")
                 }
                 coreNav("History", icon: "clock.arrow.circlepath", section: .history, destination: .history)
             }.padding(.horizontal, 12)
@@ -201,7 +242,7 @@ struct ContentView: View {
                 .font(.system(size: 13, weight: model.page.section == section ? .semibold : .regular))
                 .padding(.horizontal, 12).padding(.vertical, 12)
                 .background(model.page.section == section ? (colorScheme == .dark ? Theme.orange.opacity(0.16) : Theme.surface) : .clear, in: RoundedRectangle(cornerRadius: 7))
-        }.buttonStyle(.plain).accessibilityAddTraits(model.page.section == section ? .isSelected : [])
+        }.buttonStyle(HoverPlain(fill: model.page.section != section)).accessibilityAddTraits(model.page.section == section ? .isSelected : [])
     }
     @ViewBuilder var sectionBar: some View {
         let pages: [Page] = model.page.section == .cleanup ? [.findSpace, .developer, .trash] : model.page.section == .files ? [.storage, .duplicates, .growth, .watchlist] : model.page.section == .settings ? [.monitor, .permissions, .alerts, .aiAssist, .updates] : []
@@ -210,7 +251,7 @@ struct ContentView: View {
                 ForEach(pages) { page in
                     let selected = isCurrentSection(page)
                     Button(tabTitle(page)) { model.page = page == .developer ? .developer : page }
-                        .buttonStyle(.plain).font(.system(size: 12, weight: selected ? .semibold : .regular))
+                        .buttonStyle(HoverPlain()).font(.system(size: 12, weight: selected ? .semibold : .regular))
                         .foregroundStyle(selected ? Theme.orange : Theme.secondary)
                         .padding(.vertical, 12)
                         .overlay(alignment: .bottom) { if selected { Rectangle().fill(Theme.orange).frame(height: 2) } }
@@ -232,7 +273,7 @@ struct ContentView: View {
             ForEach([Page.developer, .projects, .docker, .devices, .ai]) { page in
                 let selected = model.page == page
                 Button(page == .developer ? "Caches" : page.title) { model.page = page }
-                    .buttonStyle(.plain)
+                    .buttonStyle(HoverPlain())
                     .font(.system(size: 12, weight: selected ? .semibold : .regular))
                     .foregroundStyle(selected ? Theme.ink : Theme.secondary)
                     .padding(.horizontal, 12)
@@ -255,7 +296,7 @@ struct ContentView: View {
             if model.page == .storage {
                 HStack { Image(systemName: "magnifyingglass"); TextField("Filter \(model.page == .storage ? "files" : "processes")", text: Bindable(model).search).textFieldStyle(.plain).accessibilityLabel("Filter files or processes").focused($searchFocused) }.font(.system(size: 11)).padding(8).frame(width: 185).background(Theme.surface, in: RoundedRectangle(cornerRadius: 6)).overlay(RoundedRectangle(cornerRadius: 6).stroke(Theme.line))
             }
-            Button { model.refreshResources() } label: { Image(systemName: "arrow.clockwise").padding(7) }.buttonStyle(.plain).help("Refresh Mac storage and load").accessibilityLabel("Refresh Mac storage")
+            Button { model.refreshResources() } label: { Image(systemName: "arrow.clockwise").padding(7) }.buttonStyle(HoverPlain()).help("Refresh Mac storage and load").accessibilityLabel("Refresh Mac storage")
         }.padding(.horizontal, 24).frame(height: 40)
             .onChange(of: model.focusFilterRequest) { _, _ in searchFocused = true }
     }
@@ -431,7 +472,7 @@ struct OverviewView: View {
                             if rule.id != CacheRule.all.last?.id { Divider() }
                         }
                     }
-                    Button { model.page = .developer; model.scanCaches() } label: { HStack { Text(model.cacheScanning ? "Measuring…" : "Review developer storage"); Spacer(); Image(systemName: "arrow.right") } }.buttonStyle(.plain).font(.system(size: 11, weight: .semibold)).foregroundStyle(Theme.orange).disabled(model.cacheScanning)
+                    Button { model.page = .developer; model.scanCaches() } label: { HStack { Text(model.cacheScanning ? "Measuring…" : "Review developer storage"); Spacer(); Image(systemName: "arrow.right") } }.buttonStyle(HoverPlain()).font(.system(size: 11, weight: .semibold)).foregroundStyle(Theme.orange).disabled(model.cacheScanning)
                 }.padding(20).background(Theme.rail.opacity(0.7), in: RoundedRectangle(cornerRadius: 10)).frame(maxWidth: .infinity)
             }
             Divider()
@@ -451,7 +492,7 @@ struct OverviewView: View {
                 VStack(alignment: .leading, spacing: 6) { Text(title).font(.system(size: 13, weight: .semibold)); Text(detail).font(.system(size: 11)).foregroundStyle(Theme.secondary).fixedSize(horizontal: false, vertical: true) }
                 Spacer(); Image(systemName: "chevron.right").font(.system(size: 10)).foregroundStyle(Theme.secondary)
             }.padding(.vertical, 10).contentShape(Rectangle())
-        }.buttonStyle(.plain)
+        }.buttonStyle(HoverPlain())
     }
 }
 struct StorageView: View {
@@ -530,7 +571,7 @@ struct StorageView: View {
                 } label: {
                     Label("Storage map and suggestions", systemImage: "chart.bar.xaxis")
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(HoverPlain())
                 .font(.system(size: 11, weight: .medium))
                 .popover(isPresented: $showInsights, arrowEdge: .bottom) {
                     ScrollView {
@@ -551,7 +592,7 @@ struct StorageView: View {
                     if let inspectedItem {
                         VStack(alignment: .trailing, spacing: 0) {
                             Button { self.inspectedItem = nil; inspectedID = nil } label: { Image(systemName: "xmark").padding(8) }
-                                .buttonStyle(.plain).foregroundStyle(Theme.secondary).accessibilityLabel("Close details")
+                                .buttonStyle(HoverPlain()).foregroundStyle(Theme.secondary).accessibilityLabel("Close details")
                             ItemDetailsView(item: inspectedItem).id(inspectedItem.id)
                         }
                         .frame(minWidth: 220, idealWidth: 255, maxWidth: 340, maxHeight: .infinity)

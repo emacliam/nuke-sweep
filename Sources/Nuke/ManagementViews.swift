@@ -99,7 +99,7 @@ private struct AppChoiceRow: View {
                 .padding(.horizontal, 7).padding(.vertical, 5).frame(maxWidth: .infinity, alignment: .leading)
                 .background(chosenID == app.id ? Theme.orange.opacity(0.08) : .clear, in: RoundedRectangle(cornerRadius: 4))
                 .contentShape(Rectangle())
-        }.buttonStyle(.plain).accessibilityLabel("Inspect " + app.name).accessibilityAddTraits(chosenID == app.id ? .isSelected : [])
+        }.buttonStyle(HoverPlain()).accessibilityLabel("Inspect " + app.name).accessibilityAddTraits(chosenID == app.id ? .isSelected : [])
     }
 }
 struct FileUseView: View {
@@ -204,7 +204,8 @@ struct ReceiptsView: View {
                     }.width(85)
                 }
                 .tableStyle(.inset(alternatesRowBackgrounds: false))
-                .frame(minHeight: 150, maxHeight: 240)
+                // Tall enough for its rows, so the page scrolls rather than a small box.
+                .frame(height: CGFloat(min(max(filteredReceipts.count, 3), 15)) * 26 + 32)
                 .accessibilityLabel("Cleanup receipts")
                 .overlay { if filteredReceipts.isEmpty { Text("No receipts match this filter.").font(.system(size: 11)).foregroundStyle(Theme.secondary) } }
                 if let selected { receiptDetail(selected) }
@@ -252,16 +253,16 @@ struct ReceiptsView: View {
                         Text("Restored").foregroundStyle(Theme.secondary)
                     } else if let path = item.trashPath {
                         HStack(spacing: 6) {
-                            Button("Show") { model.reveal(URL(fileURLWithPath: path)) }.buttonStyle(.plain).font(.system(size: 10, weight: .medium)).foregroundStyle(Theme.orange)
+                            Button("Show") { model.reveal(URL(fileURLWithPath: path)) }.buttonStyle(HoverPlain()).font(.system(size: 10, weight: .medium)).foregroundStyle(Theme.orange)
                             if item.success && item.restoreEvidence != nil {
-                                Button("Restore") { model.restoreReceiptItem(item) }.buttonStyle(.plain).font(.system(size: 10, weight: .medium)).foregroundStyle(Theme.secondary).disabled(model.actionBusy)
+                                Button("Restore") { model.restoreReceiptItem(item) }.buttonStyle(HoverPlain()).font(.system(size: 10, weight: .medium)).foregroundStyle(Theme.secondary).disabled(model.actionBusy)
                             }
                         }
                     } else { Text("—").foregroundStyle(Theme.secondary) }
                 }.width(110)
             }
             .tableStyle(.inset(alternatesRowBackgrounds: false))
-            .frame(minHeight: 130, maxHeight: 220)
+            .frame(height: CGFloat(min(max(receipt.items.count, 2), 15)) * 26 + 32)
             .accessibilityLabel("Receipt item outcomes")
             Text(receipt.undo).font(.system(size: 10)).foregroundStyle(Theme.secondary).fixedSize(horizontal: false, vertical: true)
         }

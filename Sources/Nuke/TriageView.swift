@@ -31,7 +31,7 @@ struct TriagePanel: View {
                     }
                     if report.findings.count > collapsedRows {
                         Button(expanded ? "Show fewer" : "Show all \(report.findings.count)") { expanded.toggle() }
-                            .buttonStyle(.plain).font(.system(size: 11, weight: .medium)).foregroundStyle(Theme.orange)
+                            .buttonStyle(HoverPlain()).font(.system(size: 11, weight: .medium)).foregroundStyle(Theme.orange)
                     }
                     footer(report)
                 }
@@ -94,7 +94,7 @@ struct TriagePanel: View {
                     .disabled(store.isExplaining)
                     .help("Sends the shortlist metadata shown above to \(ai.providerName(for: .explain)). No file contents leave this Mac.")
                     Button("Show what would be sent") { showingPayload = true }
-                        .buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(Theme.orange)
+                        .buttonStyle(HoverPlain()).font(.system(size: 11)).foregroundStyle(Theme.orange)
                     if store.aiAddsLittle && store.summary == nil {
                         Text("Local evidence already explains this shortlist.")
                             .font(.system(size: 10)).foregroundStyle(Theme.secondary)
@@ -150,7 +150,7 @@ private struct TriageRow: View {
                 }
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(HoverPlain())
             .accessibilityLabel("\(finding.item.name), \(bytes(finding.item.size)). \(finding.headline)")
             .accessibilityHint(expanded ? "Hide the evidence" : "Show the evidence")
 

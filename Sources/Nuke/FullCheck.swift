@@ -538,7 +538,7 @@ struct FullCheckCard: View {
                     Text("Project build output was not measured: no code folder was found in the usual places.")
                         .font(.system(size: 11)).foregroundStyle(Theme.secondary).fixedSize(horizontal: false, vertical: true)
                     Button("Choose your code folder…") { features.scanProjects() }
-                        .buttonStyle(.plain).font(.system(size: 11, weight: .medium)).foregroundStyle(Theme.orange)
+                        .buttonStyle(HoverPlain()).font(.system(size: 11, weight: .medium)).foregroundStyle(Theme.orange)
                         .help("Measured now, and included every time you check again")
                 }
             } else if model.fullCheck.projectsSkipped {
@@ -587,7 +587,7 @@ struct FullCheckCard: View {
                     Text("Automatic cleanup moved \(bytes(cleaned.movedBytes)) to Trash after this check. The figures above were measured before it ran.")
                         .font(.system(size: 11)).foregroundStyle(Theme.secondary).fixedSize(horizontal: false, vertical: true)
                     Button("See the receipt") { model.page = .history }
-                        .buttonStyle(.plain).font(.system(size: 11, weight: .medium)).foregroundStyle(Theme.orange)
+                        .buttonStyle(HoverPlain()).font(.system(size: 11, weight: .medium)).foregroundStyle(Theme.orange)
                 }
             }
             if totals.candidateBytes > 0 {
@@ -604,13 +604,12 @@ struct FullCheckCard: View {
                             DisclosureGroup("Automatic cleanup preview · \(items.count) locations · \(bytes(items.reduce(0) { $0 + $1.size }))") {
                                 Text("These locations passed review. Files were left in place.")
                                     .foregroundStyle(Theme.secondary)
-                                ScrollView {
-                                    LazyVStack(alignment: .leading, spacing: 4) {
-                                        ForEach(items) { item in
-                                            Text(verbatim: item.url.path).textSelection(.enabled)
-                                        }
-                                    }
-                                }.frame(maxHeight: 200)
+                                ForEach(items.prefix(20)) { item in
+                                    Text(verbatim: item.url.path).textSelection(.enabled)
+                                }
+                                if items.count > 20 {
+                                    Text("And \(items.count - 20) more, listed in the receipt when cleanup runs.").foregroundStyle(Theme.secondary)
+                                }
                             }.font(.system(size: 11))
                         }
                         Toggle("Check weekly and tell me when this has grown", isOn: Binding(
@@ -645,7 +644,7 @@ struct FullCheckCard: View {
             Spacer(minLength: 12)
             if let action {
                 Button(action.0, action: action.1)
-                    .buttonStyle(.plain).font(.system(size: 11, weight: .medium)).foregroundStyle(Theme.orange)
+                    .buttonStyle(HoverPlain()).font(.system(size: 11, weight: .medium)).foregroundStyle(Theme.orange)
             }
             Text(verbatim: bytes(size)).font(.system(size: 13, weight: .medium)).monospacedDigit().frame(minWidth: 70, alignment: .trailing)
         }
@@ -666,7 +665,7 @@ struct FullCheckCard: View {
                     if grower.isNew { Text("new").font(.system(size: 10)).foregroundStyle(Theme.secondary) }
                     Spacer(minLength: 0)
                     Button("Show") { model.reveal(URL(fileURLWithPath: grower.path)) }
-                        .buttonStyle(.plain).font(.system(size: 10, weight: .medium)).foregroundStyle(Theme.secondary)
+                        .buttonStyle(HoverPlain()).font(.system(size: 10, weight: .medium)).foregroundStyle(Theme.secondary)
                         .help(grower.path)
                 }
             }
@@ -761,7 +760,7 @@ struct InUseLine: View {
                 Text("\(count) of these are in use right now and are left out of the first figure.")
                     .font(.system(size: 11)).foregroundStyle(Theme.secondary)
                 Button(open ? "Hide" : "Which ones?") { open.toggle() }
-                    .buttonStyle(.plain).font(.system(size: 11, weight: .medium)).foregroundStyle(Theme.orange)
+                    .buttonStyle(HoverPlain()).font(.system(size: 11, weight: .medium)).foregroundStyle(Theme.orange)
             }
             if open {
                 ForEach(items.prefix(12), id: \.id) { item in
@@ -770,7 +769,7 @@ struct InUseLine: View {
                         Text(verbatim: FullCheckGrower(path: item.url.path, delta: 0, isNew: false).name).font(.system(size: 11)).lineLimit(1).truncationMode(.middle)
                         Spacer(minLength: 0)
                         Button("Show") { model.reveal(item.url) }
-                            .buttonStyle(.plain).font(.system(size: 10, weight: .medium)).foregroundStyle(Theme.secondary).help(item.url.path)
+                            .buttonStyle(HoverPlain()).font(.system(size: 10, weight: .medium)).foregroundStyle(Theme.secondary).help(item.url.path)
                     }
                 }
                 Text("Quit the app, build or dev server using them, then check again to include them.")

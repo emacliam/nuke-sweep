@@ -14,7 +14,7 @@ struct DeveloperScopesSection: View {
                 Spacer(minLength: 8)
                 if !features.developerScopes.isEmpty {
                     Button("Measure all") { features.measureAllDeveloperScopes() }
-                        .buttonStyle(.plain).font(.system(size: 11, weight: .medium)).foregroundStyle(Theme.secondary)
+                        .buttonStyle(HoverPlain()).font(.system(size: 11, weight: .medium)).foregroundStyle(Theme.secondary)
                         .disabled(!features.measuringScopes.isEmpty)
                 }
                 Menu {
@@ -44,7 +44,7 @@ struct DeveloperScopesSection: View {
                     Image(systemName: "info.circle").font(.system(size: 10)).foregroundStyle(Theme.secondary)
                     Text(status).font(.system(size: 10)).foregroundStyle(Theme.secondary).fixedSize(horizontal: false, vertical: true)
                     Spacer()
-                    Button { features.scopeStatus = nil } label: { Image(systemName: "xmark").font(.system(size: 9, weight: .semibold)).foregroundStyle(Theme.secondary) }.buttonStyle(.plain).accessibilityLabel("Dismiss scope message")
+                    Button { features.scopeStatus = nil } label: { Image(systemName: "xmark").font(.system(size: 9, weight: .semibold)).foregroundStyle(Theme.secondary) }.buttonStyle(HoverPlain()).accessibilityLabel("Dismiss scope message")
                 }
             }
             if features.developerScopes.isEmpty {
@@ -131,7 +131,7 @@ private struct ScopeCard: View {
                     .help("Scope actions")
                 Button { expanded.toggle() } label: {
                     Image(systemName: expanded ? "chevron.down" : "chevron.right").font(.system(size: 10, weight: .semibold)).foregroundStyle(Theme.secondary).frame(width: 16)
-                }.buttonStyle(.plain).accessibilityLabel(expanded ? "Hide scope details" : "Show scope details")
+                }.buttonStyle(HoverPlain()).accessibilityLabel(expanded ? "Hide scope details" : "Show scope details")
             }
             .padding(12)
 
@@ -163,7 +163,7 @@ private struct ScopeCard: View {
                 Spacer()
                 if scope.cleanupAllowed && !covered {
                     Label("Access not granted", systemImage: "hand.raised").font(.system(size: 10)).foregroundStyle(Theme.warning)
-                    Button("Review access") { model.page = .permissions }.buttonStyle(.plain).font(.system(size: 10, weight: .medium)).foregroundStyle(Theme.orange)
+                    Button("Review access") { model.page = .permissions }.buttonStyle(HoverPlain()).font(.system(size: 10, weight: .medium)).foregroundStyle(Theme.orange)
                 }
             }
             if measuring {
