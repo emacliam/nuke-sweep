@@ -31,16 +31,20 @@ enum ReviewSeal {
         private var lock = os_unfair_lock()
         private var leaves: [Data] = []
         private var failure: Error?
+        /// Trash fingerprints record trashed projects too, keys and all; only
+        /// cleanup reviews refuse sensitive contents.
+        private let refuseSensitive: Bool
+        init(refuseSensitive: Bool = true) { self.refuseSensitive = refuseSensitive }
 
         func observeRoot(_ url: URL) {
             var info = stat()
             guard lstat(url.path, &info) == 0 else { fail(Failure.unreadable); return }
-            if CleanupSafety.isSensitive(url.standardizedFileURL.path) { fail(CleanupSafety.SafetyError.sensitive); return }
+            if refuseSensitive && CleanupSafety.isSensitive(url.standardizedFileURL.path) { fail(CleanupSafety.SafetyError.sensitive); return }
             append("\(url.path)\0root:\(info.st_dev):\(info.st_ino):\(info.st_mode):\(info.st_size):\(info.st_mtimespec.tv_sec):\(info.st_mtimespec.tv_nsec):\(info.st_ctimespec.tv_sec):\(info.st_ctimespec.tv_nsec)\0")
         }
 
         @Sendable func record(_ path: String, _ entry: BulkEntry) {
-            if CleanupSafety.isSensitive(path) { fail(CleanupSafety.SafetyError.sensitive); return }
+            if refuseSensitive && CleanupSafety.isSensitive(path) { fail(CleanupSafety.SafetyError.sensitive); return }
             append("\(path)\0\(entry.device):\(entry.inode):\(entry.type):\(entry.permissions):\(entry.logical):\(entry.modified.tv_sec):\(entry.modified.tv_nsec):\(entry.changed.tv_sec):\(entry.changed.tv_nsec)\0")
         }
 

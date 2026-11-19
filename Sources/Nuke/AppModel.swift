@@ -184,6 +184,8 @@ import UserNotifications
     var pendingBlocked: [ReviewBlockedItem] = []
     /// When this run started; tells a restored result from one measured now.
     let launchedAt = Date()
+    /// File watchers that keep Trash and the check's results current while open.
+    let liveWatch = LiveWatch()
     var showTrashReview = false {
         // Closing the review stops any checks still running for it.
         didSet { if oldValue && !showTrashReview && reviewPreparing { cancelReview() } }
@@ -289,6 +291,7 @@ import UserNotifications
         }
         weeklyCheckTimer?.tolerance = 600
         features.monitor.onLowStorage = { [weak self] free in self?.handleLowStorage(free: free) ?? false }
+        if !ProcessInfo.processInfo.arguments.contains("--no-watch") && NSClassFromString("XCTestCase") == nil { liveWatch.start(self) }
         refreshDiskAccess()
         // Verification hook: lets a capture run show the whole-Mac result screen.
         if ProcessInfo.processInfo.arguments.contains("--run-full-check") {
@@ -727,7 +730,7 @@ import UserNotifications
     }
     func permanentlyDeleteTrash(_ entries: [TrashEntry], rootIdentity: FileIdentity) {
         guard requireCleanupAccess() else { return }
-        guard !actionBusy, !entries.isEmpty, let snapshot = trashSnapshot, snapshot.complete, snapshot.rootIdentity == rootIdentity,
+        guard !actionBusy, !entries.isEmpty, let snapshot = trashSnapshot, entries.allSatisfy(\.verifiable), snapshot.rootIdentity == rootIdentity,
               entries.allSatisfy({ entry in snapshot.entries.contains { $0.id == entry.id && $0.fingerprint == entry.fingerprint } }) else { return }
         actionBusy = true
         Task {

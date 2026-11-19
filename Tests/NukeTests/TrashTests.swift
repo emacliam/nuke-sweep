@@ -7,7 +7,7 @@ final class TrashTests: XCTestCase {
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         return root
     }
-    func testUnreadableChildLeavesVisiblePreviewAndDisablesDeletion() throws {
+    func testUnreadableItemIsBlockedWhileReadableItemsStayDeletable() throws {
         let root = try fixture()
         let unreadable = root.appendingPathComponent("blocked")
         let visible = root.appendingPathComponent("visible.txt")
@@ -23,8 +23,14 @@ final class TrashTests: XCTestCase {
         let service = TrashService(root: root)
         let snapshot = try service.inspect()
         XCTAssertFalse(snapshot.complete)
+        // One unreadable item no longer blocks the rest: it is shown but cannot
+        // be deleted, while the readable one stays deletable.
         let entry = try XCTUnwrap(snapshot.entries.first { $0.item.name == "visible.txt" })
-        XCTAssertThrowsError(try service.validate(entry, rootIdentity: snapshot.rootIdentity))
+        XCTAssertTrue(entry.verifiable)
+        XCTAssertNoThrow(try service.validate(entry, rootIdentity: snapshot.rootIdentity))
+        let blocked = try XCTUnwrap(snapshot.entries.first { $0.item.url.path == unreadable.path })
+        XCTAssertFalse(blocked.verifiable)
+        XCTAssertThrowsError(try service.validate(blocked, rootIdentity: snapshot.rootIdentity))
         XCTAssertTrue(fm.fileExists(atPath: visible.path))
     }
 
