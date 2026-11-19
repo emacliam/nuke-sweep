@@ -1,6 +1,6 @@
 cask "nuke-sweep" do
-  version "0.9.6"
-  sha256 "e354cfb06232eedace64398d19eeaa751c1c0265cd1252fa85a01758136e8ffa"
+  version "0.9.7"
+  sha256 "4513fb4959f9ff485bd82ee8196c2a17464ce02fd09dd601b0f4b0fd41dbb41d"
 
   url "https://sweep.zyncraft.com/downloads/Nuke-Sweep-#{version}.dmg"
   name "Nuke Sweep"
