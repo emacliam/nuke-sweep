@@ -331,7 +331,8 @@ struct TrashReview: View {
                             if let evidence = model.pendingEvidence[item.id] {
                                 let assessment = CandidateAssessment.make(item, evidence: evidence)
                                 let caution = assessment.state == .needsInspection || evidence.kind.isBlocked
-                                Text(verbatim: bytes(item.size) + " · " + evidence.label + (evidence.rebuild.map { " · " + $0 } ?? ""))
+                                let cost = RebuildCost.forEvidence(evidence, name: item.name, url: item.url)
+                                Text(verbatim: bytes(item.size) + " · " + evidence.label + (evidence.rebuild.map { " · Comes back: " + $0 } ?? "") + (cost.effort == .unknown ? "" : " · Cost: " + cost.estimate))
                                     .font(.system(size: 10)).foregroundStyle(caution ? Theme.warning : Theme.secondary).lineLimit(1)
                                     .help(item.url.path + "\n" + evidence.detail)
                                 if caution {

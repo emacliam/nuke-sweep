@@ -639,7 +639,14 @@ struct FullCheckCard: View {
                 }.font(.system(size: 12))
             }
             HStack {
-                Text(CleanupPreferences.deleteRebuildable ? "Sizes are measured, not promised. Freed space is measured on the disk afterwards." : "Sizes are measured, not promised: space returns when Trash is emptied.")
+                VStack(alignment: .leading, spacing: 2) {
+                    // When, and how long it took. From Major Tom (MIT, (c) 2026 Tom Jordan).
+                    if let started = model.fullCheck.started, let finished = model.fullCheck.finished {
+                        Text("Checked \(finished.formatted(.relative(presentation: .named))) in \(String(format: "%.1f", finished.timeIntervalSince(started))) s")
+                            .monospacedDigit()
+                    }
+                    Text(CleanupPreferences.deleteRebuildable ? "Sizes are measured, not promised. Freed space is measured on the disk afterwards." : "Sizes are measured, not promised: space returns when Trash is emptied.")
+                }
                     .font(.system(size: 10)).foregroundStyle(Theme.secondary)
                 Spacer()
                 Button("Check again") { model.startFullCheck() }.buttonStyle(QuietButton()).disabled(!model.canStartFullCheck)
