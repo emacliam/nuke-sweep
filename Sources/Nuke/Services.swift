@@ -190,10 +190,12 @@ enum CleanupSafety {
                      "/.gradle/caches/", "/Library/Caches/pip/", "/Library/Caches/Homebrew/", "/Library/Caches/org.swift.swiftpm/",
                      "/Library/Caches/go-build/", "/.cargo/registry/", "/.bun/install/cache/", "/.pub-cache/", "/.m2/repository/",
                      "/.cache/uv/", "/Library/Caches/Yarn"]
-        return roots.contains { root in
+        if roots.contains(where: { root in
             let full = home + root
             return path.hasPrefix(full.hasSuffix("/") ? full : full + "/")
-        }
+        }) { return true }
+        // Caches the tools themselves reported, wherever they were moved to.
+        return ToolLocations.knownCaches.contains { path.hasPrefix($0 + "/") }
     }
     static func isSensitive(_ path: String, home: String = FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL.path) -> Bool {
         // Inside a package manager's download cache, a key-like name is a file

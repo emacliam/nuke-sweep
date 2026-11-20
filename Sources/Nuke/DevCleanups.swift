@@ -82,8 +82,9 @@ enum DevCleanups {
 
     /// Measures one tool's cache. Nil when the tool or its cache is absent.
     static func measure(_ tool: ToolCleaner, token: ScanCancellation) -> ToolCacheFinding? {
-        let cache = home.appendingPathComponent(tool.cache)
-        guard FileManager.default.fileExists(atPath: cache.path), let executable = locate(tool) else { return nil }
+        guard let executable = locate(tool), !ToolLocations.isPlaceholder(executable) else { return nil }
+        let cache = ToolLocations.cache(for: tool, executable: executable)
+        guard FileManager.default.fileExists(atPath: cache.path) else { return nil }
         let scan = DiskScanner.scan(cache, cancellation: token, limit: 400_000, deadline: Date().addingTimeInterval(20))
         return ToolCacheFinding(tool: tool, executable: executable, size: scan.allocated)
     }
@@ -105,6 +106,7 @@ enum DevCleanups {
     /// elsewhere: pushed to their upstream, or merged into the main checkout.
     /// Anything Git cannot answer for is left out, never offered.
     static func staleWorktrees(in repository: URL, token: ScanCancellation) -> [StaleWorktree] {
+        guard !ToolLocations.isPlaceholder(git) else { return [] }
         let list = CommandRunner.run(git, ["-C", repository.path, "worktree", "list", "--porcelain"], timeout: 10)
         guard list.status == 0 else { return [] }
         var found: [StaleWorktree] = []
