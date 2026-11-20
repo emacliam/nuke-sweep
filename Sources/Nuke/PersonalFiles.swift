@@ -192,7 +192,7 @@ enum PersonalFiles {
     /// Folders presented as a single file. They are not searched; opening a
     /// photo library or a project file to list its parts would only invite
     /// someone to remove a piece of it.
-    static let opaquePackages: Set<String> = ["app", "photoslibrary", "photolibrary", "musiclibrary", "tvlibrary", "aplibrary", "lrlibrary", "lrdata", "lrcat", "logicx", "band", "xcodeproj", "xcworkspace", "framework", "bundle", "plugin", "kext", "rtfd", "scriv", "sketch", "dsym", "playground", "pages", "numbers", "key", "epub", "itlp", "theater", "photosasset", "migratedphotolibrary", "tmbundle", "prefpane", "saver", "component", "vst", "vst3", "pkpass", "wdgt", "qlgenerator", "mdimporter", "docset", "lproj", "nib", "storyboardc", "xcassets", "appex", "xpc", "dext", "backupdb", "noindex"]
+    static let opaquePackages: Set<String> = ["app", "photoslibrary", "photolibrary", "musiclibrary", "tvlibrary", "aplibrary", "lrlibrary", "lrdata", "lrcat", "logicx", "band", "xcodeproj", "xcworkspace", "framework", "bundle", "plugin", "kext", "rtfd", "scriv", "sketch", "dsym", "playground", "pages", "numbers", "key", "epub", "itlp", "theater", "photosasset", "migratedphotolibrary", "tmbundle", "prefpane", "saver", "component", "vst", "vst3", "pkpass", "wdgt", "qlgenerator", "mdimporter", "docset", "lproj", "nib", "storyboardc", "xcassets", "appex", "xpc", "dext", "backupdb", "noindex", "imovielibrary", "fcpbundle", "photoboothlibrary", "dvdproj"]
     /// Cloud-synced folders people commonly keep in their home folder. A file
     /// removed there is removed from every device, so they are left alone.
     static let syncFolderNames: Set<String> = ["dropbox", "google drive", "googledrive", "onedrive", "box", "box sync", "icloud drive", "icloud drive (archive)", "pcloud drive", "mega", "megasync", "sync", "nextcloud", "owncloud", "creative cloud files", "tresorit", "proton drive", "synology drive", "yandex.disk", "seafile"]
@@ -620,6 +620,10 @@ enum PersonalFiles {
         var seen = Set<String>()
         report.findings.removeAll { !seen.insert($0.item.url.standardizedFileURL.path).inserted }
         report.strayBuilds = FullCheckHistory.merge(report.strayBuilds)
+        // A disk image that is mounted right now is in use; it is never offered.
+        // From Major Tom (MIT, (c) 2026 Tom Jordan).
+        let mounted = mountedDiskImages()
+        if !mounted.isEmpty { report.findings.removeAll { mounted.contains($0.item.url.standardizedFileURL.path) } }
         return report
     }
 
@@ -721,5 +725,16 @@ enum PersonalFiles {
                 add(measure(folder.appendingPathComponent(name)), .installers, String(localized: "macOS installer; Software Update downloads it again"), redundant: true)
             }
         }
+    }
+}
+
+extension PersonalFiles {
+    /// Paths of disk images attached right now, from `hdiutil info`.
+    static func mountedDiskImages() -> Set<String> {
+        let result = CommandRunner.run("/usr/bin/hdiutil", ["info", "-plist"], timeout: 10)
+        guard result.status == 0, let data = result.output.data(using: .utf8),
+              let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
+              let images = plist["images"] as? [[String: Any]] else { return [] }
+        return Set(images.compactMap { ($0["image-path"] as? String).map { URL(fileURLWithPath: $0).standardizedFileURL.path } })
     }
 }

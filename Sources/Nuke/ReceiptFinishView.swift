@@ -18,15 +18,33 @@ struct ReceiptFinishView: View {
             if let error = features.error { Notice.measured(error, symbol: "exclamationmark.triangle") }
             Text(receipt.title).font(.system(size: 14))
             let moved = currentItems.filter { $0.success && $0.trashPath != nil }
+            let deleted = currentItems.filter { $0.success && $0.trashPath == nil }
             let failed = currentItems.filter { !$0.success }.count
-            HStack {
+            VStack(alignment: .leading, spacing: 4) {
+                if !deleted.isEmpty {
+                    Text("\(deleted.count) deleted · \(bytes(deleted.reduce(0) { $0 + $1.size })) estimated")
+                }
                 if !moved.isEmpty {
-                    Text("\(moved.count) moved to Trash · \(bytes(moved.reduce(0) { $0 + $1.size })) logical size")
-                } else {
-                    Text("\(currentItems.filter(\.success).count) succeeded")
+                    Text("\(moved.count) moved to Trash · \(bytes(moved.reduce(0) { $0 + $1.size })) estimated")
                 }
                 if failed > 0 { Text("\(failed) failed").foregroundStyle(Theme.error) }
+                // Measured, not summed: the volume's free space before and after.
+                // From Major Tom (MIT, (c) 2026 Tom Jordan).
+                if let delta = receipt.observedFreeDelta, delta > 0 {
+                    Text("Measured on the disk: \(bytes(delta)) more is free now.").foregroundStyle(Theme.green)
+                }
             }.font(.system(size: 13, weight: .medium))
+            // Anything a delete had to leave, with the fix.
+            let partial = currentItems.filter { $0.outcome.hasPrefix("Partly deleted") }
+            if !partial.isEmpty {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Left behind").font(.system(size: 12, weight: .semibold))
+                    ForEach(partial.prefix(5), id: \.originalPath) { item in
+                        Text(verbatim: URL(fileURLWithPath: item.originalPath).lastPathComponent + ": " + item.outcome)
+                            .font(.system(size: 11)).foregroundStyle(Theme.secondary).fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
             if failureReports, let report = FailureReport(receipt: receipt) {
                 Button("Review failure report…") { failurePreview = report }.buttonStyle(QuietButton())
             }
