@@ -459,7 +459,7 @@ struct FullCheckCard: View {
                     .buttonStyle(PrimaryButton()).disabled(!model.canStartFullCheck)
             }
             VStack(alignment: .leading, spacing: 9) {
-                promise("arrow.uturn.backward.circle", "Nothing is deleted. Reviewed items move to Trash, with a receipt and a way back.")
+                promise("arrow.uturn.backward.circle", CleanupPreferences.deleteRebuildable ? "Caches and build output you approve are deleted: they rebuild themselves. Your own files only ever go to Trash, with a receipt and a way back." : "Nothing is deleted. Reviewed items move to Trash, with a receipt and a way back.")
                 promise("exclamationmark.shield", "Anything with no copy anywhere else is held back and named, not offered.")
                 if model.autoCleanEnabled && !model.autoCleanDryRun {
                     promise("checkmark.shield", "Nothing is selected for you, apart from the automatic cleanup you switched on. Every item is rechecked at the moment it moves.")
