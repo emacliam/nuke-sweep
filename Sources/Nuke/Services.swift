@@ -127,7 +127,14 @@ enum CommandRunner {
         lock.lock(); let children = Array(active.values); lock.unlock()
         for child in children where child.isRunning { child.terminate() }
     }
+    /// A pretend Mac for tests and demos: when set, every command the app runs
+    /// (`simctl`, `brew`, `git`, `hdiutil`, ...) is answered by this instead of
+    /// the real tool. Returning nil runs the real one. Never set in a shipping
+    /// build. Idea from Major Tom's fake runner (MIT, (c) 2026 Tom Jordan).
+    nonisolated(unsafe) static var simulated: (@Sendable (_ executable: String, _ arguments: [String]) -> CommandResult?)?
+
     static func run(_ executable: String, _ arguments: [String], timeout: TimeInterval = 15, environment suppliedEnvironment: [String: String]? = nil) -> CommandResult {
+        if let simulated, let answer = simulated(executable, arguments) { return answer }
         let process = Process(), output = Pipe()
         process.executableURL = URL(fileURLWithPath: executable); process.arguments = arguments
         process.standardOutput = output; process.standardError = output
