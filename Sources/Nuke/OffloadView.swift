@@ -31,12 +31,21 @@ extension AppModel {
         }
     }
 
-    func restoreOffload(_ record: OffloadRecord) {
+    func restoreOffload(_ record: OffloadRecord, elsewhere: Bool = false) {
         guard !actionBusy else { return }
+        var target: URL?
+        if elsewhere {
+            let panel = NSOpenPanel()
+            panel.canChooseDirectories = true; panel.canChooseFiles = false; panel.canCreateDirectories = true
+            panel.prompt = "Restore here"
+            guard panel.runModal() == .OK, let folder = panel.url else { return }
+            target = folder.appendingPathComponent(URL(fileURLWithPath: record.originalPath).lastPathComponent)
+        }
         actionBusy = true
+        let destination = target
         Task {
             let outcome = await DiskWork.run("Restoring \(URL(fileURLWithPath: record.originalPath).lastPathComponent)", lane: .interactive) { () -> String in
-                do { return "Restored and verified at " + (try OffloadEngine.restore(record)).path }
+                do { return "Restored and verified at " + (try OffloadEngine.restore(record, to: destination)).path }
                 catch { return "Not restored. " + error.localizedDescription }
             }
             actionBusy = false
@@ -51,9 +60,21 @@ struct OffloadedList: View {
     @Environment(AppModel.self) var model
     @State private var records = OffloadLog.all()
     var body: some View {
-        if !records.isEmpty {
-            VStack(alignment: .leading, spacing: 8) {
-                SectionTitle(title: "Offloaded", detail: "Copied to another drive, checked, then moved to Trash")
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                if !records.isEmpty { SectionTitle(title: "Offloaded", detail: "Copied to another drive, checked, then moved to Trash") }
+                Spacer()
+                Button("Find offloads on a drive…") {
+                    let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false
+                    panel.message = "Choose the folder that holds offloaded copies. Their manifests are read; nothing is changed."
+                    if panel.runModal() == .OK, let folder = panel.url {
+                        let added = OffloadLog.importManifests(in: folder)
+                        model.message = added == 0 ? "No new offloaded copies found there." : "Found \(added) offloaded \(added == 1 ? "copy" : "copies")."
+                        records = OffloadLog.all()
+                    }
+                }.buttonStyle(HoverPlain()).font(.system(size: 11)).foregroundStyle(Theme.orange)
+            }
+            if !records.isEmpty {
                 ForEach(records) { record in
                     let available = FileManager.default.fileExists(atPath: record.copyPath)
                     HStack(spacing: 10) {
@@ -66,13 +87,15 @@ struct OffloadedList: View {
                         if record.restored != nil { Text("Restored").font(.system(size: 10)).foregroundStyle(Theme.green) }
                         Button { model.reveal(URL(fileURLWithPath: record.copyPath)) } label: { Image(systemName: "folder") }
                             .buttonStyle(HoverPlain()).foregroundStyle(Theme.secondary).disabled(!available).help("Show the copy in Finder")
+                        Button("Restore to…") { model.restoreOffload(record, elsewhere: true); records = OffloadLog.all() }
+                            .buttonStyle(HoverPlain()).font(.system(size: 11)).disabled(!available || model.actionBusy)
                         Button("Restore") { model.restoreOffload(record); records = OffloadLog.all() }
                             .buttonStyle(QuietButton()).disabled(!available || model.actionBusy)
                     }
                     Divider()
                 }
             }
-            .onAppear { records = OffloadLog.all() }
         }
+        .onAppear { records = OffloadLog.all() }
     }
 }

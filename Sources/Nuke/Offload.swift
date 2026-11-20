@@ -48,16 +48,24 @@ enum OffloadEngine {
         guard !FileManager.default.fileExists(atPath: target.path) else { throw OffloadError.exists }
 
         let before = try seal(source, token: token)
-        // ditto keeps permissions, extended attributes and resource forks.
-        let copy = CommandRunner.run("/usr/bin/ditto", [source.path, target.path], timeout: 6 * 3600)
-        guard copy.status == 0 else { try? FileManager.default.removeItem(at: target); throw OffloadError.copyFailed(copy.output.suffix(200).description) }
+        // Copied under a temporary name, verified there, then renamed into place
+        // with RENAME_EXCL, so nothing existing is ever overwritten and a
+        // half-finished copy never looks complete. ditto keeps permissions,
+        // extended attributes and resource forks.
+        let partial = destination.appendingPathComponent(".nuke-partial-" + UUID().uuidString.prefix(8) + "-" + target.lastPathComponent)
+        let copy = CommandRunner.run("/usr/bin/ditto", [source.path, partial.path], timeout: 6 * 3600)
+        guard copy.status == 0 else { try? FileManager.default.removeItem(at: partial); throw OffloadError.copyFailed(copy.output.suffix(200).description) }
         _ = CommandRunner.run("/bin/sync", [], timeout: 120)
 
         let originals = try fingerprints(of: source, token: token)
-        let copies = try fingerprints(of: target, token: token, uncached: true)
+        let copies = try fingerprints(of: partial, token: token, uncached: true)
         if let mismatch = originals.first(where: { copies[$0.key] != $0.value })?.key ?? (originals.count == copies.count ? nil : "file count") {
-            try? FileManager.default.removeItem(at: target)
+            try? FileManager.default.removeItem(at: partial)
             throw OffloadError.verifyFailed(mismatch)
+        }
+        guard renamex_np(partial.path, target.path, UInt32(RENAME_EXCL)) == 0 else {
+            try? FileManager.default.removeItem(at: partial)
+            throw OffloadError.exists
         }
         let after = try seal(source, token: token)
         guard before == after else { try? FileManager.default.removeItem(at: target); throw OffloadError.originalChanged }
@@ -172,5 +180,28 @@ enum OffloadLog {
     static func append(_ record: OffloadRecord) { save([record] + all()) }
     static func markRestored(_ id: UUID) {
         save(all().map { var r = $0; if r.id == id { r.restored = Date() }; return r })
+    }
+}
+
+extension OffloadLog {
+    /// Reads the manifests written beside offloaded copies on a drive, for copies
+    /// made on another Mac or before a reinstall. Returns how many were new.
+    static func importManifests(in folder: URL) -> Int {
+        let decoder = JSONDecoder(); decoder.dateDecodingStrategy = .iso8601
+        var records = all()
+        let known = Set(records.map(\.copyPath))
+        var added = 0
+        for name in (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? [] where name.hasSuffix(".nuke-offload.json") {
+            guard let data = try? Data(contentsOf: folder.appendingPathComponent(name)),
+                  var record = try? decoder.decode(OffloadRecord.self, from: data) else { continue }
+            // The drive may be mounted elsewhere now; trust where the copy is today.
+            let copy = folder.appendingPathComponent(String(name.dropLast(".nuke-offload.json".count)))
+            guard FileManager.default.fileExists(atPath: copy.path), !known.contains(copy.path) else { continue }
+            record = OffloadRecord(id: record.id, originalPath: record.originalPath, copyPath: copy.path, date: record.date,
+                                   bytes: record.bytes, files: record.files, hashes: record.hashes, restored: record.restored)
+            records.insert(record, at: 0); added += 1
+        }
+        save(records)
+        return added
     }
 }
