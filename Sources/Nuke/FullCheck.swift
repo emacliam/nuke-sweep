@@ -523,7 +523,7 @@ struct FullCheckCard: View {
                     }
                     .font(.system(size: 19, weight: .semibold)).fixedSize(horizontal: false, vertical: true)
                     if totals.regenerableBytes > 0 {
-                        Text("Caches, dependencies and build output nothing is using. They go to Trash first, with a receipt and a way back.")
+                        Text(CleanupPreferences.deleteRebuildable ? "Caches, dependencies and build output nothing is using. They are deleted, so the space comes back at once, and rebuild themselves when needed." : "Caches, dependencies and build output nothing is using. They go to Trash first, with a receipt and a way back.")
                             .font(.system(size: 11)).foregroundStyle(Theme.secondary).fixedSize(horizontal: false, vertical: true)
                     }
                 }
@@ -639,7 +639,7 @@ struct FullCheckCard: View {
                 }.font(.system(size: 12))
             }
             HStack {
-                Text("Sizes are measured, not promised: space returns when Trash is emptied.")
+                Text(CleanupPreferences.deleteRebuildable ? "Sizes are measured, not promised. Freed space is measured on the disk afterwards." : "Sizes are measured, not promised: space returns when Trash is emptied.")
                     .font(.system(size: 10)).foregroundStyle(Theme.secondary)
                 Spacer()
                 Button("Check again") { model.startFullCheck() }.buttonStyle(QuietButton()).disabled(!model.canStartFullCheck)

@@ -10,6 +10,11 @@ enum CleanupEvidenceKind: String, Codable, Sendable {
     case sensitive
     case unknown
 
+    /// Caches, dependencies and build output: deleting them outright frees space
+    /// now, and they rebuild themselves. Moving them to Trash would hold the
+    /// space until Trash is emptied and offers nothing worth putting back.
+    var deletesOutright: Bool { self == .knownCache || self == .dependency || self == .buildOutput }
+
     var supportsContentsReview: Bool {
         self == .knownCache || self == .dependency || self == .buildOutput
     }

@@ -243,6 +243,7 @@ struct TrashReview: View {
     @State private var restoreExpanded = false
     @State private var openHandlesReviewed = false
     @State private var restoreReport: RestorePreflight.Report?
+    @State private var deleteRebuildable = CleanupPreferences.deleteRebuildable
     var body: some View {
         let selected = model.selectedPendingTrash
         VStack(alignment: .leading, spacing: 18) {
@@ -406,8 +407,16 @@ struct TrashReview: View {
                 .background(Theme.warning.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
             }
             if !model.pendingTrash.isEmpty {
-                Text("They go to Trash, not straight to deletion. History can put each one back.")
-                    .font(.system(size: 11)).foregroundStyle(Theme.secondary)
+                let outright = selected.filter { deleteRebuildable && model.pendingEvidence[$0.id]?.kind.deletesOutright == true }
+                let outrightBytes = outright.reduce(Int64(0)) { $0 + $1.size }
+                let trashBytes = selected.reduce(Int64(0)) { $0 + $1.size } - outrightBytes
+                Text(outright.isEmpty
+                     ? "They go to Trash, not straight to deletion. History can put each one back."
+                     : "\(bytes(outrightBytes)) of caches and build output is deleted now, so the space comes back at once; they rebuild themselves." + (trashBytes > 0 ? " \(bytes(trashBytes)) goes to Trash, where History can put it back." : ""))
+                    .font(.system(size: 11)).foregroundStyle(Theme.secondary).fixedSize(horizontal: false, vertical: true)
+                Toggle("Delete caches and build output instead of moving them to Trash", isOn: Binding(
+                    get: { deleteRebuildable }, set: { deleteRebuildable = $0; CleanupPreferences.deleteRebuildable = $0 }))
+                    .toggleStyle(.checkbox).font(.system(size: 11))
                 if !model.pendingWarnings.isEmpty {
                     Toggle("I closed the apps or builds listed above.", isOn: $openHandlesReviewed).font(.system(size: 12))
                 }
@@ -421,7 +430,8 @@ struct TrashReview: View {
                 Spacer()
                 // The restore check only adds a warning when it finds one; it
                 // never holds the button.
-                Button(selected.isEmpty ? "Move to Trash" : "Move \(bytes(selected.reduce(0) { $0 + $1.size })) to Trash") { model.trashReviewed() }
+                let anyOutright = deleteRebuildable && selected.contains { model.pendingEvidence[$0.id]?.kind.deletesOutright == true }
+                Button(selected.isEmpty ? "Move to Trash" : (anyOutright ? "Clear \(bytes(selected.reduce(0) { $0 + $1.size }))" : "Move \(bytes(selected.reduce(0) { $0 + $1.size })) to Trash")) { model.trashReviewed() }
                     .buttonStyle(PrimaryButton()).keyboardShortcut(.defaultAction)
                     .disabled(selected.isEmpty || (!model.pendingWarnings.isEmpty && !openHandlesReviewed) || model.actionBusy)
             }

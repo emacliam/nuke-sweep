@@ -7,7 +7,7 @@ enum ReceiptService {
         try FileManager.default.trashItem(at: url, resultingItemURL: &destination)
         return destination as URL?
     }
-    static func moveToTrash(_ items: [DiskItem], proofs: [DuplicateProof], runningAppPaths: [String], allowedRoots: [CleanupScope] = [], developerScopes: [DeveloperScope] = [], mover: (URL) throws -> URL? = trash) -> CleanupReceipt {
+    static func moveToTrash(_ items: [DiskItem], proofs: [DuplicateProof], runningAppPaths: [String], allowedRoots: [CleanupScope] = [], developerScopes: [DeveloperScope] = [], deleteOutright: Set<String> = [], mover: (URL) throws -> URL? = trash) -> CleanupReceipt {
         let before = MachineService.snapshot().freeDisk
         // Verify the entire duplicate plan before changing anything, and retain its keeper.
         do {
@@ -30,6 +30,16 @@ enum ReceiptService {
                 for proof in proofs where covers(item, proof.duplicate.url) {
                     if try !DuplicateFinder.sameContents(proof.keeper, proof.duplicate) { throw DuplicateFailure(message: "Duplicate contents changed. Run detection again.") }
                 }
+                if deleteOutright.contains(item.id) {
+                    // Rebuildable: deleted now, so the space comes back now.
+                    let removal = TreeRemover.remove(item.url)
+                    if removal.complete && removal.rootRemoved {
+                        return ReceiptItem(originalPath: item.url.path, trashPath: nil, size: item.size, success: true, outcome: "Deleted (rebuilds itself)")
+                    }
+                    let first = removal.leftBehind.first.map { URL(fileURLWithPath: $0.path).lastPathComponent + ": " + $0.advice } ?? "Some entries could not be removed."
+                    return ReceiptItem(originalPath: item.url.path, trashPath: nil, size: item.size, success: removal.removedBytes > 0,
+                                       outcome: "Partly deleted · \(bytes(removal.removedBytes)) freed, \(removal.leftCount) left. " + first)
+                }
                 let originalParent = FileIdentity.read(item.url.deletingLastPathComponent())
                 let destination = try mover(item.url)
                 var outcome = ReceiptItem(originalPath: item.url.path, trashPath: destination?.path, size: item.size, success: true, outcome: "Moved to Trash")
@@ -45,5 +55,14 @@ enum ReceiptService {
     }
     private static func covers(_ item: DiskItem, _ url: URL) -> Bool {
         item.url == url || (item.directory && !item.symlink && url.path.hasPrefix(item.url.path + "/"))
+    }
+}
+
+/// Whether rebuildable items are deleted outright (default) or moved to Trash.
+enum CleanupPreferences {
+    private static let key = "nuke.deleteRebuildableOutright"
+    static var deleteRebuildable: Bool {
+        get { UserDefaults.standard.object(forKey: key) as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: key) }
     }
 }
