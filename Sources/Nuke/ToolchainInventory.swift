@@ -24,8 +24,20 @@ enum ToolchainInventory {
 
     /// Default versions: nvm's `alias/default` and rustup's `default_toolchain`.
     /// Idea from Major Tom (MIT, Copyright (c) 2026 Tom Jordan).
+    /// The Node your shell runs right now (the first `node` on the usual PATH),
+    /// resolved through nvm's symlinks.
+    static let activeNode: String? = {
+        for directory in DevCleanups.searchPaths {
+            let candidate = directory + "/node"
+            guard FileManager.default.isExecutableFile(atPath: candidate) else { continue }
+            return URL(fileURLWithPath: candidate).resolvingSymlinksInPath().path
+        }
+        return nil
+    }()
+
     static func isDefault(_ url: URL, home: URL) -> Bool {
         let path = url.path, name = url.lastPathComponent
+        if let active = activeNode, active.hasPrefix(url.resolvingSymlinksInPath().path + "/") { return true }
         if path.contains("/.nvm/versions/node/"),
            let alias = try? String(contentsOf: ToolLocations.nvmHome.appendingPathComponent("alias/default"), encoding: .utf8) {
             let wanted = alias.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "v", with: "", options: .anchored)
@@ -138,7 +150,7 @@ struct ToolchainInventoryView: View {
                                 Text("Last used: \(date.formatted(date: .abbreviated, time: .omitted))")
                             } else { Text("Last used: Unknown") }
                             if tool.isDefault {
-                                Text("Default · kept").foregroundStyle(Theme.green)
+                                Text("Default or active · kept").foregroundStyle(Theme.green)
                             } else if let command = tool.uninstall {
                                 Button("Copy uninstall command") {
                                     NSPasteboard.general.clearContents(); NSPasteboard.general.setString(command, forType: .string)

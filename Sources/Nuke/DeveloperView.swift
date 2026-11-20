@@ -120,7 +120,7 @@ struct DeveloperView: View {
                     set: { on in if on { selected.insert(rule.id) } else { selected.remove(rule.id) } }
                 ))
                 .labelsHidden().toggleStyle(.checkbox)
-                .disabled(!selectable || model.actionBusy || model.cacheScanning)
+                .disabled(!selectable || rule.reportOnly || model.actionBusy || model.cacheScanning)
                 Button { expanded = expanded == rule.id ? nil : rule.id } label: {
                     HStack(spacing: 12) {
                         Image(systemName: rule.symbol).foregroundStyle(Theme.orange).frame(width: 22)
@@ -144,7 +144,7 @@ struct DeveloperView: View {
                 .accessibilityLabel(rule.name + ", " + (expanded == rule.id ? "hide details" : "show details") + ". " + cost.summary)
                 // The two things people come here to do, on the row itself
                 // rather than behind the disclosure.
-                if let item = measured {
+                if let item = measured, !rule.reportOnly {
                     Button { model.reveal(item.url) } label: { Image(systemName: "folder") }
                         .buttonStyle(HoverPlain()).foregroundStyle(Theme.secondary)
                         .help("Show in Finder").accessibilityLabel("Show \(rule.name) in Finder")

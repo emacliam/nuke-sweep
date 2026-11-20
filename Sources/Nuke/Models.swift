@@ -127,6 +127,8 @@ struct CacheRule: Identifiable, Sendable {
     let relativePath: String
     let detail: String
     let symbol: String
+    /// Measured and explained, never offered for cleanup.
+    var reportOnly = false
     var url: URL { FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(relativePath) }
     static let all: [CacheRule] = [
         .init(id: "xcode", name: "Xcode Derived Data", relativePath: "Library/Developer/Xcode/DerivedData", detail: "Build products and indexes. Xcode will rebuild these; close Xcode and stop builds first.", symbol: "hammer"),
@@ -157,7 +159,11 @@ struct CacheRule: Identifiable, Sendable {
         .init(id: "expo", name: "Expo caches", relativePath: ".expo/versions-cache", detail: "Expo version metadata and downloads. Expo CLI fetches them again when needed; your login and settings stay.", symbol: "iphone"),
         .init(id: "playwright", name: "Playwright browsers", relativePath: "Library/Caches/ms-playwright", detail: "Browser binaries for Playwright tests. Tests download them again with npx playwright install.", symbol: "globe"),
         .init(id: "cypress", name: "Cypress binary", relativePath: "Library/Caches/Cypress", detail: "The Cypress test runner binary. The next cypress run downloads it again.", symbol: "checkmark.seal"),
-        .init(id: "logs", name: "Logs", relativePath: "Library/Logs", detail: "App logs and crash reports. Apps start new logs straight away; past crash details are lost.", symbol: "doc.plaintext")
+        .init(id: "logs", name: "Logs", relativePath: "Library/Logs", detail: "App logs and crash reports. Apps start new logs straight away; past crash details are lost.", symbol: "doc.plaintext"),
+        .init(id: "npm-logs", name: "npm logs", relativePath: ".npm/_logs", detail: "Debug logs from past npm runs. Nothing uses them again.", symbol: "doc.plaintext"),
+        .init(id: "cargo-git", name: "Cargo git checkouts", relativePath: ".cargo/git", detail: "Git dependencies Cargo checked out. The next cargo build fetches what it needs again.", symbol: "shippingbox"),
+        .init(id: "gradle-daemon", name: "Gradle daemon logs", relativePath: ".gradle/daemon", detail: "Logs and state from past Gradle daemons. Stop Gradle first; new daemons start fresh.", symbol: "wrench.and.screwdriver"),
+        .init(id: "claude-desktop", name: "Claude desktop data", relativePath: "Library/Application Support/Claude", detail: "Shown for size only. It mixes caches with your sessions, extensions and VM bundles; removing the wrong part signs you out or loses local data. Clean it from inside the app.", symbol: "sparkles", reportOnly: true)
     ]
 }
 struct CacheMeasurement: Identifiable, Sendable {

@@ -72,7 +72,7 @@ struct RebuildCost: Equatable, Sendable {
             return .init(effort: .quick, estimate: String(localized: "seconds to minutes"), action: String(localized: "re-downloaded on next install"))
         case "gradle", "maven", "nuget", "gradle-wrapper":
             return .init(effort: .slow, estimate: String(localized: "minutes"), action: String(localized: "re-downloaded on next build"))
-        case "go", "swiftpm", "cargo":
+        case "go", "swiftpm", "cargo", "cargo-git":
             return .init(effort: .quick, estimate: String(localized: "under a minute"), action: String(localized: "repopulated by the next build"))
         case "homebrew":
             return .init(effort: .quick, estimate: String(localized: "seconds"), action: String(localized: "re-downloaded only if reinstalling"))
@@ -84,7 +84,7 @@ struct RebuildCost: Equatable, Sendable {
             return .init(effort: .quick, estimate: String(localized: "minutes on next device connect"), action: String(localized: "Xcode re-fetches symbols"))
         case "jetbrains":
             return .init(effort: .slow, estimate: String(localized: "a few minutes per project"), action: String(localized: "the IDE re-indexes on next open"))
-        case "logs":
+        case "logs", "npm-logs", "gradle-daemon":
             return .init(effort: .quick, estimate: String(localized: "none"), action: String(localized: "apps start new logs"))
         case "archives":
             return .init(effort: .irreplaceable, estimate: String(localized: "Not regenerated — only a new archive build replaces it"), action: nil)

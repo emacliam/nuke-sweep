@@ -43,7 +43,8 @@ extension AppModel {
                 guard let scan = measured else { continue }
                 guard isCurrentQuick(token) else { return }
                 if pair.0 == "Application caches" {
-                    for item in scan.items { candidates[item.id] = InventoryEntry(item: item, category: "Application caches", owner: item.name + " (inferred)", explanation: "Files accumulated in an app cache location. The owner is inferred from its folder name. The app may need to rebuild or download this data; stop it first.") }
+                    // Apple's own caches are left to macOS. After Major Tom (MIT, (c) 2026 Tom Jordan).
+                    for item in scan.items where !item.name.hasPrefix("com.apple.") { candidates[item.id] = InventoryEntry(item: item, category: "Application caches", owner: item.name + " (inferred)", explanation: "Files accumulated in an app cache location. The owner is inferred from its folder name. The app may need to rebuild or download this data; stop it first.") }
                 } else if let rule = CacheRule.all.first(where: { $0.url == pair.1 }), let identity = FileIdentity.read(rule.url) {
                     let item = DiskItem(url: rule.url, size: scan.logical, allocated: scan.allocated, directory: true, symlink: false, modified: nil, identity: identity, incomplete: scan.skipped > 0 || scan.limited)
                     candidates[item.id] = .init(item: item, category: "Developer artifacts", owner: rule.name, explanation: rule.detail)

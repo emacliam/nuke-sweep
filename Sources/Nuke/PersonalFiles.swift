@@ -382,6 +382,11 @@ enum PersonalFiles {
         if facts.size >= 500 * megabyte, let idle, idle >= 180 {
             return Verdict(category: .largeForgotten, reason: String(format: String(localized: "Not opened or changed for %@"), ago(idle)), redundant: false)
         }
+        // Old files: 50 MB or more, untouched for a year. Old doesn't mean
+        // unwanted; each one is your call. Thresholds from Major Tom (MIT, (c) 2026 Tom Jordan).
+        if facts.size >= 50 * megabyte, let idle, idle >= 365 {
+            return Verdict(category: .largeForgotten, reason: String(format: String(localized: "Not opened or changed for %@. Old doesn't mean unwanted; check it."), ago(idle)), redundant: false)
+        }
         return nil
     }
 

@@ -340,7 +340,7 @@ extension AppModel {
     /// Everything the three scans measured, merged for one ranking.
     func fullCheckItems() -> [DiskItem] {
         let projects = fullCheck.projectsSkipped ? [] : features.projects.flatMap(\.entries).map(\.item)
-        return FullCheckHistory.merge(caches.compactMap(\.item) + projects + (personal.report?.strayBuilds ?? []) + quick.entries.map(\.item))
+        return FullCheckHistory.merge(caches.filter { !$0.rule.reportOnly }.compactMap(\.item) + projects + (personal.report?.strayBuilds ?? []) + quick.entries.map(\.item))
     }
 }
 
