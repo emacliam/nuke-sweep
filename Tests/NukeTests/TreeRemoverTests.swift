@@ -1,5 +1,6 @@
 import XCTest
 @testable import Nuke
+import NukeCore
 
 final class TreeRemoverTests: XCTestCase {
     private func fixture() throws -> URL {

@@ -1,5 +1,6 @@
 import XCTest
 @testable import Nuke
+import NukeCore
 
 final class LiveWatchTests: XCTestCase {
     @MainActor func testReviewDropsGoneItemsAndHoldsChangedOnes() throws {

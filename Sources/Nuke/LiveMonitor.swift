@@ -1,3 +1,4 @@
+import NukeCore
 import SwiftUI
 import AppKit
 import UserNotifications
@@ -108,13 +109,3 @@ import WidgetKit
     }
 }
 
-enum LowSpacePolicy {
-    /// 10% of the threshold, at least 2 GB.
-    static func rearmMargin(threshold: Int64) -> Int64 { max(2_000_000_000, threshold / 10) }
-    static func evaluate(free: Int64, threshold: Int64, alerted: Bool) -> (notify: Bool, alerted: Bool) {
-        var alerted = alerted
-        if alerted, free >= threshold + rearmMargin(threshold: threshold) { alerted = false }
-        if !alerted, free < threshold { return (true, true) }
-        return (false, alerted)
-    }
-}

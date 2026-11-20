@@ -6,27 +6,27 @@ import Foundation
 // Copyright (c) 2026 Tom Jordan.
 
 /// Something a delete had to leave behind, and what the person can do about it.
-struct LeftBehind: Codable, Sendable, Hashable {
-    let path: String
-    let advice: String
+public struct LeftBehind: Codable, Sendable, Hashable {
+    public let path: String
+    public let advice: String
 }
 
-struct TreeRemoval: Sendable {
-    var removedBytes: Int64 = 0
-    var leftBehind: [LeftBehind] = []
-    var leftCount = 0
-    var rootRemoved = false
-    var complete: Bool { leftCount == 0 }
+public struct TreeRemoval: Sendable {
+    public var removedBytes: Int64 = 0
+    public var leftBehind: [LeftBehind] = []
+    public var leftCount = 0
+    public var rootRemoved = false
+    public var complete: Bool { leftCount == 0 }
 }
 
 /// Deletes a file or folder entry by entry, carrying on past anything it
 /// cannot remove, and says why each leftover stayed. Symlinks are removed, never
 /// followed. Used for rebuildable caches and build output, which gain nothing
 /// from Trash: their space only returns when Trash is emptied.
-enum TreeRemover {
-    static let maxReported = 20
+public enum TreeRemover {
+    public static let maxReported = 20
 
-    static func remove(_ url: URL, keepRoot: Bool = false) -> TreeRemoval {
+    public static func remove(_ url: URL, keepRoot: Bool = false) -> TreeRemoval {
         var result = TreeRemoval()
         var info = stat()
         guard lstat(url.path, &info) == 0 else { result.rootRemoved = true; return result }
@@ -76,7 +76,7 @@ enum TreeRemover {
         }
     }
 
-    static func advice(path: String, errno code: Int32) -> String {
+    public static func advice(path: String, errno code: Int32) -> String {
         let quoted = "'" + path.replacingOccurrences(of: "'", with: "'\\''") + "'"
         let simulator = path.contains("/CoreSimulator/") || path.contains("/Logs/CoreSimulator")
         switch code {
@@ -99,5 +99,17 @@ enum TreeRemover {
         default:
             return String(cString: strerror(code))
         }
+    }
+}
+
+/// One low-space alert per crossing of the threshold; re-arms only once free
+/// space is back above it by max(2 GB, 10%). From Major Tom (MIT, (c) 2026 Tom Jordan).
+public enum LowSpacePolicy {
+    public static func rearmMargin(threshold: Int64) -> Int64 { max(2_000_000_000, threshold / 10) }
+    public static func evaluate(free: Int64, threshold: Int64, alerted: Bool) -> (notify: Bool, alerted: Bool) {
+        var alerted = alerted
+        if alerted, free >= threshold + rearmMargin(threshold: threshold) { alerted = false }
+        if !alerted, free < threshold { return (true, true) }
+        return (false, alerted)
     }
 }
