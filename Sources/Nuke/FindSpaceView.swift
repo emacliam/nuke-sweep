@@ -208,14 +208,25 @@ struct CleanupStorageSummary: View {
                 Text(disk.totalDisk > 0 ? bytes(disk.freeDisk) + " available" : "Storage reading unavailable").font(.system(size: 15, weight: .semibold)).monospacedDigit()
             }
             if disk.totalDisk > 0 {
+                // Used space, with the part the check found reclaimable shown in
+                // green inside it. Idea from Major Tom (MIT, (c) 2026 Tom Jordan).
+                let reclaim = model.fullCheckResultIsCurrent ? (model.triage.report?.totals.regenerableBytes ?? 0) : 0
+                let reclaimFraction = disk.totalDisk > 0 ? min(disk.diskFraction, Double(reclaim) / Double(disk.totalDisk)) : 0
                 GeometryReader { geo in
                     HStack(spacing: 3) {
-                        RoundedRectangle(cornerRadius: 3).fill(pressure.tint).frame(width: max(0, (geo.size.width - 3) * disk.diskFraction))
+                        let width = geo.size.width - 3
+                        HStack(spacing: 0) {
+                            Rectangle().fill(pressure.tint).frame(width: max(0, width * (disk.diskFraction - reclaimFraction)))
+                            Rectangle().fill(Theme.green).frame(width: max(0, width * reclaimFraction))
+                        }.clipShape(RoundedRectangle(cornerRadius: 3))
                         RoundedRectangle(cornerRadius: 3).fill(Theme.rail)
                     }
                 }.frame(width: 170, height: 8)
                     .accessibilityLabel("\(bytes(disk.usedDisk)) used of \(bytes(disk.totalDisk)). \(pressure.spoken)")
                 Text("of " + bytes(disk.totalDisk)).font(.system(size: 10)).foregroundStyle(Theme.secondary)
+                if reclaim > 0 {
+                    Text("\(bytes(reclaim)) can be freed").font(.system(size: 10, weight: .medium)).foregroundStyle(Theme.green)
+                }
                 if pressure.isConcerning {
                     Text(pressure.label)
                         .font(.system(size: 9, weight: .semibold))
