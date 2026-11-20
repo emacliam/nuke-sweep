@@ -1,3 +1,4 @@
+import CoreServices
 import Foundation
 import Darwin
 
@@ -586,7 +587,11 @@ enum PersonalFiles {
                 guard size >= 100_000 || imageExtensions.contains(ext) || partialExtensions.contains(ext) else { continue }
                 var siblings = sizes
                 siblings[entry.name] = nil
-                let facts = Facts(name: entry.name, size: size, touched: entry.touched, modified: entry.modified, parent: parent, inDownloads: inDownloads,
+                // For big files, "last used" also counts Spotlight's last-opened date
+                // and when it was added to its folder, so a file opened recently but
+                // never changed is not called old. After Major Tom (MIT, (c) 2026 Tom Jordan).
+                let touched = size >= 50_000_000 ? lastUsed(directory.appendingPathComponent(entry.name).path, fallback: entry.touched) : entry.touched
+                let facts = Facts(name: entry.name, size: size, touched: touched, modified: entry.modified, parent: parent, inDownloads: inDownloads,
                                   siblingFiles: siblings, siblingFolders: folders, installed: installed, now: options.now)
                 guard let verdict = judge(facts) else { continue }
                 if let originalName = verdict.compareWith, let original = files[originalName] {
@@ -736,5 +741,16 @@ extension PersonalFiles {
               let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
               let images = plist["images"] as? [[String: Any]] else { return [] }
         return Set(images.compactMap { ($0["image-path"] as? String).map { URL(fileURLWithPath: $0).standardizedFileURL.path } })
+    }
+}
+
+extension PersonalFiles {
+    static func lastUsed(_ path: String, fallback: Date) -> Date {
+        var newest = fallback
+        let url = URL(fileURLWithPath: path)
+        if let added = try? url.resourceValues(forKeys: [.addedToDirectoryDateKey]).addedToDirectoryDate { newest = max(newest, added) }
+        if let item = MDItemCreateWithURL(kCFAllocatorDefault, url as CFURL),
+           let opened = MDItemCopyAttribute(item, kMDItemLastUsedDate) as? Date { newest = max(newest, opened) }
+        return newest
     }
 }
