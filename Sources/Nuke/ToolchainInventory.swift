@@ -7,6 +7,38 @@ enum ToolchainInventory {
         let url: URL
         let lastUsed: Date?
         var id: String { url.path }
+        /// The version set as default; never suggested for removal.
+        var isDefault = false
+        /// The tool's own command to remove this version, when it has one.
+        var uninstall: String? {
+            let version = url.lastPathComponent
+            let path = url.path
+            if path.contains("/.nvm/versions/node/") { return "nvm uninstall " + version.replacingOccurrences(of: "v", with: "", options: .anchored) }
+            if path.contains("/.rustup/toolchains/") { return "rustup toolchain uninstall " + version }
+            if path.contains("/.pyenv/versions/") { return "pyenv uninstall " + version }
+            if path.contains("/.rbenv/versions/") { return "rbenv uninstall " + version }
+            if path.contains("/.fnm/") || path.contains("/fnm/node-versions/") { return "fnm uninstall " + version }
+            return nil
+        }
+    }
+
+    /// Default versions: nvm's `alias/default` and rustup's `default_toolchain`.
+    /// Idea from Major Tom (MIT, Copyright (c) 2026 Tom Jordan).
+    static func isDefault(_ url: URL, home: URL) -> Bool {
+        let path = url.path, name = url.lastPathComponent
+        if path.contains("/.nvm/versions/node/"),
+           let alias = try? String(contentsOf: ToolLocations.nvmHome.appendingPathComponent("alias/default"), encoding: .utf8) {
+            let wanted = alias.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "v", with: "", options: .anchored)
+            let have = name.replacingOccurrences(of: "v", with: "", options: .anchored)
+            return !wanted.isEmpty && (have == wanted || have.hasPrefix(wanted + "."))
+        }
+        if path.contains("/.rustup/toolchains/"),
+           let settings = try? String(contentsOf: home.appendingPathComponent(".rustup/settings.toml"), encoding: .utf8),
+           let line = settings.split(separator: "\n").first(where: { $0.hasPrefix("default_toolchain") }) {
+            let value = line.split(separator: "\"").dropFirst().first.map(String.init) ?? ""
+            return !value.isEmpty && name.hasPrefix(value)
+        }
+        return false
     }
 
     static func inspect(home: URL = FileManager.default.homeDirectoryForCurrentUser,
@@ -47,8 +79,9 @@ enum ToolchainInventory {
                           seen.insert(version.resolvingSymlinksInPath().path).inserted else { continue }
                     let lastUsed = MDItemCreateWithURL(kCFAllocatorDefault, executable as CFURL)
                         .flatMap { MDItemCopyAttribute($0, kMDItemLastUsedDate) as? Date }
-                    results.append(Installation(name: name + " " + version.lastPathComponent,
-                                                url: version, lastUsed: lastUsed))
+                    var installation = Installation(name: name + " " + version.lastPathComponent, url: version, lastUsed: lastUsed)
+                    installation.isDefault = isDefault(version, home: home)
+                    results.append(installation)
                 }
             }
         }
@@ -104,6 +137,13 @@ struct ToolchainInventoryView: View {
                             if let date = tool.lastUsed {
                                 Text("Last used: \(date.formatted(date: .abbreviated, time: .omitted))")
                             } else { Text("Last used: Unknown") }
+                            if tool.isDefault {
+                                Text("Default · kept").foregroundStyle(Theme.green)
+                            } else if let command = tool.uninstall {
+                                Button("Copy uninstall command") {
+                                    NSPasteboard.general.clearContents(); NSPasteboard.general.setString(command, forType: .string)
+                                }.buttonStyle(HoverPlain()).foregroundStyle(Theme.orange).help(command)
+                            }
                             Button("Show in Finder") { model.reveal(tool.url) }.buttonStyle(HoverPlain())
                         }
                     }

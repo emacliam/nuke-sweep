@@ -189,7 +189,7 @@ enum CleanupSafety {
         let roots = ["/Library/Caches/Yarn/", "/.npm/_cacache/", "/Library/pnpm/store/", "/Library/Caches/CocoaPods/",
                      "/.gradle/caches/", "/Library/Caches/pip/", "/Library/Caches/Homebrew/", "/Library/Caches/org.swift.swiftpm/",
                      "/Library/Caches/go-build/", "/.cargo/registry/", "/.bun/install/cache/", "/.pub-cache/", "/.m2/repository/",
-                     "/.cache/uv/", "/Library/Caches/Yarn"]
+                     "/.cache/uv/", "/Library/Caches/Yarn", "/.npm/_npx/", "/.yarn/berry/cache/", "/.gradle/wrapper/dists/", "/Library/Caches/ms-playwright/", "/Library/Caches/Cypress/"]
         if roots.contains(where: { root in
             let full = home + root
             return path.hasPrefix(full.hasSuffix("/") ? full : full + "/")

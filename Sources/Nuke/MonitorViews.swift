@@ -313,6 +313,14 @@ struct TrashReview: View {
                                     .buttonStyle(HoverPlain()).foregroundStyle(Theme.secondary)
                                     .help("Show in Finder").accessibilityLabel("Show \(item.name) in Finder")
                             }
+                            if JetBrainsLeftovers.olderVersion(item.url) {
+                                Label("An older version of this IDE than the newest one installed, so likely a leftover.", systemImage: "checkmark.circle")
+                                    .font(.system(size: 10)).foregroundStyle(Theme.green)
+                            }
+                            if XcodeLeftovers.projectGone(item.url) {
+                                Label("Its Xcode project no longer exists, so this is a leftover.", systemImage: "checkmark.circle")
+                                    .font(.system(size: 10)).foregroundStyle(Theme.green)
+                            }
                             if model.pendingChanged.contains(item.id) {
                                 Label("Changed since it was checked, so it is left out until checked again.", systemImage: "arrow.triangle.2.circlepath")
                                     .font(.system(size: 10)).foregroundStyle(Theme.warning)
