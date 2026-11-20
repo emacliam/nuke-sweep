@@ -47,4 +47,16 @@ final class OffloadTests: XCTestCase {
         XCTAssertThrowsError(try OffloadEngine.offload(src, to: src.deletingLastPathComponent(), log: false, trash: { _ in XCTFail("must not trash") }))
         XCTAssertTrue(FileManager.default.fileExists(atPath: src.path))
     }
+
+    func testExistingCopyIsNeverOverwrittenAndOriginalKept() throws {
+        let src = try source(); defer { try? FileManager.default.removeItem(at: src.deletingLastPathComponent()) }
+        let existing = mount.appendingPathComponent("Project")
+        try FileManager.default.createDirectory(at: existing, withIntermediateDirectories: true)
+        try Data("theirs".utf8).write(to: existing.appendingPathComponent("keep.txt"))
+        XCTAssertThrowsError(try OffloadEngine.offload(src, to: mount, log: false, trash: { _ in XCTFail("must not trash") }))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: src.path), "original kept")
+        XCTAssertEqual(try String(contentsOf: existing.appendingPathComponent("keep.txt"), encoding: .utf8), "theirs", "nothing overwritten")
+        let leftovers = try FileManager.default.contentsOfDirectory(atPath: mount.path).filter { $0.hasPrefix(".nuke-partial-") }
+        XCTAssertTrue(leftovers.isEmpty, "no partial copy left behind")
+    }
 }
