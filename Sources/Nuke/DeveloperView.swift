@@ -42,7 +42,7 @@ struct DeveloperView: View {
         content
             // Opening the page after a relaunch measures again rather than saying
             // "Not scanned"; remembered scans make it quick.
-            .onAppear { if model.caches.isEmpty && !model.cacheScanning { model.scanCaches() } }
+            .onAppear { if model.caches.isEmpty && !model.cacheScanning && !["--demo-fixtures", "--snapshot"].contains(where: ProcessInfo.processInfo.arguments.contains) { model.scanCaches() } }
     }
     @ViewBuilder private var content: some View {
         VStack(alignment: .leading, spacing: 16) {
