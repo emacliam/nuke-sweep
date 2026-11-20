@@ -749,6 +749,7 @@ import UserNotifications
     }
     func record(_ title: String, detail: String) {
         activities.insert(.init(date: Date(), title: title, detail: detail), at: 0); activities = Array(activities.prefix(100))
+        HistoryLog.append(title: title, detail: detail)
         if let d = try? JSONEncoder().encode(activities) { UserDefaults.standard.set(d, forKey: "nuke.history") }
     }
     func reveal(_ url: URL) { NSWorkspace.shared.activateFileViewerSelecting([url]) }

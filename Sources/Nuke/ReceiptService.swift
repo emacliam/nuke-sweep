@@ -66,3 +66,25 @@ enum CleanupPreferences {
         set { UserDefaults.standard.set(newValue, forKey: key) }
     }
 }
+
+/// Append-only record of every action, one JSON object per line, kept beside
+/// the app's other data so it survives the in-app list's 100-entry limit.
+/// Idea from Major Tom (MIT, (c) 2026 Tom Jordan).
+enum HistoryLog {
+    static var url: URL { AppEnvironment.supportRoot.appendingPathComponent("history.jsonl") }
+    private static let queue = DispatchQueue(label: "local.nuke.history-log")
+    static func append(title: String, detail: String) {
+        guard NSClassFromString("XCTestCase") == nil else { return }
+        let line: [String: String] = ["date": ISO8601DateFormatter().string(from: Date()), "action": title, "detail": detail]
+        guard var data = try? JSONSerialization.data(withJSONObject: line, options: [.sortedKeys]) else { return }
+        data.append(0x0A)
+        queue.async {
+            try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            if let handle = try? FileHandle(forWritingTo: url) {
+                handle.seekToEndOfFile(); handle.write(data); try? handle.close()
+            } else {
+                try? data.write(to: url)
+            }
+        }
+    }
+}
