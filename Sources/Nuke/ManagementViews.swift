@@ -143,6 +143,7 @@ struct ReceiptsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
+            OffloadedList()
             HStack {
                 SectionTitle(title: "Cleanup receipts", detail: "Local receipts · most recent 200")
                 Spacer()

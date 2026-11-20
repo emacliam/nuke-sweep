@@ -235,6 +235,10 @@ struct PersonalFilesPanel: View {
                 .accessibilityLabel("Preview \(finding.item.name)")
                 .help("Quick Look")
             }
+            Button("Offload…") { model.offload([finding.item.url]) }
+                .buttonStyle(HoverPlain()).font(.system(size: 10, weight: .medium)).foregroundStyle(Theme.orange)
+                .disabled(model.actionBusy)
+                .help("Copy it to another drive, check the copy, then move this one to Trash.")
             Button("Show") { model.reveal(finding.item.url) }
                 .buttonStyle(HoverPlain()).font(.system(size: 10, weight: .medium)).foregroundStyle(Theme.orange)
                 .accessibilityLabel("Show \(finding.item.name) in Finder")

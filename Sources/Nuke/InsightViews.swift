@@ -325,6 +325,9 @@ private struct ProjectGroupSection: View {
                 if pinned { set.remove(group.root.path) } else { set.insert(group.root.path) }
                 ProjectHibernation.pinned = set; pinned.toggle()
             }.buttonStyle(HoverPlain()).font(.system(size: 10)).help("Pinned projects are never called stale.")
+            Button("Offload…") { model.offload([group.root]) }
+                .buttonStyle(HoverPlain()).font(.system(size: 10))
+                .help("Copy the whole project to another drive, check it, then move it to Trash. Hibernate first to copy less.")
             Button("Hide") {
                 var set = ProjectHibernation.hidden; set.insert(group.root.path); ProjectHibernation.hidden = set; hiddenNow = true
             }.buttonStyle(HoverPlain()).font(.system(size: 10)).help("Leaves this project out of the list.")
