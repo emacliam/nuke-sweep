@@ -433,7 +433,8 @@ struct FullCheckCard: View {
             // The check only reads, and remembered scans make a repeat take
             // seconds, so it runs whenever there is no answer on screen,
             // including after a relaunch and without Full Disk Access.
-            if !model.fullCheck.running, !model.fullCheckResultIsCurrent, !model.fullCheck.stopped, model.canStartFullCheck {
+            let demo = ["--demo-fixtures", "--snapshot"].contains(where: ProcessInfo.processInfo.arguments.contains)
+            if !demo, !model.fullCheck.running, !model.fullCheckResultIsCurrent, !model.fullCheck.stopped, model.canStartFullCheck {
                 model.startFullCheck()
             }
         }

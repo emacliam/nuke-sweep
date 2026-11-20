@@ -176,9 +176,10 @@ struct ContentView: View {
             model.startServices()
             let arguments = ProcessInfo.processInfo.arguments
             if !onboardingComplete, FullCheckHistory.last == nil,
-               !["--demo-fixtures", "--capture", "--capture-fresh", "--measure-ui"].contains(where: arguments.contains) {
+               !["--demo-fixtures", "--capture", "--capture-fresh", "--measure-ui", "--snapshot"].contains(where: arguments.contains) {
                 showOnboarding = true
             }
+            if let name = Snapshotter.value("--snapshot-page"), let page = Page(rawValue: name) { model.page = page }
             if ProcessInfo.processInfo.arguments.contains("--capture"),
                let index = ProcessInfo.processInfo.arguments.firstIndex(of: "--capture-page"),
                index + 1 < ProcessInfo.processInfo.arguments.count,
