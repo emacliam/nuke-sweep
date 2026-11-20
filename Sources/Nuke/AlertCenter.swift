@@ -37,8 +37,10 @@ struct NukeAlert: Identifiable, Codable {
     func registerActions() {
         let actions = [UNNotificationAction(identifier: "review", title: "Review", options: .foreground), UNNotificationAction(identifier: "ignore", title: "Ignore", options: []), UNNotificationAction(identifier: "later", title: "Remind in an hour", options: [])]
         let undo = UNNotificationAction(identifier: "undo-cleanup", title: "Put everything back", options: .foreground)
+        let freeUp = UNNotificationAction(identifier: "free-up", title: "Free up space", options: .foreground)
         UNUserNotificationCenter.current().setNotificationCategories([
             UNNotificationCategory(identifier: "nuke.alert", actions: actions, intentIdentifiers: [], options: []),
+            UNNotificationCategory(identifier: "nuke.lowspace", actions: [freeUp] + actions, intentIdentifiers: [], options: []),
             UNNotificationCategory(identifier: "nuke.cleanup", actions: [undo] + actions, intentIdentifiers: [], options: [])
         ])
     }
@@ -54,6 +56,17 @@ struct NukeAlert: Identifiable, Codable {
         return post(key: "growth:" + root.standardizedFileURL.path, title: root.lastPathComponent + " grew", detail: "+" + bytes(after - before) + " since the previous complete measurement. Review what changed before cleaning.", root: root, enabled: enabled)
     }
     static func significantGrowth(before: Int64, after: Int64) -> Bool { after > before && (after - before >= 1_000_000_000 || (after - before >= 100_000_000 && Double(after - before) >= Double(max(1, before)) * 0.2)) }
+    /// From the low-space notification: straight to the Free up review when a
+    /// current answer exists, otherwise run the check first.
+    func freeUp() {
+        guard let model else { return }
+        model.showMainWindow(.findSpace)
+        if model.fullCheckResultIsCurrent, let report = model.triage.report, !report.regenerable.isEmpty {
+            model.reviewTrash(report.regenerable)
+        } else {
+            model.startFullCheck()
+        }
+    }
     func review(_ alert: NukeAlert) {
         guard let model else { pending = alert; return }
         switch Self.route(alert, scanRoots: model.features.scans.map(\.root)) {
@@ -103,7 +116,7 @@ struct NukeAlert: Identifiable, Codable {
     private func request(_ alert: NukeAlert, reminder: Bool = false) -> UNNotificationRequest {
         let content = UNMutableNotificationContent(); content.title = (reminder ? "Reminder: " : "Nuke Sweep: ") + alert.title
         content.body = alert.detail + (reminder ? " Measured " + alert.date.formatted() + "." : "")
-        content.categoryIdentifier = alert.receiptID == nil ? "nuke.alert" : "nuke.cleanup"; content.userInfo = ["alertID": alert.id.uuidString]
+        content.categoryIdentifier = alert.receiptID != nil ? "nuke.cleanup" : alert.key == "storage" ? "nuke.lowspace" : "nuke.alert"; content.userInfo = ["alertID": alert.id.uuidString]
         return UNNotificationRequest(identifier: reminder ? "remind-" + alert.key : alert.id.uuidString, content: content, trigger: reminder ? UNTimeIntervalNotificationTrigger(timeInterval: 3600, repeats: false) : nil)
     }
     private func persist() {
@@ -122,7 +135,7 @@ struct NukeAlert: Identifiable, Codable {
         nonisolated(unsafe) let finish = completionHandler
         MainActor.assumeIsolated {
             if let record = self.records.first(where: { $0.id.uuidString == id }) {
-                switch action { case "ignore": self.ignore(record); case "later": self.later(record); case "undo-cleanup": self.undo(record); default: self.review(record) }
+                switch action { case "ignore": self.ignore(record); case "later": self.later(record); case "undo-cleanup": self.undo(record); case "free-up": self.freeUp(); default: self.review(record) }
             }
             finish()
         }
