@@ -64,7 +64,9 @@ struct RebuildCost: Equatable, Sendable {
         switch id {
         case "xcode":
             return .init(effort: .slow, estimate: String(localized: "minutes per project"), action: String(localized: "Xcode rebuilds on next build"))
-        case "npm", "pnpm", "yarn", "bun", "npx", "yarn-berry", "expo", "playwright", "cypress":
+        case "pnpm":
+            return .init(effort: .slow, estimate: String(localized: "every project reinstalls"), action: String(localized: "prefer pnpm store prune, which removes only unused packages"))
+        case "npm", "yarn", "bun", "npx", "yarn-berry", "expo", "playwright", "cypress":
             return .init(effort: .quick, estimate: String(localized: "seconds to minutes"), action: String(localized: "re-downloaded on next install"))
         case "pip", "uv", "poetry":
             return .init(effort: .quick, estimate: String(localized: "seconds to minutes"), action: String(localized: "re-downloaded on next install"))

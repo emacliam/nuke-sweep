@@ -84,3 +84,24 @@ enum AndroidImages {
         return images.sorted { $0.size > $1.size }
     }
 }
+
+/// App caches whose loss costs more than a slower first launch.
+/// From Major Tom's catalogue (MIT, Copyright (c) 2026 Tom Jordan).
+enum KnownCacheNotes {
+    static let notes: [String: String] = [
+        "ms-playwright": "Playwright browsers: tests download them again with npx playwright install.",
+        "Cypress": "Cypress binary: downloaded again on the next cypress run.",
+        "cargo-xwin": "Windows SDK for cross-compiling: downloaded again on the next cargo xwin build.",
+        "dotslash": "Tool binaries fetched by DotSlash: downloaded again on demand.",
+        "Google": "Includes Chrome and Android Studio caches.",
+        "pnpm": "pnpm metadata cache, not the package store.",
+        "JetBrains": "IDE indexes: each project re-indexes on next open.",
+    ]
+
+    static func note(_ url: URL) -> String? {
+        let path = url.standardizedFileURL.path
+        guard let range = path.range(of: "/Library/Caches/") else { return nil }
+        let name = path[range.upperBound...].split(separator: "/").first.map(String.init) ?? ""
+        return notes[name]
+    }
+}

@@ -313,6 +313,9 @@ struct TrashReview: View {
                                     .buttonStyle(HoverPlain()).foregroundStyle(Theme.secondary)
                                     .help("Show in Finder").accessibilityLabel("Show \(item.name) in Finder")
                             }
+                            if let note = KnownCacheNotes.note(item.url) {
+                                Text(verbatim: note).font(.system(size: 10)).foregroundStyle(Theme.secondary)
+                            }
                             if JetBrainsLeftovers.olderVersion(item.url) {
                                 Label("An older version of this IDE than the newest one installed, so likely a leftover.", systemImage: "checkmark.circle")
                                     .font(.system(size: 10)).foregroundStyle(Theme.green)
