@@ -27,6 +27,7 @@ struct ApplicationsView: View {
             HStack { Button("Inspect installed apps") { features.scanApps() }.buttonStyle(PrimaryButton()).disabled(features.appLoading); Button("Find possible leftovers") { features.findLeftovers() }.buttonStyle(QuietButton()).disabled(features.appLoading); Spacer(); Text("/Applications + ~/Applications").font(.system(size: 10)).foregroundStyle(Theme.secondary) }
             if features.appLoading { BusyLine(text: "Queued or reading app identities and related locations…") }
             if !features.appNote.isEmpty { Text(features.appNote).font(.system(size: 11)).foregroundStyle(Theme.secondary) }
+            OwnAppPrefixesField()
             if !features.apps.isEmpty || features.leftoversScanned {
                 HStack(alignment: .top, spacing: 24) {
                     VStack(alignment: .leading, spacing: 12) {
@@ -270,5 +271,23 @@ struct ReceiptsView: View {
         .padding(12)
         .background(Theme.rail.opacity(0.45), in: RoundedRectangle(cornerRadius: 9))
         .overlay(RoundedRectangle(cornerRadius: 9).stroke(Theme.line))
+    }
+}
+
+/// Bundle-ID prefixes of apps you build, so their data is never called a leftover.
+struct OwnAppPrefixesField: View {
+    @State private var text = LeftoverPolicy.ownPrefixes.joined(separator: ", ")
+    var body: some View {
+        HStack(spacing: 8) {
+            Text("Your own app IDs").font(.system(size: 11)).foregroundStyle(Theme.secondary)
+            TextField("com.yourname., com.yourcompany.", text: $text)
+                .textFieldStyle(.roundedBorder).font(.system(size: 11)).frame(maxWidth: 320)
+                .onSubmit { save() }
+                .help("Data for apps whose bundle ID starts with these is never listed as a leftover. Press Return to save.")
+        }
+        .onDisappear { save() }
+    }
+    private func save() {
+        LeftoverPolicy.ownPrefixes = text.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
     }
 }

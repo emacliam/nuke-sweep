@@ -101,7 +101,12 @@ enum AppInventory {
         return report
     }
     static func leftovers(home: URL = FileManager.default.homeDirectoryForCurrentUser, installed: [InstalledApp], token: ScanCancellation = ScanCancellation(), reportOnly: Bool = false) -> InventoryReport {
-        let ids = Set(installed.map(\.bundleID)), roots = ["Library/Caches", "Library/Preferences", "Library/Logs"]
+        let ids = Set(installed.map(\.bundleID)), roots = ["Library/Caches", "Library/Preferences", "Library/Logs", "Library/Application Support", "Library/Containers"]
+        // Vendors with an installed app (com.google.Chrome → com.google): their
+        // other folders are often shared helpers, not leftovers.
+        let vendors = Set(installed.map { $0.bundleID.split(separator: ".").prefix(2).joined(separator: ".") })
+        let own = LeftoverPolicy.ownPrefixes
+        let recent = Date().addingTimeInterval(-Double(LeftoverPolicy.recentDays) * 86_400)
         var report = InventoryReport()
         let deadline = Date().addingTimeInterval(20)
         if installed.isEmpty { report.notes.append("No installed apps were available in the scanned roots. All ownership matches are uncertain.") }
@@ -114,11 +119,32 @@ enum AppInventory {
                 if Date() >= deadline { report.notes.append("Time limit reached; results are partial."); return report }
                 let id = url.pathExtension == "plist" ? url.deletingPathExtension().lastPathComponent : url.lastPathComponent
                 guard id.hasPrefix("com.") || id.hasPrefix("org.") || id.hasPrefix("io."), !id.hasPrefix("com.apple."), !ids.contains(id) else { continue }
+                // Stricter, after Major Tom (MIT, (c) 2026 Tom Jordan): installed anywhere
+                // per LaunchServices, same vendor as an installed app, your own
+                // prefixes, or touched recently: not offered.
+                guard !LeftoverPolicy.installedAnywhere(id),
+                      !vendors.contains(id.split(separator: ".").prefix(2).joined(separator: ".")),
+                      !own.contains(where: { id.hasPrefix($0) }),
+                      (try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate).map({ $0 < recent }) ?? true else { continue }
                 if let item = InventoryService.measure(url, token: token, limit: 100_000, deadline: min(deadline, Date().addingTimeInterval(5))) { report.entries.append(InventoryEntry(item: item, category: "Unmatched app identifier", owner: id, explanation: "No exact identifier in the scanned Applications folders. An app elsewhere, helper, or shared vendor service may still use this item. This is not proof of an orphan.", removable: !reportOnly)) }
                 if report.entries.count >= 100 { report.notes.append("Stopped at 100 unmatched candidates; inspect remaining items in Finder."); return report }
             }
         }
         report.notes.append("Applications outside /Applications and ~/Applications are not in this match. These candidates require manual ownership review.")
         return report
+    }
+}
+
+enum LeftoverPolicy {
+    static let recentDays = 30
+    /// Bundle-ID prefixes of apps you build yourself (com.yourname.), never called leftovers.
+    static var ownPrefixes: [String] {
+        get { UserDefaults.standard.stringArray(forKey: "nuke.ownBundlePrefixes") ?? [] }
+        set { UserDefaults.standard.set(newValue, forKey: "nuke.ownBundlePrefixes") }
+    }
+    /// LaunchServices knows apps anywhere on the Mac, not only in Applications.
+    static func installedAnywhere(_ bundleID: String) -> Bool {
+        guard let urls = LSCopyApplicationURLsForBundleIdentifier(bundleID as CFString, nil)?.takeRetainedValue() as? [URL] else { return false }
+        return !urls.isEmpty
     }
 }
