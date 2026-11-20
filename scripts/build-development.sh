@@ -12,7 +12,7 @@ python3 - "$APP" <<'PY'
 import plistlib,sys,hashlib,subprocess,json
 from pathlib import Path
 root=Path(sys.argv[1])
-info={'CFBundleExecutable':'Nuke','CFBundleIdentifier':'local.nuke.mac.development','CFBundleName':'Nuke Sweep Development','CFBundleDisplayName':'Nuke Sweep Development','CFBundlePackageType':'APPL','CFBundleShortVersionString':'0.9.0','CFBundleVersion':'11.1','LSMinimumSystemVersion':'14.0','NSHighResolutionCapable':True,'NSPrincipalClass':'NSApplication','CFBundleURLTypes':[{'CFBundleURLSchemes':['nuke-development']}],'NukeBuildChannel':'development'}
+info={'CFBundleExecutable':'Nuke','CFBundleIdentifier':'local.nuke.mac.development','CFBundleName':'Nuke Sweep Development','CFBundleDisplayName':'Nuke Sweep Development','CFBundlePackageType':'APPL','CFBundleShortVersionString':open('VERSION').read().split()[0],'CFBundleVersion':open('VERSION').read().split()[1]+'.1','LSMinimumSystemVersion':'14.0','NSHighResolutionCapable':True,'NSPrincipalClass':'NSApplication','CFBundleURLTypes':[{'CFBundleURLSchemes':['nuke-development']}],'NukeBuildChannel':'development'}
 info['CFBundleDevelopmentRegion'] = 'en'
 info['CFBundleLocalizations'] = ['en', 'es']
 (root/'Contents/Info.plist').write_bytes(plistlib.dumps(info))
