@@ -261,6 +261,7 @@ private struct ProjectGroupSection: View {
     @Environment(AppModel.self) var model
     @State private var lastActivity: Date?
     @State private var restore: [String] = []
+    @State private var gitWarnings: [String] = []
     @State private var pinned = false
     @State private var hiddenNow = false
     let group: ProjectGroup
@@ -298,9 +299,9 @@ private struct ProjectGroupSection: View {
             let root = group.root
             let generated = Set(group.entries.map(\.item.name))
             let found = await Task.detached(priority: .utility) {
-                (ProjectHibernation.lastActivity(root, generated: generated), ProjectHibernation.restoreCommands(root))
+                (ProjectHibernation.lastActivity(root, generated: generated), ProjectHibernation.restoreCommands(root), ProjectHibernation.gitWarnings(root))
             }.value
-            lastActivity = found.0; restore = found.1
+            lastActivity = found.0; restore = found.1; gitWarnings = found.2
             pinned = ProjectHibernation.pinned.contains(root.path)
         }
     }
@@ -314,6 +315,11 @@ private struct ProjectGroupSection: View {
                 Text(days >= ProjectHibernation.staleDays && !pinned ? "Untouched for \(days) days" : "Last worked on \(days) days ago")
                     .font(.system(size: 10, weight: .medium))
                     .foregroundStyle(days >= ProjectHibernation.staleDays && !pinned ? Theme.warning : Theme.secondary)
+            }
+            if !gitWarnings.isEmpty {
+                Label(gitWarnings.joined(separator: " · "), systemImage: "exclamationmark.triangle")
+                    .font(.system(size: 10)).foregroundStyle(Theme.warning)
+                    .help("Hibernating only removes dependencies and build output, so your work is untouched; this is worth knowing before you set the project aside or offload it.")
             }
             if !restore.isEmpty {
                 Text("To bring it back: " + restore.joined(separator: ", then ")).font(.system(size: 10)).foregroundStyle(Theme.secondary)

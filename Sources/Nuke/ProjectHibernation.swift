@@ -46,6 +46,26 @@ enum ProjectHibernation {
         return newest
     }
 
+    /// Git warnings worth knowing before setting a project aside: uncommitted
+    /// changes, commits not pushed, no remote. Information only; git is read.
+    static func gitWarnings(_ root: URL) -> [String] {
+        guard FileManager.default.fileExists(atPath: root.appendingPathComponent(".git").path),
+              !ToolLocations.isPlaceholder("/usr/bin/git") else { return [] }
+        func git(_ arguments: [String]) -> CommandResult {
+            CommandRunner.run("/usr/bin/git", ["--no-optional-locks", "-C", root.path] + arguments, timeout: 5)
+        }
+        var warnings: [String] = []
+        let status = git(["status", "--porcelain"])
+        if status.status == 0, !status.output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { warnings.append("uncommitted changes") }
+        let ahead = git(["rev-list", "--count", "@{upstream}..HEAD"])
+        if ahead.status == 0, let count = Int(ahead.output.trimmingCharacters(in: .whitespacesAndNewlines)), count > 0 {
+            warnings.append("\(count) commit\(count == 1 ? "" : "s") not pushed")
+        } else if ahead.status != 0, git(["remote"]).output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            warnings.append("no remote: this is the only copy")
+        }
+        return warnings
+    }
+
     // Pinned projects are never called stale; hidden ones are not listed.
     private static let pinnedKey = "nuke.projects.pinned", hiddenKey = "nuke.projects.hidden"
     static var pinned: Set<String> {

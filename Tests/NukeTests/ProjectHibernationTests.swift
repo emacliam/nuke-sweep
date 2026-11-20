@@ -25,3 +25,18 @@ final class ProjectHibernationTests: XCTestCase {
         XCTAssertLessThan(activity, Date(timeIntervalSinceNow: -100 * 86_400), "a fresh node_modules does not make the project active")
     }
 }
+
+final class ProjectGitWarningTests: XCTestCase {
+    func testWarnsAboutUncommittedWorkAndNoRemote() throws {
+        let root = URL(fileURLWithPath: "/tmp/nuke-gitwarn-" + UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        func git(_ args: String...) { _ = CommandRunner.run("/usr/bin/git", ["-C", root.path] + args, timeout: 20) }
+        git("init", "-q", "-b", "main")
+        git("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "base")
+        try Data("x".utf8).write(to: root.appendingPathComponent("work.txt"))
+        let warnings = ProjectHibernation.gitWarnings(root)
+        XCTAssertTrue(warnings.contains("uncommitted changes"), warnings.joined())
+        XCTAssertTrue(warnings.contains { $0.hasPrefix("no remote") }, warnings.joined())
+    }
+}
