@@ -30,7 +30,10 @@ enum ReceiptService {
                 for proof in proofs where covers(item, proof.duplicate.url) {
                     if try !DuplicateFinder.sameContents(proof.keeper, proof.duplicate) { throw DuplicateFailure(message: "Duplicate contents changed. Run detection again.") }
                 }
-                if deleteOutright.contains(item.id) {
+                // Re-confirmed now, not trusted from the review: only something that
+                // still classifies as rebuildable is deleted; anything else goes to
+                // Trash. After Major Tom (MIT, (c) 2026 Tom Jordan).
+                if deleteOutright.contains(item.id), CleanupEvidenceService.classify(item.url).kind.deletesOutright {
                     // Rebuildable: deleted now, so the space comes back now.
                     let removal = TreeRemover.remove(item.url)
                     if removal.complete && removal.rootRemoved {
