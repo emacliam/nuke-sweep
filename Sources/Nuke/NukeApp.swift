@@ -125,6 +125,7 @@ struct NukeApp: App {
             DispatchQueue.main.asyncAfter(deadline: .now() + 2) { Thread.sleep(forTimeInterval: 3) }
         }
         NSApp.setActivationPolicy(.regular); NSApp.activate(ignoringOtherApps: true)
+        if let folder = Snapshotter.folder { Snapshotter.begin(folder) }
         if ProcessInfo.processInfo.arguments.contains("--compact") {
             NSApp.windows.first?.setContentSize(NSSize(width: 980, height: 650))
         }
@@ -184,5 +185,51 @@ struct TitleTogglesDisclosure: DisclosureGroupStyle {
             .accessibilityValue(configuration.isExpanded ? "Expanded" : "Collapsed")
             if configuration.isExpanded { configuration.content }
         }
+    }
+}
+
+/// Development screenshots without screen-recording permission: the app draws
+/// its own windows into PNGs. `--snapshot DIR` with optional `--snapshot-page
+/// <Page raw value>`, `--snapshot-label NAME`, `--snapshot-delay SECONDS`,
+/// `--appearance dark|light` and `--quit-after-snapshot`. An open sheet is
+/// saved alongside as NAME-sheet.png.
+@MainActor enum Snapshotter {
+    static func value(_ flag: String) -> String? {
+        let arguments = ProcessInfo.processInfo.arguments
+        guard let index = arguments.firstIndex(of: flag), index + 1 < arguments.count else { return nil }
+        return arguments[index + 1]
+    }
+    static var folder: URL? { value("--snapshot").map { URL(fileURLWithPath: $0, isDirectory: true) } }
+
+    static func begin(_ folder: URL) {
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        switch value("--appearance") {
+        case "dark": NSApp.appearance = NSAppearance(named: .darkAqua)
+        case "light": NSApp.appearance = NSAppearance(named: .aqua)
+        default: break
+        }
+        let delay = value("--snapshot-delay").flatMap(Double.init) ?? 5
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+            let page = value("--snapshot-page") ?? "page"
+            let label = value("--snapshot-label") ?? (page.lowercased().replacingOccurrences(of: " ", with: "-") + "-" + (value("--appearance") ?? "system"))
+            save(folder: folder, label: label)
+            if ProcessInfo.processInfo.arguments.contains("--quit-after-snapshot") {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { NSApp.terminate(nil) }
+            }
+        }
+    }
+
+    static func save(folder: URL, label: String) {
+        guard let window = NSApp.windows.filter({ $0.isVisible && $0.contentView != nil && $0.sheetParent == nil })
+            .max(by: { $0.frame.width * $0.frame.height < $1.frame.width * $1.frame.height }) else { return }
+        write(window, to: folder.appendingPathComponent(label + ".png"))
+        if let sheet = window.attachedSheet { write(sheet, to: folder.appendingPathComponent(label + "-sheet.png")) }
+    }
+
+    private static func write(_ window: NSWindow, to url: URL) {
+        guard let view = window.contentView?.superview ?? window.contentView,
+              let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return }
+        view.cacheDisplay(in: view.bounds, to: rep)
+        try? rep.representation(using: .png, properties: [:])?.write(to: url)
     }
 }

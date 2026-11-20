@@ -138,7 +138,8 @@ struct ProjectsView: View {
     /// The sweep filters the list rather than selecting anything: the user still
     /// reviews whatever they choose from it.
     private var visibleGroups: [ProjectGroup] {
-        showingStaleOnly ? staleSweep.groups : features.projects
+        let hidden = ProjectHibernation.hidden
+        return (showingStaleOnly ? staleSweep.groups : features.projects).filter { !hidden.contains($0.root.path) }
     }
     private var entries: [InventoryEntry] {
         features.projects.flatMap(\.entries).filter { (!onlyNodeModules || $0.item.name == "node_modules") && $0.item.size >= minimumBytes }.sorted { $0.item.size > $1.item.size }
@@ -258,6 +259,11 @@ struct ProjectsView: View {
 }
 private struct ProjectGroupSection: View {
     @Environment(AppModel.self) var model
+    @State private var lastActivity: Date?
+    @State private var restore: [String] = []
+    @State private var gitWarnings: [String] = []
+    @State private var pinned = false
+    @State private var hiddenNow = false
     let group: ProjectGroup
     let entries: [InventoryEntry]
     let measured: Date?
@@ -285,7 +291,57 @@ private struct ProjectGroupSection: View {
                     .accessibilityLabel("Reveal \(group.root.lastPathComponent) in Finder")
             }
             Text(group.rebuildGuidance).font(.system(size: 10)).foregroundStyle(Theme.secondary).fixedSize(horizontal: false, vertical: true)
+            hibernation
             InventoryList(entries: entries, measured: measured)
+        }
+        .opacity(hiddenNow ? 0.4 : 1)
+        .task(id: group.root) {
+            let root = group.root
+            let generated = Set(group.entries.map(\.item.name))
+            let found = await Task.detached(priority: .utility) {
+                (ProjectHibernation.lastActivity(root, generated: generated), ProjectHibernation.restoreCommands(root), ProjectHibernation.gitWarnings(root))
+            }.value
+            lastActivity = found.0; restore = found.1; gitWarnings = found.2
+            pinned = ProjectHibernation.pinned.contains(root.path)
+        }
+    }
+
+    /// Hibernate: strip what rebuilds and keep the source, with the exact
+    /// commands that bring it back. Idea from Major Tom (MIT, (c) 2026 Tom Jordan).
+    @ViewBuilder private var hibernation: some View {
+        let days = lastActivity.map { Int(Date().timeIntervalSince($0) / 86_400) }
+        HStack(spacing: 10) {
+            if let days {
+                Text(days >= ProjectHibernation.staleDays && !pinned ? "Untouched for \(days) days" : "Last worked on \(days) days ago")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(days >= ProjectHibernation.staleDays && !pinned ? Theme.warning : Theme.secondary)
+            }
+            if !gitWarnings.isEmpty {
+                Label(gitWarnings.joined(separator: " · "), systemImage: "exclamationmark.triangle")
+                    .font(.system(size: 10)).foregroundStyle(Theme.warning)
+                    .help("Hibernating only removes dependencies and build output, so your work is untouched; this is worth knowing before you set the project aside or offload it.")
+            }
+            if !restore.isEmpty {
+                Text("To bring it back: " + restore.joined(separator: ", then ")).font(.system(size: 10)).foregroundStyle(Theme.secondary)
+                    .lineLimit(1).truncationMode(.tail).help(restore.joined(separator: "\n"))
+            }
+            Spacer()
+            Button(pinned ? "Unpin" : "Pin") {
+                var set = ProjectHibernation.pinned
+                if pinned { set.remove(group.root.path) } else { set.insert(group.root.path) }
+                ProjectHibernation.pinned = set; pinned.toggle()
+            }.buttonStyle(HoverPlain()).font(.system(size: 10)).help("Pinned projects are never called stale.")
+            Button("Offload…") { model.offload([group.root]) }
+                .buttonStyle(HoverPlain()).font(.system(size: 10))
+                .help("Copy the whole project to another drive, check it, then move it to Trash. Hibernate first to copy less.")
+            Button("Hide") {
+                var set = ProjectHibernation.hidden; set.insert(group.root.path); ProjectHibernation.hidden = set; hiddenNow = true
+            }.buttonStyle(HoverPlain()).font(.system(size: 10)).help("Leaves this project out of the list.")
+            if !group.entries.isEmpty {
+                Button("Hibernate…") { model.reviewTrash(group.entries.map(\.item)) }
+                    .buttonStyle(QuietButton())
+                    .help("Removes its dependencies and build output and keeps the source. " + (restore.isEmpty ? "" : "Bring it back with: " + restore.joined(separator: ", then ")))
+            }
         }
     }
 }

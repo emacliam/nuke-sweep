@@ -43,6 +43,20 @@ private struct PrimaryButtonBody: View {
     @Environment(\.isEnabled) private var isEnabled
     @State private var hovered = false
     var body: some View {
+        // Self-snapshots draw the view tree without the compositor, which leaves
+        // glass blank, so snapshot runs use the flat style.
+        if #available(macOS 26.0, *), Snapshotter.folder == nil {
+            // Liquid Glass on macOS 26, tinted with the brand colour; the flat
+            // fill stays on earlier systems. After Major Tom (MIT, (c) 2026 Tom Jordan).
+            configuration.label.font(.system(size: 12, weight: .semibold)).padding(.horizontal, 15).padding(.vertical, 10)
+                .foregroundStyle(Theme.onPrimary)
+                .glassEffect(.regular.tint(Theme.primaryFill).interactive(), in: .rect(cornerRadius: 9))
+                .opacity(isEnabled ? (configuration.isPressed ? 0.85 : 1) : 0.4)
+        } else {
+            flat
+        }
+    }
+    private var flat: some View {
         configuration.label.font(.system(size: 12, weight: .semibold)).padding(.horizontal, 15).padding(.vertical, 10)
             .foregroundStyle(Theme.onPrimary)
             .background(Theme.primaryFill.opacity(configuration.isPressed ? 0.8 : 1), in: RoundedRectangle(cornerRadius: 7))
@@ -176,9 +190,10 @@ struct ContentView: View {
             model.startServices()
             let arguments = ProcessInfo.processInfo.arguments
             if !onboardingComplete, FullCheckHistory.last == nil,
-               !["--demo-fixtures", "--capture", "--capture-fresh", "--measure-ui"].contains(where: arguments.contains) {
+               !["--demo-fixtures", "--capture", "--capture-fresh", "--measure-ui", "--snapshot"].contains(where: arguments.contains) {
                 showOnboarding = true
             }
+            if let name = Snapshotter.value("--snapshot-page"), let page = Page(rawValue: name) { model.page = page }
             if ProcessInfo.processInfo.arguments.contains("--capture"),
                let index = ProcessInfo.processInfo.arguments.firstIndex(of: "--capture-page"),
                index + 1 < ProcessInfo.processInfo.arguments.count,

@@ -340,7 +340,7 @@ extension AppModel {
     /// Everything the three scans measured, merged for one ranking.
     func fullCheckItems() -> [DiskItem] {
         let projects = fullCheck.projectsSkipped ? [] : features.projects.flatMap(\.entries).map(\.item)
-        return FullCheckHistory.merge(caches.compactMap(\.item) + projects + (personal.report?.strayBuilds ?? []) + quick.entries.map(\.item))
+        return FullCheckHistory.merge(caches.filter { !$0.rule.reportOnly }.compactMap(\.item) + projects + (personal.report?.strayBuilds ?? []) + quick.entries.map(\.item))
     }
 }
 
@@ -433,7 +433,8 @@ struct FullCheckCard: View {
             // The check only reads, and remembered scans make a repeat take
             // seconds, so it runs whenever there is no answer on screen,
             // including after a relaunch and without Full Disk Access.
-            if !model.fullCheck.running, !model.fullCheckResultIsCurrent, !model.fullCheck.stopped, model.canStartFullCheck {
+            let demo = ["--demo-fixtures", "--snapshot"].contains(where: ProcessInfo.processInfo.arguments.contains)
+            if !demo, !model.fullCheck.running, !model.fullCheckResultIsCurrent, !model.fullCheck.stopped, model.canStartFullCheck {
                 model.startFullCheck()
             }
         }
@@ -458,7 +459,7 @@ struct FullCheckCard: View {
                     .buttonStyle(PrimaryButton()).disabled(!model.canStartFullCheck)
             }
             VStack(alignment: .leading, spacing: 9) {
-                promise("arrow.uturn.backward.circle", "Nothing is deleted. Reviewed items move to Trash, with a receipt and a way back.")
+                promise("arrow.uturn.backward.circle", CleanupPreferences.deleteRebuildable ? "Caches and build output you approve are deleted: they rebuild themselves. Your own files only ever go to Trash, with a receipt and a way back." : "Nothing is deleted. Reviewed items move to Trash, with a receipt and a way back.")
                 promise("exclamationmark.shield", "Anything with no copy anywhere else is held back and named, not offered.")
                 if model.autoCleanEnabled && !model.autoCleanDryRun {
                     promise("checkmark.shield", "Nothing is selected for you, apart from the automatic cleanup you switched on. Every item is rechecked at the moment it moves.")
@@ -522,7 +523,7 @@ struct FullCheckCard: View {
                     }
                     .font(.system(size: 19, weight: .semibold)).fixedSize(horizontal: false, vertical: true)
                     if totals.regenerableBytes > 0 {
-                        Text("Caches, dependencies and build output nothing is using. They go to Trash first, with a receipt and a way back.")
+                        Text(CleanupPreferences.deleteRebuildable ? "Caches, dependencies and build output nothing is using. They are deleted, so the space comes back at once, and rebuild themselves when needed." : "Caches, dependencies and build output nothing is using. They go to Trash first, with a receipt and a way back.")
                             .font(.system(size: 11)).foregroundStyle(Theme.secondary).fixedSize(horizontal: false, vertical: true)
                     }
                 }
@@ -638,7 +639,14 @@ struct FullCheckCard: View {
                 }.font(.system(size: 12))
             }
             HStack {
-                Text("Sizes are measured, not promised: space returns when Trash is emptied.")
+                VStack(alignment: .leading, spacing: 2) {
+                    // When, and how long it took. From Major Tom (MIT, (c) 2026 Tom Jordan).
+                    if let started = model.fullCheck.started, let finished = model.fullCheck.finished {
+                        Text("Checked \(finished.formatted(.relative(presentation: .named))) in \(String(format: "%.1f", finished.timeIntervalSince(started))) s")
+                            .monospacedDigit()
+                    }
+                    Text(CleanupPreferences.deleteRebuildable ? "Sizes are measured, not promised. Freed space is measured on the disk afterwards." : "Sizes are measured, not promised: space returns when Trash is emptied.")
+                }
                     .font(.system(size: 10)).foregroundStyle(Theme.secondary)
                 Spacer()
                 Button("Check again") { model.startFullCheck() }.buttonStyle(QuietButton()).disabled(!model.canStartFullCheck)

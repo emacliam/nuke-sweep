@@ -119,13 +119,17 @@ final class FeatureTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: root) }
         let caches = root.appendingPathComponent("Library/Caches")
         try FileManager.default.createDirectory(at: caches, withIntermediateDirectories: true)
-        for id in ["com.example.installed", "com.example.unmatched"] {
-            try Data([1, 2, 3]).write(to: caches.appendingPathComponent(id))
+        let old = Date(timeIntervalSinceNow: -60 * 86_400)
+        // Installed; same vendor as an installed app; a recent one; and a real leftover.
+        for id in ["com.example.installed", "com.example.helper", "com.nukerecent.app", "com.nukeoldvendor.unmatched"] {
+            let url = caches.appendingPathComponent(id)
+            try Data([1, 2, 3]).write(to: url)
+            if id != "com.nukerecent.app" { try FileManager.default.setAttributes([.modificationDate: old], ofItemAtPath: url.path) }
         }
         let app = InstalledApp(url: root.appendingPathComponent("Installed.app"), name: "Installed",
                                bundleID: "com.example.installed", version: "1")
         let report = AppInventory.leftovers(home: root, installed: [app], reportOnly: true)
-        XCTAssertEqual(report.entries.map(\.owner), ["com.example.unmatched"])
+        XCTAssertEqual(report.entries.map(\.owner), ["com.nukeoldvendor.unmatched"])
         XCTAssertEqual(report.entries.map(\.removable), [false])
     }
     func testDeviceInspectionHonorsPreCancelledTraversal() throws {

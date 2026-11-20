@@ -8,6 +8,7 @@ import NukeMetrics
 struct DeveloperView: View {
     @Environment(AppModel.self) var model
     @State private var expanded: String?
+    @State private var detailRule: CacheRule?
     @State private var selected: Set<String> = []
 
     /// Locations with something measured in them, largest first.
@@ -42,7 +43,8 @@ struct DeveloperView: View {
         content
             // Opening the page after a relaunch measures again rather than saying
             // "Not scanned"; remembered scans make it quick.
-            .onAppear { if model.caches.isEmpty && !model.cacheScanning { model.scanCaches() } }
+            .sheet(item: $detailRule) { RuleDetailView(rule: $0) }
+            .onAppear { if model.caches.isEmpty && !model.cacheScanning && !["--demo-fixtures", "--snapshot"].contains(where: ProcessInfo.processInfo.arguments.contains) { model.scanCaches() } }
     }
     @ViewBuilder private var content: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -120,7 +122,7 @@ struct DeveloperView: View {
                     set: { on in if on { selected.insert(rule.id) } else { selected.remove(rule.id) } }
                 ))
                 .labelsHidden().toggleStyle(.checkbox)
-                .disabled(!selectable || model.actionBusy || model.cacheScanning)
+                .disabled(!selectable || rule.reportOnly || model.actionBusy || model.cacheScanning)
                 Button { expanded = expanded == rule.id ? nil : rule.id } label: {
                     HStack(spacing: 12) {
                         Image(systemName: rule.symbol).foregroundStyle(Theme.orange).frame(width: 22)
@@ -144,7 +146,10 @@ struct DeveloperView: View {
                 .accessibilityLabel(rule.name + ", " + (expanded == rule.id ? "hide details" : "show details") + ". " + cost.summary)
                 // The two things people come here to do, on the row itself
                 // rather than behind the disclosure.
-                if let item = measured {
+                Button { detailRule = rule } label: { Image(systemName: "info.circle") }
+                    .buttonStyle(HoverPlain()).foregroundStyle(Theme.secondary)
+                    .help("Everything about \(rule.name)").accessibilityLabel("About \(rule.name)")
+                if let item = measured, !rule.reportOnly {
                     Button { model.reveal(item.url) } label: { Image(systemName: "folder") }
                         .buttonStyle(HoverPlain()).foregroundStyle(Theme.secondary)
                         .help("Show in Finder").accessibilityLabel("Show \(rule.name) in Finder")

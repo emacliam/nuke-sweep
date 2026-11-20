@@ -1,3 +1,4 @@
+import CoreServices
 import Foundation
 import Darwin
 
@@ -192,7 +193,7 @@ enum PersonalFiles {
     /// Folders presented as a single file. They are not searched; opening a
     /// photo library or a project file to list its parts would only invite
     /// someone to remove a piece of it.
-    static let opaquePackages: Set<String> = ["app", "photoslibrary", "photolibrary", "musiclibrary", "tvlibrary", "aplibrary", "lrlibrary", "lrdata", "lrcat", "logicx", "band", "xcodeproj", "xcworkspace", "framework", "bundle", "plugin", "kext", "rtfd", "scriv", "sketch", "dsym", "playground", "pages", "numbers", "key", "epub", "itlp", "theater", "photosasset", "migratedphotolibrary", "tmbundle", "prefpane", "saver", "component", "vst", "vst3", "pkpass", "wdgt", "qlgenerator", "mdimporter", "docset", "lproj", "nib", "storyboardc", "xcassets", "appex", "xpc", "dext", "backupdb", "noindex"]
+    static let opaquePackages: Set<String> = ["app", "photoslibrary", "photolibrary", "musiclibrary", "tvlibrary", "aplibrary", "lrlibrary", "lrdata", "lrcat", "logicx", "band", "xcodeproj", "xcworkspace", "framework", "bundle", "plugin", "kext", "rtfd", "scriv", "sketch", "dsym", "playground", "pages", "numbers", "key", "epub", "itlp", "theater", "photosasset", "migratedphotolibrary", "tmbundle", "prefpane", "saver", "component", "vst", "vst3", "pkpass", "wdgt", "qlgenerator", "mdimporter", "docset", "lproj", "nib", "storyboardc", "xcassets", "appex", "xpc", "dext", "backupdb", "noindex", "imovielibrary", "fcpbundle", "photoboothlibrary", "dvdproj"]
     /// Cloud-synced folders people commonly keep in their home folder. A file
     /// removed there is removed from every device, so they are left alone.
     static let syncFolderNames: Set<String> = ["dropbox", "google drive", "googledrive", "onedrive", "box", "box sync", "icloud drive", "icloud drive (archive)", "pcloud drive", "mega", "megasync", "sync", "nextcloud", "owncloud", "creative cloud files", "tresorit", "proton drive", "synology drive", "yandex.disk", "seafile"]
@@ -380,6 +381,11 @@ enum PersonalFiles {
         }
         if facts.size >= 500 * megabyte, let idle, idle >= 180 {
             return Verdict(category: .largeForgotten, reason: String(format: String(localized: "Not opened or changed for %@"), ago(idle)), redundant: false)
+        }
+        // Old files: 50 MB or more, untouched for a year. Old doesn't mean
+        // unwanted; each one is your call. Thresholds from Major Tom (MIT, (c) 2026 Tom Jordan).
+        if facts.size >= 50 * megabyte, let idle, idle >= 365 {
+            return Verdict(category: .largeForgotten, reason: String(format: String(localized: "Not opened or changed for %@. Old doesn't mean unwanted; check it."), ago(idle)), redundant: false)
         }
         return nil
     }
@@ -586,7 +592,11 @@ enum PersonalFiles {
                 guard size >= 100_000 || imageExtensions.contains(ext) || partialExtensions.contains(ext) else { continue }
                 var siblings = sizes
                 siblings[entry.name] = nil
-                let facts = Facts(name: entry.name, size: size, touched: entry.touched, modified: entry.modified, parent: parent, inDownloads: inDownloads,
+                // For big files, "last used" also counts Spotlight's last-opened date
+                // and when it was added to its folder, so a file opened recently but
+                // never changed is not called old. After Major Tom (MIT, (c) 2026 Tom Jordan).
+                let touched = size >= 50_000_000 ? lastUsed(directory.appendingPathComponent(entry.name).path, fallback: entry.touched) : entry.touched
+                let facts = Facts(name: entry.name, size: size, touched: touched, modified: entry.modified, parent: parent, inDownloads: inDownloads,
                                   siblingFiles: siblings, siblingFolders: folders, installed: installed, now: options.now)
                 guard let verdict = judge(facts) else { continue }
                 if let originalName = verdict.compareWith, let original = files[originalName] {
@@ -620,6 +630,10 @@ enum PersonalFiles {
         var seen = Set<String>()
         report.findings.removeAll { !seen.insert($0.item.url.standardizedFileURL.path).inserted }
         report.strayBuilds = FullCheckHistory.merge(report.strayBuilds)
+        // A disk image that is mounted right now is in use; it is never offered.
+        // From Major Tom (MIT, (c) 2026 Tom Jordan).
+        let mounted = mountedDiskImages()
+        if !mounted.isEmpty { report.findings.removeAll { mounted.contains($0.item.url.standardizedFileURL.path) } }
         return report
     }
 
@@ -721,5 +735,27 @@ enum PersonalFiles {
                 add(measure(folder.appendingPathComponent(name)), .installers, String(localized: "macOS installer; Software Update downloads it again"), redundant: true)
             }
         }
+    }
+}
+
+extension PersonalFiles {
+    /// Paths of disk images attached right now, from `hdiutil info`.
+    static func mountedDiskImages() -> Set<String> {
+        let result = CommandRunner.run("/usr/bin/hdiutil", ["info", "-plist"], timeout: 10)
+        guard result.status == 0, let data = result.output.data(using: .utf8),
+              let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
+              let images = plist["images"] as? [[String: Any]] else { return [] }
+        return Set(images.compactMap { ($0["image-path"] as? String).map { URL(fileURLWithPath: $0).standardizedFileURL.path } })
+    }
+}
+
+extension PersonalFiles {
+    static func lastUsed(_ path: String, fallback: Date) -> Date {
+        var newest = fallback
+        let url = URL(fileURLWithPath: path)
+        if let added = try? url.resourceValues(forKeys: [.addedToDirectoryDateKey]).addedToDirectoryDate { newest = max(newest, added) }
+        if let item = MDItemCreateWithURL(kCFAllocatorDefault, url as CFURL),
+           let opened = MDItemCopyAttribute(item, kMDItemLastUsedDate) as? Date { newest = max(newest, opened) }
+        return newest
     }
 }

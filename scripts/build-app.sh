@@ -42,8 +42,8 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 <key>NSPrincipalClass</key><string>NSApplication</string>
 </dict></plist>
 PLIST
-/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${NUKE_VERSION:-0.9.0}" "$APP/Contents/Info.plist"
-/usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${NUKE_BUILD_NUMBER:-11}" "$APP/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${NUKE_VERSION:-$(cut -d" " -f1 VERSION)}" "$APP/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${NUKE_BUILD_NUMBER:-$(cut -d" " -f2 VERSION)}" "$APP/Contents/Info.plist"
 # Public verification key. The matching private signing key stays in Keychain.
 SPARKLE_PUBLIC_KEY="${NUKE_SPARKLE_PUBLIC_KEY:-AZnxvY+2gXA12ksjhELz5TqmfTBgT7I7f1y8anmlPjY=}"
 /usr/libexec/PlistBuddy -c "Add :SUPublicEDKey string $SPARKLE_PUBLIC_KEY" "$APP/Contents/Info.plist"

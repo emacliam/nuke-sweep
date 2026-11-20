@@ -1,5 +1,6 @@
 import XCTest
 @testable import Nuke
+import NukeCore
 
 final class LiveWatchTests: XCTestCase {
     @MainActor func testReviewDropsGoneItemsAndHoldsChangedOnes() throws {
@@ -20,5 +21,20 @@ final class LiveWatchTests: XCTestCase {
         XCTAssertEqual(model.pendingTrash.map(\.name), ["changed"], "a deleted item leaves the review")
         XCTAssertEqual(model.pendingChanged, [items[1].id])
         XCTAssertTrue(model.pendingTrashSelection.isEmpty, "a changed item is unticked until checked again")
+    }
+}
+
+final class LowSpacePolicyTests: XCTestCase {
+    func testOneAlertPerCrossingWithMargin() {
+        let threshold: Int64 = 20_000_000_000
+        var state = LowSpacePolicy.evaluate(free: 19_000_000_000, threshold: threshold, alerted: false)
+        XCTAssertTrue(state.notify)
+        state = LowSpacePolicy.evaluate(free: 18_000_000_000, threshold: threshold, alerted: state.alerted)
+        XCTAssertFalse(state.notify, "still low: no second alert")
+        state = LowSpacePolicy.evaluate(free: 21_000_000_000, threshold: threshold, alerted: state.alerted)
+        XCTAssertTrue(state.alerted, "just above the line is not enough to re-arm")
+        state = LowSpacePolicy.evaluate(free: 23_000_000_000, threshold: threshold, alerted: state.alerted)
+        XCTAssertFalse(state.alerted, "re-armed above threshold + 2 GB")
+        XCTAssertTrue(LowSpacePolicy.evaluate(free: 19_000_000_000, threshold: threshold, alerted: state.alerted).notify)
     }
 }

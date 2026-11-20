@@ -127,7 +127,14 @@ enum CommandRunner {
         lock.lock(); let children = Array(active.values); lock.unlock()
         for child in children where child.isRunning { child.terminate() }
     }
+    /// A pretend Mac for tests and demos: when set, every command the app runs
+    /// (`simctl`, `brew`, `git`, `hdiutil`, ...) is answered by this instead of
+    /// the real tool. Returning nil runs the real one. Never set in a shipping
+    /// build. Idea from Major Tom's fake runner (MIT, (c) 2026 Tom Jordan).
+    nonisolated(unsafe) static var simulated: (@Sendable (_ executable: String, _ arguments: [String]) -> CommandResult?)?
+
     static func run(_ executable: String, _ arguments: [String], timeout: TimeInterval = 15, environment suppliedEnvironment: [String: String]? = nil) -> CommandResult {
+        if let simulated, let answer = simulated(executable, arguments) { return answer }
         let process = Process(), output = Pipe()
         process.executableURL = URL(fileURLWithPath: executable); process.arguments = arguments
         process.standardOutput = output; process.standardError = output
@@ -189,11 +196,13 @@ enum CleanupSafety {
         let roots = ["/Library/Caches/Yarn/", "/.npm/_cacache/", "/Library/pnpm/store/", "/Library/Caches/CocoaPods/",
                      "/.gradle/caches/", "/Library/Caches/pip/", "/Library/Caches/Homebrew/", "/Library/Caches/org.swift.swiftpm/",
                      "/Library/Caches/go-build/", "/.cargo/registry/", "/.bun/install/cache/", "/.pub-cache/", "/.m2/repository/",
-                     "/.cache/uv/", "/Library/Caches/Yarn"]
-        return roots.contains { root in
+                     "/.cache/uv/", "/Library/Caches/Yarn", "/.npm/_npx/", "/.yarn/berry/cache/", "/.gradle/wrapper/dists/", "/Library/Caches/ms-playwright/", "/Library/Caches/Cypress/"]
+        if roots.contains(where: { root in
             let full = home + root
             return path.hasPrefix(full.hasSuffix("/") ? full : full + "/")
-        }
+        }) { return true }
+        // Caches the tools themselves reported, wherever they were moved to.
+        return ToolLocations.knownCaches.contains { path.hasPrefix($0 + "/") }
     }
     static func isSensitive(_ path: String, home: String = FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL.path) -> Bool {
         // Inside a package manager's download cache, a key-like name is a file

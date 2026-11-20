@@ -154,6 +154,9 @@ enum StorageTriage {
         func oneClick(_ finding: Finding) -> Bool {
             guard finding.rebuild.effort <= .slow, finding.driver != .inUse,
                   finding.driver != .unverified, finding.driver != .recentlyUsed else { return false }
+            // The pnpm store is linked into every project; deleting it makes each
+            // reinstall everything. `pnpm store prune` is offered instead.
+            if finding.item.url.path.contains("/pnpm/store") { return false }
             if finding.evidence?.kind == .dependency, let days = ageDays(finding.item.lastTouched, now: signals.now),
                days < activeProjectDays { return false }
             return true

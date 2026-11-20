@@ -1,3 +1,4 @@
+import NukeCore
 import SwiftUI
 import AppKit
 import UserNotifications
@@ -79,11 +80,15 @@ import WidgetKit
         }
         if Date().timeIntervalSince(lastWidgetReload) >= 900 { lastWidgetReload = Date(); WidgetCenter.shared.reloadAllTimelines() }
         guard alertsEnabled, let sample else { return }
-        guard Date().timeIntervalSince(lastAlert) >= 3600 else { return }
-        // Storage is the only thing this app interrupts about. Sustained CPU was
-        // once alerted here too; that is a system monitor's job.
-        let low = sample.disk.totalDisk > 0 && sample.disk.freeDisk < Int64(lowSpaceGB * 1_000_000_000)
-        guard low else { return }; lastAlert = Date(); UserDefaults.standard.set(lastAlert, forKey: "nuke.lastAlert")
+        // One alert per crossing of the threshold. It re-arms only once free
+        // space is back above the threshold by a margin, so hovering around the
+        // line never nags. Rule from Major Tom (MIT, (c) 2026 Tom Jordan).
+        guard sample.disk.totalDisk > 0 else { return }
+        let threshold = Int64(lowSpaceGB * 1_000_000_000)
+        let decision = LowSpacePolicy.evaluate(free: sample.disk.freeDisk, threshold: threshold, alerted: UserDefaults.standard.bool(forKey: "nuke.lowSpaceAlerted"))
+        UserDefaults.standard.set(decision.alerted, forKey: "nuke.lowSpaceAlerted")
+        guard decision.notify else { return }
+        lastAlert = Date(); UserDefaults.standard.set(lastAlert, forKey: "nuke.lastAlert")
         // Low storage is the moment someone needs an answer, not a status. When
         // the app can run a check, the alert waits for it and says what grew.
         if onLowStorage?(sample.disk.freeDisk) == true { return }
@@ -103,3 +108,4 @@ import WidgetKit
         }
     }
 }
+

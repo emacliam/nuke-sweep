@@ -127,6 +127,8 @@ struct CacheRule: Identifiable, Sendable {
     let relativePath: String
     let detail: String
     let symbol: String
+    /// Measured and explained, never offered for cleanup.
+    var reportOnly = false
     var url: URL { FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(relativePath) }
     static let all: [CacheRule] = [
         .init(id: "xcode", name: "Xcode Derived Data", relativePath: "Library/Developer/Xcode/DerivedData", detail: "Build products and indexes. Xcode will rebuild these; close Xcode and stop builds first.", symbol: "hammer"),
@@ -148,7 +150,20 @@ struct CacheRule: Identifiable, Sendable {
         .init(id: "cocoapods", name: "CocoaPods cache", relativePath: "Library/Caches/CocoaPods", detail: "Downloaded CocoaPods specs and pods. Stop pod install first; pods may need downloading again.", symbol: "leaf"),
         .init(id: "huggingface", name: "Hugging Face cache", relativePath: ".cache/huggingface", detail: "Downloaded model and dataset cache. Re-downloading can be large; review the contents before removing.", symbol: "brain"),
         .init(id: "xcode-device-support", name: "Xcode device support", relativePath: "Library/Developer/Xcode/iOS DeviceSupport", detail: "Symbols and support files for iOS devices. Xcode regenerates them when a device is connected.", symbol: "iphone"),
-        .init(id: "simulator-caches", name: "Simulator caches", relativePath: "Library/Developer/CoreSimulator/Caches", detail: "Simulator runtime caches. Shut down simulators first; caches regenerate as needed.", symbol: "rectangle.stack")
+        .init(id: "simulator-caches", name: "Simulator caches", relativePath: "Library/Developer/CoreSimulator/Caches", detail: "Simulator runtime caches. Shut down simulators first; caches regenerate as needed.", symbol: "rectangle.stack"),
+        // Added from Major Tom's catalogue (MIT, Copyright (c) 2026 Tom Jordan).
+        .init(id: "npx", name: "npx cache", relativePath: ".npm/_npx", detail: "Packages fetched by npx. The next npx run downloads what it needs again.", symbol: "cube.box"),
+        .init(id: "yarn-berry", name: "Yarn Berry cache", relativePath: ".yarn/berry/cache", detail: "The global cache of Yarn 2 and later. Projects using zero-installs keep their own copy and are unaffected.", symbol: "shippingbox"),
+        .init(id: "gradle-wrapper", name: "Gradle wrapper downloads", relativePath: ".gradle/wrapper/dists", detail: "Gradle distributions used by ./gradlew, about 150 MB each. The next ./gradlew run downloads its version again.", symbol: "wrench.and.screwdriver"),
+        .init(id: "jetbrains", name: "JetBrains caches", relativePath: "Library/Caches/JetBrains", detail: "IDE indexes and caches. The IDE re-indexes on next open, which takes a few minutes per project. Local History lives here too and is lost.", symbol: "chevron.left.forwardslash.chevron.right"),
+        .init(id: "expo", name: "Expo caches", relativePath: ".expo/versions-cache", detail: "Expo version metadata and downloads. Expo CLI fetches them again when needed; your login and settings stay.", symbol: "iphone"),
+        .init(id: "playwright", name: "Playwright browsers", relativePath: "Library/Caches/ms-playwright", detail: "Browser binaries for Playwright tests. Tests download them again with npx playwright install.", symbol: "globe"),
+        .init(id: "cypress", name: "Cypress binary", relativePath: "Library/Caches/Cypress", detail: "The Cypress test runner binary. The next cypress run downloads it again.", symbol: "checkmark.seal"),
+        .init(id: "logs", name: "Logs", relativePath: "Library/Logs", detail: "App logs and crash reports. Apps start new logs straight away; past crash details are lost.", symbol: "doc.plaintext"),
+        .init(id: "npm-logs", name: "npm logs", relativePath: ".npm/_logs", detail: "Debug logs from past npm runs. Nothing uses them again.", symbol: "doc.plaintext"),
+        .init(id: "cargo-git", name: "Cargo git checkouts", relativePath: ".cargo/git", detail: "Git dependencies Cargo checked out. The next cargo build fetches what it needs again.", symbol: "shippingbox"),
+        .init(id: "gradle-daemon", name: "Gradle daemon logs", relativePath: ".gradle/daemon", detail: "Logs and state from past Gradle daemons. Stop Gradle first; new daemons start fresh.", symbol: "wrench.and.screwdriver"),
+        .init(id: "claude-desktop", name: "Claude desktop data", relativePath: "Library/Application Support/Claude", detail: "Shown for size only. It mixes caches with your sessions, extensions and VM bundles; removing the wrong part signs you out or loses local data. Clean it from inside the app.", symbol: "sparkles", reportOnly: true)
     ]
 }
 struct CacheMeasurement: Identifiable, Sendable {

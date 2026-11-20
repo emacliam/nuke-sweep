@@ -82,8 +82,9 @@ enum DevCleanups {
 
     /// Measures one tool's cache. Nil when the tool or its cache is absent.
     static func measure(_ tool: ToolCleaner, token: ScanCancellation) -> ToolCacheFinding? {
-        let cache = home.appendingPathComponent(tool.cache)
-        guard FileManager.default.fileExists(atPath: cache.path), let executable = locate(tool) else { return nil }
+        guard let executable = locate(tool), !ToolLocations.isPlaceholder(executable) else { return nil }
+        let cache = ToolLocations.cache(for: tool, executable: executable)
+        guard FileManager.default.fileExists(atPath: cache.path) else { return nil }
         let scan = DiskScanner.scan(cache, cancellation: token, limit: 400_000, deadline: Date().addingTimeInterval(20))
         return ToolCacheFinding(tool: tool, executable: executable, size: scan.allocated)
     }
@@ -105,6 +106,7 @@ enum DevCleanups {
     /// elsewhere: pushed to their upstream, or merged into the main checkout.
     /// Anything Git cannot answer for is left out, never offered.
     static func staleWorktrees(in repository: URL, token: ScanCancellation) -> [StaleWorktree] {
+        guard !ToolLocations.isPlaceholder(git) else { return [] }
         let list = CommandRunner.run(git, ["-C", repository.path, "worktree", "list", "--porcelain"], timeout: 10)
         guard list.status == 0 else { return [] }
         var found: [StaleWorktree] = []
@@ -144,6 +146,7 @@ enum DevCleanups {
 @MainActor @Observable final class DevCleanupState {
     var tools: [ToolCacheFinding] = []
     var worktrees: [StaleWorktree] = []
+    var androidImages: [AndroidImages.Image] = []
     var measuring = false
     var running: String?
     var lastOutcome: String?
@@ -171,10 +174,12 @@ enum DevCleanups {
                 for await result in group { found += result }
                 return found
             }
-            let (foundTools, foundTrees) = await (tools, trees)
+            async let images: [AndroidImages.Image] = DiskWork.run("Checking Android images", cancellation: token) { AndroidImages.inspect(token: token) }
+            let (foundTools, foundTrees, foundImages) = await (tools, trees, images)
             guard !token.cancelled else { return }
             self.tools = foundTools.filter { $0.size > 50_000_000 }.sorted { $0.size > $1.size }
             self.worktrees = foundTrees.sorted { $0.size > $1.size }
+            self.androidImages = foundImages.filter { $0.size > 200_000_000 }
             measuring = false
         }
     }
@@ -199,7 +204,7 @@ struct DevCleanupPanel: View {
 
     var body: some View {
         Group {
-            if !state.tools.isEmpty || !state.worktrees.isEmpty {
+            if !state.tools.isEmpty || !state.worktrees.isEmpty || !state.androidImages.isEmpty {
                 Surface {
                     VStack(alignment: .leading, spacing: 12) {
                         VStack(alignment: .leading, spacing: 4) {
@@ -211,6 +216,18 @@ struct DevCleanupPanel: View {
                             ForEach(state.tools) { finding in
                                 row(finding.tool.name, finding.tool.effect, detail: finding.tool.command, path: DevCleanups.home.appendingPathComponent(finding.tool.cache).path, size: finding.size,
                                     button: "Clear") { confirmTool = finding }
+                                Divider()
+                            }
+                            ForEach(state.androidImages) { image in
+                                // Removed through sdkmanager, never by deleting the folder,
+                                // so Android Studio's records stay right.
+                                row("Android image · " + image.package.split(separator: ";").dropFirst().joined(separator: " "),
+                                    image.users.isEmpty ? "Not used by any emulator. Android Studio can download it again." : "Used by \(image.users.joined(separator: ", ")); removing it breaks those emulators.",
+                                    detail: "sdkmanager --uninstall \"\(image.package)\"", path: image.path, size: image.size, button: "Copy command") {
+                                    NSPasteboard.general.clearContents()
+                                    NSPasteboard.general.setString("sdkmanager --uninstall \"\(image.package)\"", forType: .string)
+                                    state.lastOutcome = "Copied. Run it in Terminal, then come back; this list updates by itself."
+                                }
                                 Divider()
                             }
                             ForEach(state.worktrees) { tree in

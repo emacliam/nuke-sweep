@@ -618,9 +618,10 @@ import UserNotifications
         let allowedRoots = FolderAccess.shared.cleanupScopes
         let developerScopes = features.developerScopes
         let running = NSWorkspace.shared.runningApplications.compactMap { $0.bundleURL?.path }
+        let outright = Set(items.filter { CleanupPreferences.deleteRebuildable && pendingEvidence[$0.id]?.kind.deletesOutright == true }.map(\.id))
         Log.cleanup.notice("Executing reviewed cleanup: items=\(items.count, privacy: .public) bytes=\(items.reduce(0) { $0 + $1.size }, privacy: .public)")
         Task {
-            let receipt = await DiskWork.run("Moving to Trash", lane: .interactive) { ReceiptService.moveToTrash(items, proofs: proofs, runningAppPaths: running, allowedRoots: allowedRoots, developerScopes: developerScopes) }
+            let receipt = await DiskWork.run("Moving to Trash", lane: .interactive) { ReceiptService.moveToTrash(items, proofs: proofs, runningAppPaths: running, allowedRoots: allowedRoots, developerScopes: developerScopes, deleteOutright: outright) }
             let moved = receipt.items.filter(\.success).count
             Log.cleanup.notice("Cleanup finished: moved=\(moved, privacy: .public) failed=\(receipt.items.count - moved, privacy: .public)")
             features.receipt(receipt)
@@ -748,6 +749,7 @@ import UserNotifications
     }
     func record(_ title: String, detail: String) {
         activities.insert(.init(date: Date(), title: title, detail: detail), at: 0); activities = Array(activities.prefix(100))
+        HistoryLog.append(title: title, detail: detail)
         if let d = try? JSONEncoder().encode(activities) { UserDefaults.standard.set(d, forKey: "nuke.history") }
     }
     func reveal(_ url: URL) { NSWorkspace.shared.activateFileViewerSelecting([url]) }

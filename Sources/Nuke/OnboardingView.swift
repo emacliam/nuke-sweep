@@ -12,7 +12,7 @@ struct OnboardingView: View {
             switch step {
             case 1:
                 heading("Find space on your Mac")
-                Text("Nuke Sweep finds caches, project build output, and large personal files. See what takes up space and review items before moving them to Trash.")
+                Text("Nuke Sweep finds caches, project build output, and large personal files. See what takes up space and review every item before anything is cleared. Caches rebuild themselves; your own files only ever go to Trash.")
             case 2:
                 heading("Full Disk Access")
                 if model.diskAccess == .granted {
